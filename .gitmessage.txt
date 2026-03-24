@@ -1,0 +1,26 @@
+# <type>(optional-scope): <short summary>
+#
+# Types: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+#
+# Rules:
+# 1) Subject in imperative mood ("add", "fix", "update").
+# 2) Keep subject <= 72 chars, no trailing period.
+# 3) Add body to explain what and why (wrap around 72 chars).
+# 4) Reference issues in footer when needed.
+#
+# Example:
+# feat(editor): add Word-style ribbon tab switching
+#
+# - render tabs from enum for easier extension
+# - persist active tab in local signal
+# - keep layout stable when switching groups
+#
+# Closes #123
+
+<type>(<scope>): <subject>
+
+- what changed
+- why it changed
+- impact / notes
+
+Refs: #<issue-id>
