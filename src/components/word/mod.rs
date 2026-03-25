@@ -6,6 +6,7 @@ mod tabs_row;
 mod title_bar;
 
 use dioxus::prelude::*;
+use crate::engine::EditorMode;
 
 pub use document_layout::PaperMode;
 pub use editor_surface::EditorSurface;
@@ -110,6 +111,13 @@ impl RibbonTab {
 pub fn WordWorkspace() -> Element {
     let mut active_tab = use_signal(|| RibbonTab::Home);
     let zoom = use_signal(|| 100u16);
+    let mut editor_mode = use_signal(|| EditorMode::Wysiwyg);
+    let mut markdown_preview_open = use_signal(|| true);
+    let mut markdown_source = use_signal(|| {
+        "# 项目计划书\n\n这是一个基于 **Markdown 扩展** 的富文本引擎原型。\n\n## 本阶段目标\n\n- 解析接口与后端隔离\n- Markdown 源码与 WYSIWYG 模式切换\n- Markdown 源码高亮（syntect）\n\n> 后续将在此基础上继续扩展自定义语法。\n"
+            .to_string()
+    });
+    let source = markdown_source();
     let mut paper_mode = use_signal(|| PaperMode::A4);
     let mut custom_width_mm = use_signal(|| 210u16);
     let mut custom_height_mm = use_signal(|| 297u16);
@@ -135,12 +143,29 @@ pub fn WordWorkspace() -> Element {
                 on_toggle_ruler: move |_| show_ruler.set(!show_ruler()),
             }
             EditorSurface {
+                editor_mode: editor_mode(),
+                markdown_preview_open: markdown_preview_open(),
+                markdown_source: source,
+                on_markdown_change: move |next| markdown_source.set(next),
                 paper_mode: paper_mode(),
                 custom_width_mm: custom_width_mm(),
                 custom_height_mm: custom_height_mm(),
                 show_ruler: show_ruler(),
             }
-            StatusBar { zoom: zoom() }
+            StatusBar {
+                zoom: zoom(),
+                editor_mode: editor_mode(),
+                markdown_preview_open: markdown_preview_open(),
+                on_markdown_click: move |_| {
+                    if editor_mode() == EditorMode::MarkdownSource {
+                        markdown_preview_open.set(!markdown_preview_open());
+                    } else {
+                        editor_mode.set(EditorMode::MarkdownSource);
+                        markdown_preview_open.set(true);
+                    }
+                },
+                on_wysiwyg_click: move |_| editor_mode.set(EditorMode::Wysiwyg),
+            }
         }
     }
 }

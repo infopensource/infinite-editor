@@ -1,53 +1,74 @@
 use dioxus::prelude::*;
+use crate::engine::{highlight_markdown_source, EditorMode, ParserGateway};
 
-use super::document_layout::{
-    page_layout_px, paginate_blocks, resolved_paper_size, DocumentBlock, PaperMode, MM_TO_PX,
-};
+use super::document_layout::{page_layout_px, resolved_paper_size, PaperMode, MM_TO_PX};
 
-fn sample_document_blocks() -> Vec<DocumentBlock> {
-    let mut blocks = vec![
-        DocumentBlock::Heading1("项目计划书".to_string()),
-        DocumentBlock::Paragraph(
-            "这是一个基于 Dioxus 0.7 构建的 Word Ribbon 风格编辑器界面示例。".to_string(),
-        ),
-        DocumentBlock::Paragraph(
-            "界面重点还原了：标题栏、选项卡、功能区、文档纸张以及底部状态栏。".to_string(),
-        ),
-        DocumentBlock::Paragraph(
-            "该版本专注于 UI 结构与可维护性，便于后续接入真实 Markdown/富文本引擎。"
-                .to_string(),
-        ),
-    ];
+const MARKDOWN_EDITOR_INPUT_ID: &str = "markdown-editor-input";
 
-    for section in 1..=30 {
-        blocks.push(DocumentBlock::Heading2(format!("章节 {section}")));
-        blocks.push(DocumentBlock::Paragraph(
-            "这里是示例段落，用于验证文档区分页与独立滚动行为。滚动时顶部 Ribbon 与底部状态栏保持固定，只有文档内容区域上下移动。".to_string(),
-        ));
-        blocks.push(DocumentBlock::Paragraph(
-            "后续可以把这部分替换成真实文档模型渲染结果，例如按段落、标题、列表和图片块分块，再通过统一布局管线分页，为 PDF 导出复用相同分页结果。".to_string(),
-        ));
-    }
-
-    blocks
+fn escape_html(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
-fn render_block(block: &DocumentBlock) -> Element {
-    match block {
-        DocumentBlock::Heading1(text) => rsx! {
-            h1 { "{text}" }
-        },
-        DocumentBlock::Heading2(text) => rsx! {
-            h2 { "{text}" }
-        },
-        DocumentBlock::Paragraph(text) => rsx! {
-            p { "{text}" }
-        },
+fn highlighted_editor_html(source: &str) -> String {
+    let highlighted = highlight_markdown_source(source);
+    let mut out = String::new();
+
+    for line in highlighted {
+        out.push_str("<div class=\"markdown-editor-line\">");
+        if line.tokens.is_empty() {
+            out.push_str("<span>&nbsp;</span>");
+        } else {
+            for token in line.tokens {
+                out.push_str("<span style=\"");
+                out.push_str(&token.style);
+                out.push_str("\">");
+                out.push_str(&escape_html(&token.text));
+                out.push_str("</span>");
+            }
+        }
+        out.push_str("</div>");
     }
+
+    if source.ends_with('\n') {
+        out.push_str("<div class=\"markdown-editor-line\"><span>&nbsp;</span></div>");
+    }
+
+    if source.is_empty() {
+        out.push_str("<div class=\"markdown-editor-line\"><span>&nbsp;</span></div>");
+    }
+
+    out
+}
+
+fn read_textarea_scroll(mut scroll_top: Signal<i32>, mut scroll_left: Signal<i32>) {
+    spawn(async move {
+        let script = format!(
+            r#"(() => {{
+                const el = document.getElementById('{id}');
+                if (!el) return [0, 0];
+                return [el.scrollTop || 0, el.scrollLeft || 0];
+            }})();"#,
+            id = MARKDOWN_EDITOR_INPUT_ID
+        );
+
+        if let Ok((top, left)) = document::eval(&script).join::<(i32, i32)>().await {
+            scroll_top.set(top);
+            scroll_left.set(left);
+        }
+    });
 }
 
 #[component]
 pub fn EditorSurface(
+    editor_mode: EditorMode,
+    markdown_preview_open: bool,
+    markdown_source: String,
+    on_markdown_change: EventHandler<String>,
     paper_mode: PaperMode,
     custom_width_mm: u16,
     custom_height_mm: u16,
@@ -55,11 +76,106 @@ pub fn EditorSurface(
 ) -> Element {
     let mut left_slider = use_signal(|| 10u16);
     let mut right_slider = use_signal(|| 90u16);
+    let mut draft_source = use_signal(|| markdown_source.clone());
+    let mut committed_source = use_signal(|| markdown_source.clone());
+    let mut composing_lock = use_signal(|| false);
+    let editor_scroll_top = use_signal(|| 0i32);
+    let editor_scroll_left = use_signal(|| 0i32);
 
-    let blocks = sample_document_blocks();
+    use_effect(move || {
+        if !composing_lock() && markdown_source != committed_source() {
+            draft_source.set(markdown_source.clone());
+            committed_source.set(markdown_source.clone());
+        }
+    });
+
     let paper_size = resolved_paper_size(paper_mode, custom_width_mm, custom_height_mm);
+    let parser = ParserGateway::markdown_rs();
+    let should_render_html = editor_mode == EditorMode::Wysiwyg
+        || (editor_mode == EditorMode::MarkdownSource && markdown_preview_open);
+    let rendered_html = if should_render_html {
+        parser
+            .render_html(&committed_source())
+            .unwrap_or_else(|_| "<p>渲染失败</p>".to_string())
+    } else {
+        String::new()
+    };
 
-    let (ruler_major_count, page_style, pages, seamless) = if let Some(size) = paper_size {
+    if editor_mode == EditorMode::MarkdownSource {
+        let highlighted_html = highlighted_editor_html(&draft_source());
+        let input_class = if composing_lock() {
+            "markdown-editor-input-layer composing"
+        } else {
+            "markdown-editor-input-layer"
+        };
+        let highlight_translate_style = format!(
+            "transform: translate(-{}px, -{}px);",
+            editor_scroll_left(),
+            editor_scroll_top()
+        );
+
+        let markdown_layout_class = if markdown_preview_open {
+            "markdown-workspace with-preview"
+        } else {
+            "markdown-workspace immersive"
+        };
+
+        return rsx! {
+            main { class: "editor-surface markdown-mode",
+                div { class: markdown_layout_class,
+                    section { class: "markdown-editor-pane",
+                        div { class: "markdown-editor-stack",
+                            pre { class: "markdown-editor-highlight-viewport",
+                                div {
+                                    class: "markdown-editor-highlight-content",
+                                    style: highlight_translate_style,
+                                    dangerous_inner_html: "{highlighted_html}",
+                                }
+                            }
+                            textarea {
+                                id: MARKDOWN_EDITOR_INPUT_ID,
+                                class: input_class,
+                                spellcheck: false,
+                                value: draft_source(),
+                                oncompositionstart: move |_| composing_lock.set(true),
+                                oncompositionend: move |_| {
+                                    composing_lock.set(false);
+                                },
+                                oninput: move |evt| {
+                                    if composing_lock() {
+                                        return;
+                                    }
+
+                                    let next = evt.value();
+                                    draft_source.set(next.clone());
+                                    committed_source.set(next.clone());
+                                    on_markdown_change.call(next);
+                                },
+                                onscroll: move |_| {
+                                    read_textarea_scroll(editor_scroll_top, editor_scroll_left);
+                                },
+                            }
+                        }
+                    }
+                    if markdown_preview_open {
+                        div { class: "markdown-split-line" }
+                        section { class: "markdown-preview-pane",
+                            if committed_source().trim().is_empty() {
+                                p { class: "markdown-preview-placeholder", "预览区" }
+                            } else {
+                                div {
+                                    class: "markdown-rendered-html",
+                                    dangerous_inner_html: "{rendered_html.clone()}",
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
+    let (ruler_major_count, page_style, seamless) = if let Some(size) = paper_size {
         let layout = page_layout_px(size);
         let marks = (size.width / 10.0).floor().clamp(10.0, 120.0) as usize;
         let style = format!(
@@ -70,15 +186,14 @@ pub fn EditorSurface(
             layout.padding_y,
             10.0 * MM_TO_PX
         );
-        let paged_blocks = paginate_blocks(&blocks, layout.content_height, layout.content_width);
 
-        (marks, style, paged_blocks, false)
+        (marks, style, false)
     } else {
         let style = format!(
             "--page-width: min(1120px, 94vw); --page-height: auto; --page-padding-x: 88px; --page-padding-y: 72px; --ruler-major-step: {:.2}px;",
             10.0 * MM_TO_PX
         );
-        (30usize, style, vec![blocks], true)
+        (30usize, style, true)
     };
 
     let ruler_minor_count = ruler_major_count * 10;
@@ -142,12 +257,17 @@ pub fn EditorSurface(
             }
 
             div { class: if seamless { "document-flow seamless" } else { "document-flow paged" },
-                for page_blocks in pages.iter() {
-                    article {
-                        class: if seamless { "document-page seamless-page" } else { "document-page paged-page" },
-                        style: page_style.clone(),
-                        for block in page_blocks {
-                            {render_block(block)}
+                article {
+                    class: if seamless { "document-page seamless-page" } else { "document-page paged-page" },
+                    style: page_style,
+                    if committed_source().trim().is_empty() {
+                        p { class: "markdown-preview-placeholder",
+                            "请在 Markdown 源码模式输入内容"
+                        }
+                    } else {
+                        div {
+                            class: "markdown-rendered-html",
+                            dangerous_inner_html: "{rendered_html}",
                         }
                     }
                 }

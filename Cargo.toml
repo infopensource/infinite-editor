@@ -8,6 +8,8 @@ edition = "2021"
 
 [dependencies]
 dioxus = { version = "0.7.1", features = ["router"] }
+markdown = "1.0.0"
+syntect = { version = "5.2.0", default-features = false, features = ["default-fancy"] }
 
 [features]
 default = ["desktop"]
