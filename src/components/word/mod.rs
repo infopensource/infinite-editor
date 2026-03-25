@@ -1,3 +1,4 @@
+mod document_layout;
 mod editor_surface;
 mod ribbon_groups;
 mod status_bar;
@@ -6,6 +7,7 @@ mod title_bar;
 
 use dioxus::prelude::*;
 
+pub use document_layout::PaperMode;
 pub use editor_surface::EditorSurface;
 pub use status_bar::StatusBar;
 pub use tabs_row::TabsRow;
@@ -108,6 +110,10 @@ impl RibbonTab {
 pub fn WordWorkspace() -> Element {
     let mut active_tab = use_signal(|| RibbonTab::Home);
     let zoom = use_signal(|| 100u16);
+    let mut paper_mode = use_signal(|| PaperMode::A4);
+    let mut custom_width_mm = use_signal(|| 210u16);
+    let mut custom_height_mm = use_signal(|| 297u16);
+    let mut show_ruler = use_signal(|| true);
 
     rsx! {
         div { class: "word-shell",
@@ -117,8 +123,23 @@ pub fn WordWorkspace() -> Element {
                 active_tab: active_tab(),
                 on_switch: move |tab| active_tab.set(tab),
             }
-            ribbon_groups::RibbonPanel { active_tab: active_tab() }
-            EditorSurface {}
+            ribbon_groups::RibbonPanel {
+                active_tab: active_tab(),
+                paper_mode: paper_mode(),
+                custom_width_mm: custom_width_mm(),
+                custom_height_mm: custom_height_mm(),
+                show_ruler: show_ruler(),
+                on_paper_mode_change: move |mode| paper_mode.set(mode),
+                on_custom_width_change: move |width| custom_width_mm.set(width),
+                on_custom_height_change: move |height| custom_height_mm.set(height),
+                on_toggle_ruler: move |_| show_ruler.set(!show_ruler()),
+            }
+            EditorSurface {
+                paper_mode: paper_mode(),
+                custom_width_mm: custom_width_mm(),
+                custom_height_mm: custom_height_mm(),
+                show_ruler: show_ruler(),
+            }
             StatusBar { zoom: zoom() }
         }
     }

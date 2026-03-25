@@ -1,9 +1,19 @@
 use dioxus::prelude::*;
 
-use super::RibbonTab;
+use super::{PaperMode, RibbonTab};
 
 #[component]
-pub fn RibbonPanel(active_tab: RibbonTab) -> Element {
+pub fn RibbonPanel(
+    active_tab: RibbonTab,
+    paper_mode: PaperMode,
+    custom_width_mm: u16,
+    custom_height_mm: u16,
+    show_ruler: bool,
+    on_paper_mode_change: EventHandler<PaperMode>,
+    on_custom_width_change: EventHandler<u16>,
+    on_custom_height_change: EventHandler<u16>,
+    on_toggle_ruler: EventHandler<()>,
+) -> Element {
     rsx! {
         section { class: "ribbon-panel",
             match active_tab {
@@ -52,15 +62,70 @@ pub fn RibbonPanel(active_tab: RibbonTab) -> Element {
                         large_action: "阅读",
                         actions: vec!["页面视图", "大纲", "草稿"],
                     }
-                    Group {
-                        title: "显示",
-                        large_action: "标尺",
-                        actions: vec!["网格线", "导航窗格"],
+                    div { class: "ribbon-group",
+                        div { class: "group-main",
+                            button {
+                                class: if show_ruler { "ribbon-large active" } else { "ribbon-large" },
+                                onclick: move |_| on_toggle_ruler.call(()),
+                                if show_ruler { "隐藏标尺" } else { "显示标尺" }
+                            }
+                            div { class: "group-actions",
+                                button { class: "ribbon-small", "网格线" }
+                                button { class: "ribbon-small", "导航窗格" }
+                            }
+                        }
+                        div { class: "group-title", "显示" }
                     }
                     Group {
                         title: "缩放",
                         large_action: "100%",
                         actions: vec!["单页", "多页", "页宽"],
+                    }
+                },
+                RibbonTab::Layout => rsx! {
+                    div { class: "ribbon-group paper-layout-group",
+                        div { class: "group-main paper-layout-main",
+                            div { class: "paper-mode-actions",
+                                for mode in [PaperMode::A4, PaperMode::A5, PaperMode::Custom, PaperMode::Seamless] {
+                                    button {
+                                        class: if paper_mode == mode { "ribbon-small active" } else { "ribbon-small" },
+                                        onclick: move |_| on_paper_mode_change.call(mode),
+                                        "{mode.label()}"
+                                    }
+                                }
+                            }
+                            div { class: "paper-custom-size",
+                                label { class: "paper-size-label", "宽(mm)" }
+                                input {
+                                    class: "paper-size-input",
+                                    r#type: "number",
+                                    min: 80,
+                                    max: 2000,
+                                    value: "{custom_width_mm}",
+                                    disabled: paper_mode != PaperMode::Custom,
+                                    oninput: move |evt| {
+                                        if let Ok(width) = evt.value().parse::<u16>() {
+                                            on_custom_width_change.call(width);
+                                        }
+                                    },
+                                }
+                                label { class: "paper-size-label", "高(mm)" }
+                                input {
+                                    class: "paper-size-input",
+                                    r#type: "number",
+                                    min: 80,
+                                    max: 2000,
+                                    value: "{custom_height_mm}",
+                                    disabled: paper_mode != PaperMode::Custom,
+                                    oninput: move |evt| {
+                                        if let Ok(height) = evt.value().parse::<u16>() {
+                                            on_custom_height_change.call(height);
+                                        }
+                                    },
+                                }
+                            }
+                        }
+                        div { class: "group-title", "纸张与分页" }
                     }
                 },
                 _ => rsx! {
