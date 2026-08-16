@@ -852,6 +852,46 @@
     line-height: 1.7;
 }
 
+/* Keep rendered content inside the writable area even when the margins leave
+   only a very narrow column. Natural-language text may wrap normally, while
+   unbroken URLs, identifiers, and inline code are allowed to break anywhere. */
+.markdown-rendered-html {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.markdown-rendered-html > *,
+.markdown-rendered-html li,
+.markdown-rendered-html blockquote {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.markdown-rendered-html a,
+.markdown-rendered-html :not(pre) > code {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.markdown-rendered-html img,
+.markdown-rendered-html video,
+.markdown-rendered-html iframe,
+.markdown-rendered-html svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.markdown-rendered-html table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
 .markdown-rendered-html h1,
 .markdown-preview-pane h1 {
     margin: 0 0 16px;
@@ -916,6 +956,9 @@
     font-family: Consolas, "Cascadia Mono", "JetBrains Mono", monospace;
     font-size: 13px;
     line-height: 1.6;
+    width: 100%;
+    max-width: 100%;
+    white-space: pre;
     overflow: auto;
 }
 
