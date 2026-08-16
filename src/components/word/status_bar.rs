@@ -1,11 +1,13 @@
-use dioxus::prelude::*;
 use crate::engine::EditorMode;
+use dioxus::prelude::*;
 
 #[component]
 pub fn StatusBar(
     zoom: u16,
     editor_mode: EditorMode,
     markdown_preview_open: bool,
+    status_hint: String,
+    current_file: Option<String>,
     on_markdown_click: EventHandler<()>,
     on_wysiwyg_click: EventHandler<()>,
 ) -> Element {
@@ -31,12 +33,14 @@ pub fn StatusBar(
         EditorMode::MarkdownSource.label()
     };
 
+    let file_label = current_file.unwrap_or_else(|| "未命名文档".to_string());
+
     rsx! {
         footer { class: "status-bar",
             div { class: "status-left",
-                span { "第 1 页，共 1 页" }
+                span { class: "status-state", "{status_hint}" }
                 span { class: "status-dot", "•" }
-                span { "字数: 128" }
+                span { class: "status-file", "{file_label}" }
                 span { class: "status-dot", "•" }
                 span { "中文(简体)" }
             }

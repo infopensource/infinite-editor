@@ -39,9 +39,15 @@ impl Document {
 
 #[derive(Clone, PartialEq)]
 pub enum DocumentNode {
-    Heading { level: u8, text: String },
+    Heading {
+        level: u8,
+        text: String,
+    },
     Paragraph(String),
-    CodeBlock { language: Option<String>, code: String },
+    CodeBlock {
+        language: Option<String>,
+        code: String,
+    },
     Quote(Vec<DocumentNode>),
     List {
         ordered: bool,
@@ -85,9 +91,12 @@ struct MarkdownRsBackend;
 
 impl MarkdownParserBackend for MarkdownRsBackend {
     fn parse(&self, source: &str) -> Result<Document, ParseError> {
-        let root = markdown::to_mdast(source, &markdown::ParseOptions::default()).map_err(|err| ParseError {
-            message: err.to_string(),
-        })?;
+        let root =
+            markdown::to_mdast(source, &markdown::ParseOptions::default()).map_err(|err| {
+                ParseError {
+                    message: err.to_string(),
+                }
+            })?;
 
         let mut blocks = Vec::new();
         if let Node::Root(root) = root {
@@ -112,7 +121,9 @@ fn node_to_block(node: Node) -> Option<DocumentNode> {
             level: heading.depth,
             text: inline_text(heading.children),
         }),
-        Node::Paragraph(paragraph) => Some(DocumentNode::Paragraph(inline_text(paragraph.children))),
+        Node::Paragraph(paragraph) => {
+            Some(DocumentNode::Paragraph(inline_text(paragraph.children)))
+        }
         Node::Code(code) => Some(DocumentNode::CodeBlock {
             language: code.lang,
             code: code.value,
@@ -176,4 +187,73 @@ fn inline_text(children: Vec<Node>) -> String {
     }
 
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn renders_common_markdown_to_html() {
+        let html = ParserGateway::markdown_rs()
+            .render_html("# 标题\n\n这是 **粗体** 和 `代码`。")
+            .expect("普通 Markdown 应能完成渲染");
+
+        assert!(html.contains("<h1>标题</h1>"));
+        assert!(html.contains("<strong>粗体</strong>"));
+        assert!(html.contains("<code>代码</code>"));
+    }
+
+    #[test]
+    fn default_renderer_does_not_pass_raw_html_through() {
+        let html = ParserGateway::markdown_rs()
+            .render_html("<script>alert('xss')</script>")
+            .expect("危险 HTML 也应被安全地处理");
+
+        assert!(!html.contains("<script>"));
+        assert!(html.contains("&lt;script&gt;"));
+    }
+
+    #[test]
+    fn default_renderer_filters_dangerous_link_protocols() {
+        let html = ParserGateway::markdown_rs()
+            .render_html("[危险链接](javascript:alert(1))")
+            .expect("危险协议应被安全地处理");
+
+        assert!(!html.contains("javascript:"));
+        assert!(html.contains("危险链接"));
+    }
+
+    #[test]
+    fn parses_block_structure_used_by_the_document_model() {
+        let document = ParserGateway::markdown_rs()
+            .parse("# 标题\n\n正文\n\n- 第一项\n- 第二项\n\n```rust\nfn main() {}\n```")
+            .expect("有效 Markdown 应能生成文档结构");
+
+        assert!(matches!(
+            document.blocks.first(),
+            Some(DocumentNode::Heading { level: 1, text }) if text == "标题"
+        ));
+        assert!(document.blocks.iter().any(
+            |node| matches!(node, DocumentNode::List { ordered: false, items } if items.len() == 2)
+        ));
+        assert!(document.blocks.iter().any(|node| {
+            matches!(
+                node,
+                DocumentNode::CodeBlock { language: Some(language), code }
+                    if language == "rust" && code.contains("fn main()")
+            )
+        }));
+    }
+
+    #[test]
+    fn fallback_discards_blank_lines_but_preserves_text() {
+        let document = Document::fallback_from_source(" 第一段 \n\n第二段\n");
+
+        assert_eq!(document.blocks.len(), 2);
+        assert!(matches!(
+            &document.blocks[0],
+            DocumentNode::Paragraph(text) if text == "第一段"
+        ));
+    }
 }

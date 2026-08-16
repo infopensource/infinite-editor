@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
 
+use super::file_backstage::ExportTarget;
 use super::{PaperMode, RibbonTab};
+use crate::config::{parse_custom_paper_mm, MAX_CUSTOM_PAPER_MM, MIN_CUSTOM_PAPER_MM};
 
 #[component]
 pub fn RibbonPanel(
@@ -13,10 +15,38 @@ pub fn RibbonPanel(
     on_custom_width_change: EventHandler<u16>,
     on_custom_height_change: EventHandler<u16>,
     on_toggle_ruler: EventHandler<()>,
+    on_open: EventHandler<()>,
+    on_save: EventHandler<()>,
+    on_save_as: EventHandler<()>,
+    on_export: EventHandler<ExportTarget>,
 ) -> Element {
+    let mut width_draft = use_signal(|| custom_width_mm.to_string());
+    let mut height_draft = use_signal(|| custom_height_mm.to_string());
+
     rsx! {
         section { class: "ribbon-panel",
             match active_tab {
+                RibbonTab::File => rsx! {
+                    div { class: "ribbon-group file-ribbon-group",
+                        div { class: "group-main file-ribbon-main",
+                            div { class: "file-ribbon-actions",
+                                button { class: "ribbon-large active", onclick: move |_| on_open.call(()), "打开" }
+                                button { class: "ribbon-large", onclick: move |_| on_save.call(()), "保存" }
+                                button { class: "ribbon-large", onclick: move |_| on_save_as.call(()), "另存为" }
+                            }
+                            div { class: "file-ribbon-export",
+                                for target in [ExportTarget::Markdown, ExportTarget::Pdf, ExportTarget::Word, ExportTarget::Odt, ExportTarget::Png] {
+                                    button {
+                                        class: "ribbon-small",
+                                        onclick: move |_| on_export.call(target),
+                                        "{target.label()}"
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "group-title", "文件快捷操作" }
+                    }
+                },
                 RibbonTab::Home => rsx! {
                     Group {
                         title: "剪贴板",
@@ -99,28 +129,30 @@ pub fn RibbonPanel(
                                 input {
                                     class: "paper-size-input",
                                     r#type: "number",
-                                    min: 80,
-                                    max: 2000,
-                                    value: "{custom_width_mm}",
+                                    min: MIN_CUSTOM_PAPER_MM,
+                                    max: MAX_CUSTOM_PAPER_MM,
+                                    value: width_draft,
                                     disabled: paper_mode != PaperMode::Custom,
-                                    oninput: move |evt| {
-                                        if let Ok(width) = evt.value().parse::<u16>() {
-                                            on_custom_width_change.call(width);
-                                        }
+                                    oninput: move |evt| width_draft.set(evt.value()),
+                                    onchange: move |evt| {
+                                        let width = parse_custom_paper_mm(&evt.value());
+                                        width_draft.set(width.to_string());
+                                        on_custom_width_change.call(width);
                                     },
                                 }
                                 label { class: "paper-size-label", "高(mm)" }
                                 input {
                                     class: "paper-size-input",
                                     r#type: "number",
-                                    min: 80,
-                                    max: 2000,
-                                    value: "{custom_height_mm}",
+                                    min: MIN_CUSTOM_PAPER_MM,
+                                    max: MAX_CUSTOM_PAPER_MM,
+                                    value: height_draft,
                                     disabled: paper_mode != PaperMode::Custom,
-                                    oninput: move |evt| {
-                                        if let Ok(height) = evt.value().parse::<u16>() {
-                                            on_custom_height_change.call(height);
-                                        }
+                                    oninput: move |evt| height_draft.set(evt.value()),
+                                    onchange: move |evt| {
+                                        let height = parse_custom_paper_mm(&evt.value());
+                                        height_draft.set(height.to_string());
+                                        on_custom_height_change.call(height);
                                     },
                                 }
                             }

@@ -9,13 +9,14 @@ edition = "2021"
 [dependencies]
 dioxus = { version = "0.7.1", features = ["router"] }
 markdown = "1.0.0"
-syntect = { version = "5.2.0", default-features = false, features = ["default-fancy"] }
+serde_json = "1.0"
+rfd = { version = "0.15.4", optional = true, default-features = false, features = ["gtk3"] }
 
 [features]
 default = ["desktop"]
 # The feature that are only required for the web = ["dioxus/web"] build target should be optional and only enabled in the web = ["dioxus/web"] feature
 web = ["dioxus/web"]
 # The feature that are only required for the desktop = ["dioxus/desktop"] build target should be optional and only enabled in the desktop = ["dioxus/desktop"] feature
-desktop = ["dioxus/desktop"]
+desktop = ["dioxus/desktop", "dep:rfd"]
 # The feature that are only required for the mobile = ["dioxus/mobile"] build target should be optional and only enabled in the mobile = ["dioxus/mobile"] feature
 mobile = ["dioxus/mobile"]

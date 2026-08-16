@@ -6,6 +6,7 @@ use views::Home;
 
 /// Define a components module that contains all shared components for our app.
 mod components;
+mod config;
 mod engine;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
 mod views;
@@ -25,6 +26,7 @@ enum Route {
 // We can import assets in dioxus with the `asset!` macro. This macro takes a path to an asset relative to the crate root.
 // The macro returns an `Asset` type that will display as the path to the asset in the browser or a local path in desktop bundles.
 const FAVICON: Asset = asset!("/assets/favicon.ico");
+const EDITOR_JS: Asset = asset!("/assets/editor.bundle.js");
 const APP_CSS: &str = concat!(
     include_str!("../assets/styling/main.css"),
     "\n",
@@ -64,6 +66,7 @@ fn App() -> Element {
         // In addition to element and text (which we will see later), rsx can contain other components. In this case,
         // we are using the `document::Link` component to add a link to our favicon and main CSS file into the head of our app.
         document::Link { rel: "icon", href: FAVICON }
+        document::Script { src: EDITOR_JS }
         style { "{APP_CSS}" }
 
         // The router component renders the route enum we defined above. It will handle synchronization of the URL and render

@@ -58,41 +58,8 @@ fn sync_window_title(title: &str) {
 #[cfg(not(feature = "desktop"))]
 fn sync_window_title(_title: &str) {}
 
-#[derive(Clone, Copy)]
-enum EndEditMode {
-    Commit,
-    Cancel,
-}
-
-fn finish_doc_title_edit(
-    mode: EndEditMode,
-    mut editing: Signal<bool>,
-    mut draft: Signal<String>,
-    mut title: Signal<String>,
-    on_title_change: EventHandler<String>,
-) {
-    // Guard against late blur events after key handlers already ended editing.
-    if !editing() {
-        return;
-    }
-
-    match mode {
-        EndEditMode::Commit => {
-            let next_title = draft();
-            title.set(next_title.clone());
-            on_title_change.call(next_title);
-        }
-        EndEditMode::Cancel => {
-            // Cancel keeps the previous committed title.
-            draft.set(title());
-        }
-    }
-
-    editing.set(false);
-}
-
 fn finish_search_edit(
-    mode: EndEditMode,
+    commit: bool,
     mut editing: Signal<bool>,
     mut draft: Signal<String>,
     mut value: Signal<String>,
@@ -102,81 +69,14 @@ fn finish_search_edit(
         return;
     }
 
-    match mode {
-        EndEditMode::Commit => {
-            value.set(draft());
-        }
-        EndEditMode::Cancel => {
-            // Escape clears the current search and exits editing.
-            draft.set(String::new());
-            value.set(String::new());
-        }
+    if commit {
+        value.set(draft());
+    } else {
+        draft.set(String::new());
+        value.set(String::new());
     }
 
     editing.set(false);
-}
-
-#[component]
-fn EditableDocTitle(initial_value: String, on_title_change: EventHandler<String>) -> Element {
-    let initial = initial_value.clone();
-    let title = use_signal(move || initial.clone());
-    let mut draft = use_signal(String::new);
-    let mut editing = use_signal(|| false);
-
-    rsx! {
-        if editing() {
-            input {
-                class: "doc-title doc-title-input",
-                value: draft(),
-                autofocus: true,
-                onmounted: move |element| async move {
-                    let _ = element.data().set_focus(true).await;
-                },
-                onpointerdown: move |evt| evt.stop_propagation(),
-                oninput: move |evt| draft.set(evt.value()),
-                onkeydown: move |evt| {
-                    if evt.key() == Key::Enter {
-                        finish_doc_title_edit(
-                            EndEditMode::Commit,
-                            editing,
-                            draft,
-                            title,
-                            on_title_change,
-                        );
-                    }
-
-                    if evt.key() == Key::Escape {
-                        finish_doc_title_edit(
-                            EndEditMode::Cancel,
-                            editing,
-                            draft,
-                            title,
-                            on_title_change,
-                        );
-                    }
-                },
-                onblur: move |_| {
-                    finish_doc_title_edit(
-                        EndEditMode::Commit,
-                        editing,
-                        draft,
-                        title,
-                        on_title_change,
-                    );
-                },
-            }
-        } else {
-            button {
-                class: "doc-title doc-title-trigger",
-                onpointerdown: move |evt| {
-                    evt.stop_propagation();
-                    draft.set(title());
-                    editing.set(true);
-                },
-                "{title}"
-            }
-        }
-    }
 }
 
 #[component]
@@ -200,15 +100,15 @@ fn SearchBox(placeholder: String) -> Element {
                 onpointerdown: move |evt| evt.stop_propagation(),
                 onkeydown: move |evt| {
                     if evt.key() == Key::Enter {
-                        finish_search_edit(EndEditMode::Commit, editing, draft, value);
+                        finish_search_edit(true, editing, draft, value);
                     }
 
                     if evt.key() == Key::Escape {
-                        finish_search_edit(EndEditMode::Cancel, editing, draft, value);
+                        finish_search_edit(false, editing, draft, value);
                     }
                 },
                 onblur: move |_| {
-                    finish_search_edit(EndEditMode::Commit, editing, draft, value);
+                    finish_search_edit(true, editing, draft, value);
                 },
             }
         } else {
@@ -230,15 +130,14 @@ fn SearchBox(placeholder: String) -> Element {
 }
 
 #[component]
-pub fn TitleBar() -> Element {
+pub fn TitleBar(document_title: String) -> Element {
     let mut maximized = use_signal(is_maximized);
-    let initial_title = "Document_1 - Infinite Editor".to_string();
     let mut title_bar_pressing = use_signal(|| false);
 
     use_effect({
-        let initial_title = initial_title.clone();
+        let document_title = document_title.clone();
         move || {
-            sync_window_title(&initial_title);
+            sync_window_title(&format!("{} - Infinite Editor", document_title));
         }
     });
 
@@ -267,11 +166,8 @@ pub fn TitleBar() -> Element {
                 button { class: "icon-btn", "⟲" }
                 button { class: "icon-btn", "💾" }
                 span { class: "divider" }
-                EditableDocTitle {
-                    initial_value: initial_title,
-                    on_title_change: move |value: String| sync_window_title(&value), // String -> &str
-                }
-            
+                span { class: "doc-title doc-title-static", "{document_title}" }
+
             }
 
             div { class: "title-center",

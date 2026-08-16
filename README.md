@@ -31,3 +31,25 @@ To run for a different platform, use the `--platform platform` flag. E.g.
 dx serve --platform desktop
 ```
 
+## Tests
+
+Install the locked JavaScript dependencies once:
+
+```sh
+npm ci
+```
+
+Run the CodeMirror DOM tests and Rust unit tests together:
+
+```sh
+npm test
+```
+
+After changing `web/editor.js`, rebuild the offline browser bundle and verify the
+desktop package:
+
+```sh
+npm run build:editor
+cargo clippy --all-targets --features desktop -- -D warnings
+dx build --platform desktop
+```
