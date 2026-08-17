@@ -1,12 +1,12 @@
 use crate::config::{
-    DEFAULT_PAGE_MARGIN_LEFT_MM, DEFAULT_PAGE_MARGIN_RIGHT_MM, MIN_PAGE_CONTENT_WIDTH_MM,
-    RULER_MAJOR_STEP_MM, RULER_MID_STEP_MM, RULER_MINOR_STEP_MM,
+    MIN_PAGE_CONTENT_WIDTH_MM, RULER_MAJOR_STEP_MM, RULER_MID_STEP_MM, RULER_MINOR_STEP_MM,
 };
+use crate::document::{Orientation, PageMargins, PaperMode, ProjectDocument};
 use crate::engine::{EditorMode, ParserGateway};
 use dioxus::prelude::*;
 
 use super::document_layout::{
-    page_layout_px_with_margins, resolved_paper_size, ruler_position_percent, PaperMode,
+    page_layout_px_with_margins, resolved_paper_size, ruler_position_percent,
 };
 
 const MARKDOWN_EDITOR_HOST_ID: &str = "markdown-editor-host";
@@ -103,25 +103,32 @@ fn sync_markdown_editor(
 pub fn EditorSurface(
     editor_mode: EditorMode,
     markdown_preview_open: bool,
-    markdown_source: ReadSignal<String>,
+    document: ReadSignal<ProjectDocument>,
     document_revision: ReadSignal<u64>,
     on_markdown_change: EventHandler<String>,
     paper_mode: PaperMode,
-    custom_width_mm: u16,
-    custom_height_mm: u16,
+    custom_width_mm: f32,
+    custom_height_mm: f32,
+    orientation: Orientation,
+    margins: PageMargins,
     show_ruler: bool,
+    on_left_margin_change: EventHandler<f32>,
+    on_right_margin_change: EventHandler<f32>,
 ) -> Element {
-    let mut left_margin_mm = use_signal(|| DEFAULT_PAGE_MARGIN_LEFT_MM);
-    let mut right_margin_mm = use_signal(|| DEFAULT_PAGE_MARGIN_RIGHT_MM);
     let editor_error = use_signal(|| None::<String>);
 
     use_effect(move || {
-        sync_markdown_editor(markdown_source(), document_revision(), editor_error);
+        sync_markdown_editor(
+            document.read().markdown.clone(),
+            document_revision(),
+            editor_error,
+        );
     });
 
-    let source = markdown_source();
+    let source = document.read().markdown.clone();
 
-    let paper_size = resolved_paper_size(paper_mode, custom_width_mm, custom_height_mm);
+    let paper_size =
+        resolved_paper_size(paper_mode, custom_width_mm, custom_height_mm, orientation);
     let parser = ParserGateway::markdown_rs();
     let should_render_html = editor_mode == EditorMode::Wysiwyg
         || (editor_mode == EditorMode::MarkdownSource && markdown_preview_open);
@@ -150,7 +157,7 @@ pub fn EditorSurface(
                                 class: "markdown-code-editor",
                                 onmounted: move |_| {
                                     mount_markdown_editor(
-                                        markdown_source(),
+                                        document.read().markdown.clone(),
                                         document_revision(),
                                         editor_error,
                                     )
@@ -194,27 +201,32 @@ pub fn EditorSurface(
         if let Some(size) = paper_size {
             let width_mm = size.width.round() as u16;
             let maximum_margin_total = width_mm.saturating_sub(MIN_PAGE_CONTENT_WIDTH_MM);
-            let left_mm = left_margin_mm().min(maximum_margin_total);
-            let right_mm = right_margin_mm().min(maximum_margin_total.saturating_sub(left_mm));
-            let layout = page_layout_px_with_margins(size, left_mm, right_mm);
+            let left_mm = (margins.left_mm.round() as u16).min(maximum_margin_total);
+            let right_mm =
+                (margins.right_mm.round() as u16).min(maximum_margin_total.saturating_sub(left_mm));
+            let mut effective_margins = margins.clone();
+            effective_margins.left_mm = left_mm as f32;
+            effective_margins.right_mm = right_mm as f32;
+            let layout = page_layout_px_with_margins(size, &effective_margins);
             let style = format!(
-            "--page-width: {:.2}px; --page-height: {:.2}px; --page-padding-left: {:.2}px; --page-padding-right: {:.2}px; --page-padding-y: {:.2}px;",
+            "--page-width: {:.2}px; --page-height: {:.2}px; --page-padding-left: {:.2}px; --page-padding-right: {:.2}px; --page-padding-top: {:.2}px; --page-padding-bottom: {:.2}px;",
             layout.page_width,
             layout.page_height,
             layout.padding_left,
             layout.padding_right,
-            layout.padding_vertical,
+            layout.padding_top,
+            layout.padding_bottom,
         );
 
             (style, false, Some(width_mm), left_mm, right_mm)
         } else {
-            let style = "--page-width: min(1120px, 94vw); --page-height: auto; --page-padding-left: 88px; --page-padding-right: 88px; --page-padding-y: 72px;".to_string();
+            let style = "--page-width: min(1120px, 94vw); --page-height: auto; --page-padding-left: 88px; --page-padding-right: 88px; --page-padding-top: 72px; --page-padding-bottom: 72px;".to_string();
             (
                 style,
                 true,
                 None,
-                DEFAULT_PAGE_MARGIN_LEFT_MM,
-                DEFAULT_PAGE_MARGIN_RIGHT_MM,
+                margins.left_mm.round() as u16,
+                margins.right_mm.round() as u16,
             )
         };
 
@@ -262,7 +274,7 @@ pub fn EditorSurface(
                                     if let Ok(next) = evt.value().parse::<u16>() {
                                         let maximum = ruler_width_mm.unwrap()
                                             .saturating_sub(effective_right_mm + MIN_PAGE_CONTENT_WIDTH_MM);
-                                        left_margin_mm.set(next.min(maximum));
+                                        on_left_margin_change.call(next.min(maximum) as f32);
                                     }
                                 },
                             }
@@ -279,7 +291,7 @@ pub fn EditorSurface(
                                     if let Ok(marker_position) = evt.value().parse::<u16>() {
                                         let minimum = effective_left_mm + MIN_PAGE_CONTENT_WIDTH_MM;
                                         let position = marker_position.max(minimum).min(ruler_width_mm.unwrap());
-                                        right_margin_mm.set(ruler_width_mm.unwrap() - position);
+                                        on_right_margin_change.call((ruler_width_mm.unwrap() - position) as f32);
                                     }
                                 },
                             }

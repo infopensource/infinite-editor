@@ -1,28 +1,11 @@
 #![allow(dead_code)]
 
+#[cfg(test)]
 use crate::config::{
-    clamp_custom_paper_mm, DEFAULT_PAGE_MARGIN_LEFT_MM, DEFAULT_PAGE_MARGIN_RIGHT_MM,
-    DEFAULT_PAGE_MARGIN_VERTICAL_MM,
+    DEFAULT_PAGE_MARGIN_LEFT_MM, DEFAULT_PAGE_MARGIN_RIGHT_MM, DEFAULT_PAGE_MARGIN_VERTICAL_MM,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PaperMode {
-    Seamless,
-    A4,
-    A5,
-    Custom,
-}
-
-impl PaperMode {
-    pub fn label(self) -> &'static str {
-        match self {
-            PaperMode::Seamless => "无缝",
-            PaperMode::A4 => "A4",
-            PaperMode::A5 => "A5",
-            PaperMode::Custom => "自定义",
-        }
-    }
-}
+use crate::config::{MAX_CUSTOM_PAPER_MM, MIN_CUSTOM_PAPER_MM};
+use crate::document::{Orientation, PageMargins, PaperMode};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PaperSizeMm {
@@ -38,7 +21,8 @@ pub struct PageLayoutPx {
     pub content_height: f32,
     pub padding_left: f32,
     pub padding_right: f32,
-    pub padding_vertical: f32,
+    pub padding_top: f32,
+    pub padding_bottom: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -60,10 +44,11 @@ pub fn ruler_position_percent(position_mm: u16, paper_width_mm: u16) -> f32 {
 
 pub fn resolved_paper_size(
     mode: PaperMode,
-    custom_width_mm: u16,
-    custom_height_mm: u16,
+    custom_width_mm: f32,
+    custom_height_mm: f32,
+    orientation: Orientation,
 ) -> Option<PaperSizeMm> {
-    match mode {
+    let size = match mode {
         PaperMode::Seamless => None,
         PaperMode::A4 => Some(PaperSizeMm {
             width: 210.0,
@@ -74,24 +59,28 @@ pub fn resolved_paper_size(
             height: 210.0,
         }),
         PaperMode::Custom => Some(PaperSizeMm {
-            width: clamp_custom_paper_mm(custom_width_mm) as f32,
-            height: clamp_custom_paper_mm(custom_height_mm) as f32,
+            width: custom_width_mm.clamp(MIN_CUSTOM_PAPER_MM as f32, MAX_CUSTOM_PAPER_MM as f32),
+            height: custom_height_mm.clamp(MIN_CUSTOM_PAPER_MM as f32, MAX_CUSTOM_PAPER_MM as f32),
         }),
-    }
+    }?;
+    Some(match orientation {
+        Orientation::Portrait => size,
+        Orientation::Landscape => PaperSizeMm {
+            width: size.height,
+            height: size.width,
+        },
+    })
 }
 
-pub fn page_layout_px_with_margins(
-    paper: PaperSizeMm,
-    margin_left_mm: u16,
-    margin_right_mm: u16,
-) -> PageLayoutPx {
+pub fn page_layout_px_with_margins(paper: PaperSizeMm, margins: &PageMargins) -> PageLayoutPx {
     let page_width = paper.width * MM_TO_PX;
     let page_height = paper.height * MM_TO_PX;
-    let padding_left = margin_left_mm as f32 * MM_TO_PX;
-    let padding_right = margin_right_mm as f32 * MM_TO_PX;
-    let padding_vertical = DEFAULT_PAGE_MARGIN_VERTICAL_MM as f32 * MM_TO_PX;
+    let padding_left = margins.left_mm * MM_TO_PX;
+    let padding_right = margins.right_mm * MM_TO_PX;
+    let padding_top = margins.top_mm * MM_TO_PX;
+    let padding_bottom = margins.bottom_mm * MM_TO_PX;
     let content_width = (page_width - padding_left - padding_right).max(0.0);
-    let content_height = (page_height - padding_vertical * 2.0).max(0.0);
+    let content_height = (page_height - padding_top - padding_bottom).max(0.0);
 
     PageLayoutPx {
         page_width,
@@ -100,16 +89,13 @@ pub fn page_layout_px_with_margins(
         content_height,
         padding_left,
         padding_right,
-        padding_vertical,
+        padding_top,
+        padding_bottom,
     }
 }
 
 pub fn page_layout_px(paper: PaperSizeMm) -> PageLayoutPx {
-    page_layout_px_with_margins(
-        paper,
-        DEFAULT_PAGE_MARGIN_LEFT_MM,
-        DEFAULT_PAGE_MARGIN_RIGHT_MM,
-    )
+    page_layout_px_with_margins(paper, &PageMargins::default())
 }
 
 fn estimate_block_height_px(block: &DocumentBlock, content_width: f32) -> f32 {
@@ -178,17 +164,21 @@ mod tests {
 
     #[test]
     fn resolves_standard_and_seamless_paper_sizes() {
-        assert_eq!(resolved_paper_size(PaperMode::Seamless, 0, 0), None);
+        assert_eq!(
+            resolved_paper_size(PaperMode::Seamless, 0.0, 0.0, Orientation::Portrait),
+            None
+        );
 
-        let a4 = resolved_paper_size(PaperMode::A4, 0, 0).expect("A4 应具有固定尺寸");
+        let a4 = resolved_paper_size(PaperMode::A4, 0.0, 0.0, Orientation::Portrait)
+            .expect("A4 应具有固定尺寸");
         assert!(approximately_equal(a4.width, 210.0));
         assert!(approximately_equal(a4.height, 297.0));
     }
 
     #[test]
     fn clamps_custom_paper_to_the_minimum_size() {
-        let paper =
-            resolved_paper_size(PaperMode::Custom, 20, 70).expect("自定义纸张应返回有效尺寸");
+        let paper = resolved_paper_size(PaperMode::Custom, 20.0, 70.0, Orientation::Portrait)
+            .expect("自定义纸张应返回有效尺寸");
 
         assert!(approximately_equal(paper.width, 80.0));
         assert!(approximately_equal(paper.height, 80.0));
@@ -196,7 +186,8 @@ mod tests {
 
     #[test]
     fn calculates_a4_pixel_layout_with_positive_content_area() {
-        let paper = resolved_paper_size(PaperMode::A4, 0, 0).expect("A4 应存在");
+        let paper =
+            resolved_paper_size(PaperMode::A4, 0.0, 0.0, Orientation::Portrait).expect("A4 应存在");
         let layout = page_layout_px(paper);
 
         assert!(approximately_equal(layout.page_width, 210.0 * MM_TO_PX));
@@ -212,6 +203,10 @@ mod tests {
         assert!(approximately_equal(
             layout.padding_right,
             DEFAULT_PAGE_MARGIN_RIGHT_MM as f32 * MM_TO_PX
+        ));
+        assert!(approximately_equal(
+            layout.padding_top,
+            DEFAULT_PAGE_MARGIN_VERTICAL_MM as f32 * MM_TO_PX
         ));
     }
 

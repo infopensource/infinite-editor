@@ -1,6 +1,5 @@
 use dioxus::prelude::*;
 
-use super::file_backstage::ExportTarget;
 use super::{PaperMode, RibbonTab};
 use crate::config::{parse_custom_paper_mm, MAX_CUSTOM_PAPER_MM, MIN_CUSTOM_PAPER_MM};
 
@@ -15,10 +14,6 @@ pub fn RibbonPanel(
     on_custom_width_change: EventHandler<u16>,
     on_custom_height_change: EventHandler<u16>,
     on_toggle_ruler: EventHandler<()>,
-    on_open: EventHandler<()>,
-    on_save: EventHandler<()>,
-    on_save_as: EventHandler<()>,
-    on_export: EventHandler<ExportTarget>,
 ) -> Element {
     let mut width_draft = use_signal(|| custom_width_mm.to_string());
     let mut height_draft = use_signal(|| custom_height_mm.to_string());
@@ -26,27 +21,7 @@ pub fn RibbonPanel(
     rsx! {
         section { class: "ribbon-panel",
             match active_tab {
-                RibbonTab::File => rsx! {
-                    div { class: "ribbon-group file-ribbon-group",
-                        div { class: "group-main file-ribbon-main",
-                            div { class: "file-ribbon-actions",
-                                button { class: "ribbon-large active", onclick: move |_| on_open.call(()), "打开" }
-                                button { class: "ribbon-large", onclick: move |_| on_save.call(()), "保存" }
-                                button { class: "ribbon-large", onclick: move |_| on_save_as.call(()), "另存为" }
-                            }
-                            div { class: "file-ribbon-export",
-                                for target in [ExportTarget::Markdown, ExportTarget::Pdf, ExportTarget::Word, ExportTarget::Odt, ExportTarget::Png] {
-                                    button {
-                                        class: "ribbon-small",
-                                        onclick: move |_| on_export.call(target),
-                                        "{target.label()}"
-                                    }
-                                }
-                            }
-                        }
-                        div { class: "group-title", "文件快捷操作" }
-                    }
-                },
+                RibbonTab::File => rsx! {},
                 RibbonTab::Home => rsx! {
                     Group {
                         title: "剪贴板",

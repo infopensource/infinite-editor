@@ -22,100 +22,230 @@ impl ExportTarget {
         }
     }
 
-    pub fn badge(self) -> &'static str {
+    pub fn short_label(self) -> &'static str {
         match self {
-            ExportTarget::Markdown => "推荐",
-            ExportTarget::Pdf => "高频",
-            ExportTarget::Odt => "兼容",
-            ExportTarget::Word => "兼容",
-            ExportTarget::Png => "预览",
-            ExportTarget::Jpeg => "预览",
+            ExportTarget::Markdown => "MD",
+            ExportTarget::Pdf => "PDF",
+            ExportTarget::Odt => "ODT",
+            ExportTarget::Word => "DOC",
+            ExportTarget::Png => "PNG",
+            ExportTarget::Jpeg => "JPG",
         }
     }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            ExportTarget::Markdown => "导出不包含布局信息的标准 Markdown 文件",
+            ExportTarget::Pdf => "保留纸张尺寸和排版的发布文档",
+            ExportTarget::Odt => "用于 LibreOffice 等办公软件",
+            ExportTarget::Word => "用于 Microsoft Word 等办公软件",
+            ExportTarget::Png => "逐页导出为无损图片",
+            ExportTarget::Jpeg => "逐页导出为较小的有损图片",
+        }
+    }
+
+    pub fn availability_label(self) -> &'static str {
+        if self.available() {
+            "导出"
+        } else {
+            "尚未接入"
+        }
+    }
+
+    pub fn available(self) -> bool {
+        self == ExportTarget::Markdown
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SaveAsTarget {
+    MarkdownProject,
+    InfiniteDocument,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BackstageSection {
+    Info,
+    SaveAs,
+    Export,
 }
 
 #[component]
 pub fn FileBackstage(
     current_file: Option<String>,
     status_hint: String,
-    can_save: bool,
+    has_location: bool,
+    on_back: EventHandler<()>,
     on_open: EventHandler<()>,
     on_save: EventHandler<()>,
-    on_save_as: EventHandler<()>,
+    on_save_as: EventHandler<SaveAsTarget>,
     on_export: EventHandler<ExportTarget>,
 ) -> Element {
-    let file_display = current_file.unwrap_or_else(|| "未命名文档".to_string());
+    let mut section = use_signal(|| BackstageSection::Info);
+    let file_display = current_file
+        .as_deref()
+        .and_then(|path| std::path::Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or("未命名文档")
+        .to_string();
+    let file_path = current_file.unwrap_or_else(|| "尚未选择保存位置".to_string());
+    let file_kind = if file_path.to_ascii_lowercase().ends_with(".infdoc") {
+        "INFDOC"
+    } else {
+        "MD"
+    };
 
     rsx! {
         main { class: "file-backstage",
             aside { class: "file-nav",
-                h2 { class: "file-nav-title", "文件" }
-                button { class: "file-nav-item active", "信息" }
-                button { class: "file-nav-item", "最近" }
-                button { class: "file-nav-item", "模板" }
-                button { class: "file-nav-item", "账户" }
-                button { class: "file-nav-item", "选项" }
+                button {
+                    class: "file-back-button",
+                    onclick: move |_| on_back.call(()),
+                    span { class: "file-back-icon", "←" }
+                    span { "返回" }
+                }
+                h1 { class: "file-nav-title", "文件" }
+                nav { class: "file-nav-actions",
+                    button {
+                        class: if section() == BackstageSection::Info { "file-nav-item active" } else { "file-nav-item" },
+                        onclick: move |_| section.set(BackstageSection::Info),
+                        span { class: "file-nav-symbol", "i" }
+                        span { "信息" }
+                    }
+                    button {
+                        class: "file-nav-item command",
+                        onclick: move |_| on_open.call(()),
+                        span { class: "file-nav-symbol", "↗" }
+                        span { "打开" }
+                    }
+                    button {
+                        class: "file-nav-item command",
+                        onclick: move |_| on_save.call(()),
+                        span { class: "file-nav-symbol", "✓" }
+                        span { "保存" }
+                    }
+                    div { class: "file-nav-divider" }
+                    button {
+                        class: if section() == BackstageSection::SaveAs { "file-nav-item active" } else { "file-nav-item" },
+                        onclick: move |_| section.set(BackstageSection::SaveAs),
+                        span { class: "file-nav-symbol", "＋" }
+                        span { "另存为" }
+                    }
+                    button {
+                        class: if section() == BackstageSection::Export { "file-nav-item active" } else { "file-nav-item" },
+                        onclick: move |_| section.set(BackstageSection::Export),
+                        span { class: "file-nav-symbol", "⇱" }
+                        span { "导出" }
+                    }
+                }
             }
 
             section { class: "file-content",
-                header { class: "file-hero",
-                    div {
-                        p { class: "file-eyebrow", "快速开始" }
-                        h1 { "从这里开始管理你的文档" }
-                        p { class: "file-subtitle", "建议先使用“打开文档”载入内容，再通过“另存为”建立项目副本。" }
-                    }
-                    div { class: "file-meta-card",
-                        p { class: "meta-label", "当前工作文档" }
-                        p { class: "meta-value", "{file_display}" }
-                        p { class: "meta-status", "运行状态：{status_hint}" }
-                    }
-                }
-
-                div { class: "file-actions-grid",
-                    article { class: "action-panel primary",
-                        h3 { "文档操作" }
-                        p { "先完成打开与保存，再进入编辑视图，能减少误操作和覆盖风险。" }
-                        div { class: "action-buttons",
-                            button {
-                                class: "backstage-btn strong",
-                                onclick: move |_| on_open.call(()),
-                                "打开文档"
+                match section() {
+                    BackstageSection::Info => rsx! {
+                        header { class: "file-page-header",
+                            h1 { "文档信息" }
+                            p { "查看当前文档的位置和保存状态。" }
+                        }
+                        article { class: "document-summary",
+                            div { class: "document-file-mark", "{file_kind}" }
+                            div { class: "document-summary-main",
+                                p { class: "document-summary-label", if has_location { "当前文档" } else { "新建文档" } }
+                                h2 { "{file_display}" }
+                                p { class: "document-summary-path", title: file_path.clone(), "{file_path}" }
                             }
-                            button {
-                                class: if can_save { "backstage-btn" } else { "backstage-btn muted" },
-                                disabled: !can_save,
-                                onclick: move |_| on_save.call(()),
-                                "保存"
-                            }
-                            button {
-                                class: "backstage-btn",
-                                onclick: move |_| on_save_as.call(()),
-                                "另存为"
+                            span { class: if has_location { "document-state saved" } else { "document-state unsaved" },
+                                if has_location { "已有保存位置" } else { "尚未保存" }
                             }
                         }
-                    }
-
-                    article { class: "action-panel",
-                        h3 { "导出" }
-                        p { "根据目标场景选择格式：协作优先 Word/ODT，发布优先 PDF，预览优先图片。" }
-                        div { class: "export-grid",
+                        section { class: "file-details",
+                            h2 { "状态" }
+                            dl {
+                                div {
+                                    dt { "最近操作" }
+                                    dd { "{status_hint}" }
+                                }
+                                div {
+                                    dt { "存储方式" }
+                                    dd {
+                                        if file_kind == "INFDOC" {
+                                            "便携文档包"
+                                        } else if has_location {
+                                            "Markdown 与同名布局文件"
+                                        } else {
+                                            "保存时选择"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "file-inline-actions",
+                            button { class: "file-action-button primary", onclick: move |_| on_save.call(()),
+                                if has_location { "保存修改" } else { "保存文档" }
+                            }
+                            button { class: "file-action-button", onclick: move |_| section.set(BackstageSection::SaveAs),
+                                "保存副本"
+                            }
+                        }
+                    },
+                    BackstageSection::SaveAs => rsx! {
+                        header { class: "file-page-header",
+                            h1 { "另存为" }
+                            p { "选择便于继续编辑的开放项目，或适合传输的单文件文档包。" }
+                        }
+                        div { class: "file-choice-list",
+                            button { class: "file-choice-row", onclick: move |_| on_save_as.call(SaveAsTarget::MarkdownProject),
+                                span { class: "file-type-mark", "MD" }
+                                span { class: "file-choice-copy",
+                                    strong { "Markdown 项目" }
+                                    span { "标准 Markdown 源文件和独立 TOML 布局文件" }
+                                    code { ".md  +  .layout.toml  +  .assets/" }
+                                }
+                                span { class: "file-choice-action", "保存" }
+                            }
+                            button { class: "file-choice-row", onclick: move |_| on_save_as.call(SaveAsTarget::InfiniteDocument),
+                                span { class: "file-type-mark infdoc", "INF" }
+                                span { class: "file-choice-copy",
+                                    strong { "Infinite Document" }
+                                    span { "将正文、布局和资源打包为一个便携文件" }
+                                    code { ".infdoc" }
+                                }
+                                span { class: "file-choice-action", "保存" }
+                            }
+                        }
+                        aside { class: "file-help",
+                            strong { "如何选择？" }
+                            p { "需要 Git 管理或用其他编辑器打开时选择 Markdown 项目；需要发送、归档或跨设备移动时选择 Infinite Document。" }
+                        }
+                    },
+                    BackstageSection::Export => rsx! {
+                        header { class: "file-page-header",
+                            h1 { "导出" }
+                            p { "生成用于发布或交换的副本，不改变当前编辑文档。" }
+                        }
+                        div { class: "file-choice-list export-list",
                             for target in [
                                 ExportTarget::Markdown,
                                 ExportTarget::Pdf,
-                                ExportTarget::Odt,
                                 ExportTarget::Word,
+                                ExportTarget::Odt,
                                 ExportTarget::Png,
                                 ExportTarget::Jpeg,
                             ] {
                                 button {
-                                    class: "export-card",
+                                    class: if target.available() { "file-choice-row compact" } else { "file-choice-row compact unavailable" },
+                                    disabled: !target.available(),
                                     onclick: move |_| on_export.call(target),
-                                    span { class: "export-title", "{target.label()}" }
-                                    span { class: "export-badge", "{target.badge()}" }
+                                    span { class: "file-type-mark small", "{target.short_label()}" }
+                                    span { class: "file-choice-copy",
+                                        strong { "{target.label()}" }
+                                        span { "{target.description()}" }
+                                    }
+                                    span { class: "file-choice-action", "{target.availability_label()}" }
                                 }
                             }
                         }
-                    }
+                    },
                 }
             }
         }

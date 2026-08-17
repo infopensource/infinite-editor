@@ -1,5 +1,35 @@
 # Development
 
+## Document formats
+
+Infinite Editor keeps Markdown as the source of truth and stores presentation
+settings in a human-readable TOML sidecar:
+
+```text
+proposal.md
+proposal.layout.toml
+proposal.assets/
+```
+
+Opening `proposal.md` automatically loads `proposal.layout.toml` when it is
+present and otherwise uses the default A4 layout. Saving a loose document writes
+both files. Markdown-only export remains available for interoperability.
+
+Portable `.infdoc` files are ZIP containers with a fixed manifest:
+
+```text
+proposal.infdoc
+├── manifest.toml
+├── proposal.md
+├── proposal.layout.toml
+└── proposal.assets/
+```
+
+The package reader validates entry paths, symlinks, file counts and expanded
+sizes before reading content. Package saves are written to a temporary sibling
+and then atomically replace the previous package. The format and layout schema
+are independently versioned for future migrations.
+
 Your new jumpstart project includes basic organization with an organized `assets` folder and a `components` folder.
 If you chose to develop with the router feature, you will also have a `views` folder.
 

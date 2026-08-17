@@ -13,6 +13,7 @@ pub const DEFAULT_PAGE_MARGIN_LEFT_MM: u16 = 22;
 pub const DEFAULT_PAGE_MARGIN_RIGHT_MM: u16 = 22;
 pub const DEFAULT_PAGE_MARGIN_VERTICAL_MM: u16 = 25;
 pub const MIN_PAGE_CONTENT_WIDTH_MM: u16 = 20;
+pub const MIN_PAGE_CONTENT_HEIGHT_MM: u16 = 20;
 
 pub const RULER_MINOR_STEP_MM: u16 = 1;
 pub const RULER_MID_STEP_MM: u16 = 5;
@@ -25,7 +26,7 @@ pub fn clamp_custom_paper_mm(value: u16) -> u16 {
 pub fn parse_custom_paper_mm(value: &str) -> u16 {
     value
         .parse::<u32>()
-        .map(|value| value.clamp(MIN_CUSTOM_PAPER_MM as u32, MAX_CUSTOM_PAPER_MM as u32) as u16)
+        .map(|value| clamp_custom_paper_mm(value.min(u16::MAX as u32) as u16))
         .unwrap_or(MIN_CUSTOM_PAPER_MM)
 }
 

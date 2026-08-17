@@ -7,7 +7,9 @@ use views::Home;
 /// Define a components module that contains all shared components for our app.
 mod components;
 mod config;
+mod document;
 mod engine;
+mod storage;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
 mod views;
 
@@ -65,8 +67,8 @@ fn App() -> Element {
     rsx! {
         // In addition to element and text (which we will see later), rsx can contain other components. In this case,
         // we are using the `document::Link` component to add a link to our favicon and main CSS file into the head of our app.
-        document::Link { rel: "icon", href: FAVICON }
-        document::Script { src: EDITOR_JS }
+        dioxus::document::Link { rel: "icon", href: FAVICON }
+        dioxus::document::Script { src: EDITOR_JS }
         style { "{APP_CSS}" }
 
         // The router component renders the route enum we defined above. It will handle synchronization of the URL and render
