@@ -2347,13 +2347,16 @@ dependencies = [
 name = "infinite-editor"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "dioxus",
+ "futures-channel",
  "markdown",
  "rfd 0.15.4",
  "serde",
  "serde_json",
  "sha2",
  "toml",
+ "url",
  "zip",
 ]
 

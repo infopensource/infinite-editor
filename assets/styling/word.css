@@ -16,6 +16,15 @@
     color: #111827;
     overflow: hidden;
     border: 1px solid #1f4e78;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* WebKitGTK does not consistently inherit `user-select` through native-like
+   controls. Make the application chrome non-selectable explicitly, then opt
+   the actual document and editing surfaces back in below. */
+.word-shell * {
+    -webkit-user-select: none;
     user-select: none;
 }
 
@@ -26,8 +35,13 @@
 .word-shell input,
 .word-shell textarea,
 .word-shell [contenteditable="true"],
+.markdown-code-editor,
+.markdown-code-editor *,
+.markdown-preview-pane .markdown-rendered-html,
+.markdown-preview-pane .markdown-rendered-html *,
 .document-page,
 .document-page * {
+    -webkit-user-select: text;
     user-select: text;
 }
 
@@ -1088,6 +1102,10 @@
     overflow: hidden;
 }
 
+.warning-alert {
+    width: min(440px, calc(100vw - 32px));
+}
+
 .dialog-header {
     padding: 14px 16px;
     border-bottom: 1px solid #e2e8f0;
@@ -1549,6 +1567,90 @@
     line-height: 1.8;
 }
 
+.document-renderer {
+    position: relative;
+    min-width: 0;
+}
+
+.document-pagination-source {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    width: calc(var(--page-width) - var(--page-padding-left) - var(--page-padding-right));
+    visibility: hidden;
+    pointer-events: none;
+    contain: layout style;
+}
+
+.document-page.paged-page {
+    height: var(--page-height);
+    min-height: var(--page-height);
+}
+
+.document-page-content {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
+    display: flow-root;
+}
+
+.document-page-content[contenteditable="true"] {
+    cursor: text;
+    outline: none;
+    caret-color: #174f7e;
+}
+
+.document-page-content[contenteditable="true"]:focus {
+    outline: none;
+}
+
+.document-page-content[contenteditable="true"] a {
+    cursor: text;
+}
+
+/* The native range includes invisible block separators and WebKit paints them
+   to the edge of the block. Keep the native range for editing semantics, but
+   paint its visible highlight from text-node client rects instead. */
+.document-page-content[contenteditable="true"]::selection,
+.document-page-content[contenteditable="true"] *::selection {
+    background: transparent;
+    color: inherit;
+}
+
+.wysiwyg-selection-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483646;
+    pointer-events: none;
+}
+
+.wysiwyg-selection-rect {
+    position: fixed;
+    display: block;
+    background: rgba(104, 169, 225, 0.48);
+}
+
+.document-page-content,
+.document-pagination-source {
+    font-family: var(--document-font-family, "Segoe UI", "Microsoft YaHei", sans-serif);
+    font-size: var(--document-font-size, 11pt);
+    line-height: var(--document-line-height, 1.8);
+}
+
+.document-renderer .markdown-rendered-html p {
+    margin-bottom: var(--document-paragraph-spacing, 8pt);
+}
+
+.document-page.contains-oversized-block .document-page-content {
+    overflow: auto;
+}
+
+.infinite-page-break {
+    display: none;
+}
+
 .document-flow {
     display: grid;
     gap: 20px;
@@ -1562,6 +1664,11 @@
 
 .document-page.seamless-page {
     min-height: auto;
+}
+
+.document-page.seamless-page .document-page-content {
+    height: auto;
+    overflow: visible;
 }
 
 .document-page h2 {

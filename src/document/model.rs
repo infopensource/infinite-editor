@@ -275,6 +275,27 @@ impl Default for TypographySettings {
 #[serde(default)]
 pub struct ResourceSettings {
     pub root: String,
+    pub fonts: Vec<FontResource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FontResource {
+    pub family: String,
+    pub path: String,
+    pub weight: u16,
+    pub style: String,
+}
+
+impl Default for FontResource {
+    fn default() -> Self {
+        Self {
+            family: String::new(),
+            path: String::new(),
+            weight: 400,
+            style: "normal".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

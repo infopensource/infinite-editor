@@ -1,16 +1,15 @@
 use crate::config::{
     MIN_PAGE_CONTENT_WIDTH_MM, RULER_MAJOR_STEP_MM, RULER_MID_STEP_MM, RULER_MINOR_STEP_MM,
 };
-use crate::document::{Orientation, PageMargins, PaperMode, ProjectDocument};
+use crate::document::{Orientation, PageMargins, PaperMode, ProjectDocument, ResourceBundle};
 use crate::engine::{EditorMode, ParserGateway};
 use dioxus::prelude::*;
 
-use super::document_layout::{
-    page_layout_px_with_margins, resolved_paper_size, ruler_position_percent,
-};
+use super::document_layout::{resolved_paper_size, ruler_position_percent};
+use super::document_renderer::DocumentRenderer;
+use super::MARKDOWN_DOCUMENT_BRIDGE_ID;
 
 const MARKDOWN_EDITOR_HOST_ID: &str = "markdown-editor-host";
-const MARKDOWN_EDITOR_BRIDGE_ID: &str = "markdown-editor-bridge";
 
 fn report_editor_result(
     operation: &str,
@@ -71,31 +70,11 @@ fn mount_markdown_editor(
                 }});
             "#,
             host_id = MARKDOWN_EDITOR_HOST_ID,
-            bridge_id = MARKDOWN_EDITOR_BRIDGE_ID,
+            bridge_id = MARKDOWN_DOCUMENT_BRIDGE_ID,
         );
 
         let result = document::eval(&script).join::<String>().await;
         report_editor_result("初始化", result, editor_error);
-    });
-}
-
-fn sync_markdown_editor(
-    value: String,
-    document_revision: u64,
-    editor_error: Signal<Option<String>>,
-) {
-    spawn(async move {
-        let value = serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".into());
-        let script = format!(
-            r#"
-                if (!window.InfiniteMarkdownEditor) return JSON.stringify({{ ok: true }});
-                return JSON.stringify(window.InfiniteMarkdownEditor.setValue(
-                    '{MARKDOWN_EDITOR_HOST_ID}', {value}, {document_revision}
-                ));
-            "#
-        );
-        let result = document::eval(&script).join::<String>().await;
-        report_editor_result("同步", result, editor_error);
     });
 }
 
@@ -104,7 +83,9 @@ pub fn EditorSurface(
     editor_mode: EditorMode,
     markdown_preview_open: bool,
     document: ReadSignal<ProjectDocument>,
+    resources: ReadSignal<ResourceBundle>,
     document_revision: ReadSignal<u64>,
+    editor_revision: ReadSignal<u64>,
     on_markdown_change: EventHandler<String>,
     paper_mode: PaperMode,
     custom_width_mm: f32,
@@ -116,13 +97,14 @@ pub fn EditorSurface(
     on_right_margin_change: EventHandler<f32>,
 ) -> Element {
     let editor_error = use_signal(|| None::<String>);
+    let mut source_session = use_signal(|| None::<u64>);
 
     use_effect(move || {
-        sync_markdown_editor(
-            document.read().markdown.clone(),
-            document_revision(),
-            editor_error,
-        );
+        let revision = document_revision();
+        if editor_mode == EditorMode::MarkdownSource && source_session() != Some(revision) {
+            source_session.set(Some(revision));
+            mount_markdown_editor(document.read().markdown.clone(), revision, editor_error);
+        }
     });
 
     let source = document.read().markdown.clone();
@@ -130,8 +112,7 @@ pub fn EditorSurface(
     let paper_size =
         resolved_paper_size(paper_mode, custom_width_mm, custom_height_mm, orientation);
     let parser = ParserGateway::markdown_rs();
-    let should_render_html = editor_mode == EditorMode::Wysiwyg
-        || (editor_mode == EditorMode::MarkdownSource && markdown_preview_open);
+    let should_render_html = editor_mode == EditorMode::MarkdownSource && markdown_preview_open;
     let rendered_html = if should_render_html {
         parser
             .render_html(&source)
@@ -148,6 +129,11 @@ pub fn EditorSurface(
         };
 
         return rsx! {
+            textarea {
+                id: MARKDOWN_DOCUMENT_BRIDGE_ID,
+                class: "markdown-editor-bridge",
+                oninput: move |evt| on_markdown_change.call(evt.value()),
+            }
             main { class: "editor-surface markdown-mode",
                 div { class: markdown_layout_class,
                     section { class: "markdown-editor-pane",
@@ -169,13 +155,6 @@ pub fn EditorSurface(
                                     p { "{message}" }
                                     p { "请检查 editor.bundle.js 是否为最新版本，然后重启应用。" }
                                 }
-                            }
-                            textarea {
-                                id: MARKDOWN_EDITOR_BRIDGE_ID,
-                                class: "markdown-editor-bridge",
-                                oninput: move |evt| {
-                                    on_markdown_change.call(evt.value());
-                                },
                             }
                         }
                     }
@@ -207,15 +186,14 @@ pub fn EditorSurface(
             let mut effective_margins = margins.clone();
             effective_margins.left_mm = left_mm as f32;
             effective_margins.right_mm = right_mm as f32;
-            let layout = page_layout_px_with_margins(size, &effective_margins);
             let style = format!(
-            "--page-width: {:.2}px; --page-height: {:.2}px; --page-padding-left: {:.2}px; --page-padding-right: {:.2}px; --page-padding-top: {:.2}px; --page-padding-bottom: {:.2}px;",
-            layout.page_width,
-            layout.page_height,
-            layout.padding_left,
-            layout.padding_right,
-            layout.padding_top,
-            layout.padding_bottom,
+            "--page-width: {:.3}mm; --page-height: {:.3}mm; --page-padding-left: {:.3}mm; --page-padding-right: {:.3}mm; --page-padding-top: {:.3}mm; --page-padding-bottom: {:.3}mm;",
+            size.width,
+            size.height,
+            effective_margins.left_mm,
+            effective_margins.right_mm,
+            effective_margins.top_mm,
+            effective_margins.bottom_mm,
         );
 
             (style, false, Some(width_mm), left_mm, right_mm)
@@ -231,6 +209,11 @@ pub fn EditorSurface(
         };
 
     rsx! {
+        textarea {
+            id: MARKDOWN_DOCUMENT_BRIDGE_ID,
+            class: "markdown-editor-bridge",
+            oninput: move |evt| on_markdown_change.call(evt.value()),
+        }
         main { class: "editor-surface",
             if show_ruler && ruler_width_mm.is_some() {
                 div { class: "page-ruler-sticky",
@@ -300,21 +283,13 @@ pub fn EditorSurface(
                 }
             }
 
-            div { class: if seamless { "document-flow seamless" } else { "document-flow paged" },
-                article {
-                    class: if seamless { "document-page seamless-page" } else { "document-page paged-page" },
-                    style: page_style,
-                    if source.trim().is_empty() {
-                        p { class: "markdown-preview-placeholder",
-                            "请在 Markdown 源码模式输入内容"
-                        }
-                    } else {
-                        div {
-                            class: "markdown-rendered-html",
-                            dangerous_inner_html: "{rendered_html}",
-                        }
-                    }
-                }
+            DocumentRenderer {
+                document,
+                resources,
+                document_revision,
+                editor_revision,
+                page_style,
+                seamless,
             }
         }
     }

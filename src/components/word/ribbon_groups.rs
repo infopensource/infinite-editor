@@ -14,6 +14,7 @@ pub fn RibbonPanel(
     on_custom_width_change: EventHandler<u16>,
     on_custom_height_change: EventHandler<u16>,
     on_toggle_ruler: EventHandler<()>,
+    on_editor_command: EventHandler<String>,
 ) -> Element {
     let mut width_draft = use_signal(|| custom_width_mm.to_string());
     let mut height_draft = use_signal(|| custom_height_mm.to_string());
@@ -23,32 +24,47 @@ pub fn RibbonPanel(
             match active_tab {
                 RibbonTab::File => rsx! {},
                 RibbonTab::Home => rsx! {
-                    Group {
-                        title: "剪贴板",
-                        large_action: "粘贴",
-                        actions: vec!["剪切", "复制", "格式刷"],
+                    CommandGroup {
+                        title: "历史",
+                        actions: vec![("撤销", "undo"), ("重做", "redo")],
+                        on_action: on_editor_command,
                     }
-                    Group {
+                    CommandGroup {
                         title: "字体",
-                        large_action: "Aa",
-                        actions: vec!["加粗", "斜体", "下划线", "字体颜色"],
+                        actions: vec![
+                            ("加粗", "bold"),
+                            ("斜体", "italic"),
+                            ("删除线", "strike"),
+                            ("代码块", "code_block"),
+                        ],
+                        on_action: on_editor_command,
                     }
-                    Group {
+                    CommandGroup {
                         title: "段落",
-                        large_action: "¶",
-                        actions: vec!["项目符号", "对齐", "缩进", "行距"],
+                        actions: vec![
+                            ("项目符号", "unordered_list"),
+                            ("编号", "ordered_list"),
+                            ("引用", "quote"),
+                            ("分隔线", "horizontal_rule"),
+                        ],
+                        on_action: on_editor_command,
                     }
-                    Group {
+                    CommandGroup {
                         title: "样式",
-                        large_action: "样式",
-                        actions: vec!["标题 1", "标题 2", "正文"],
+                        actions: vec![
+                            ("标题 1", "heading1"),
+                            ("标题 2", "heading2"),
+                            ("标题 3", "heading3"),
+                            ("正文", "paragraph"),
+                        ],
+                        on_action: on_editor_command,
                     }
                 },
                 RibbonTab::Insert => rsx! {
-                    Group {
+                    CommandGroup {
                         title: "页面",
-                        large_action: "封面",
-                        actions: vec!["空白页", "分页符"],
+                        actions: vec![("分页符", "page_break"), ("分隔线", "horizontal_rule")],
+                        on_action: on_editor_command,
                     }
                     Group {
                         title: "插图",
@@ -143,6 +159,44 @@ pub fn RibbonPanel(
                     }
                 },
             }
+        }
+    }
+}
+
+#[component]
+fn CommandGroup(
+    title: String,
+    actions: Vec<(&'static str, &'static str)>,
+    on_action: EventHandler<String>,
+) -> Element {
+    rsx! {
+        div { class: "ribbon-group",
+            div { class: "group-main",
+                div { class: "group-actions command-actions",
+                    for (label, command) in actions {
+                        button {
+                            class: "ribbon-small",
+                            onmousedown: move |event| {
+                                event.prevent_default();
+                                on_action.call(command.to_string());
+                            },
+                            onkeydown: move |event| {
+                                let activates = match event.key() {
+                                    Key::Enter => true,
+                                    Key::Character(value) => value == " ",
+                                    _ => false,
+                                };
+                                if activates {
+                                    event.prevent_default();
+                                    on_action.call(command.to_string());
+                                }
+                            },
+                            "{label}"
+                        }
+                    }
+                }
+            }
+            div { class: "group-title", "{title}" }
         }
     }
 }

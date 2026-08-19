@@ -91,12 +91,11 @@ struct MarkdownRsBackend;
 
 impl MarkdownParserBackend for MarkdownRsBackend {
     fn parse(&self, source: &str) -> Result<Document, ParseError> {
-        let root =
-            markdown::to_mdast(source, &markdown::ParseOptions::default()).map_err(|err| {
-                ParseError {
-                    message: err.to_string(),
-                }
-            })?;
+        let root = markdown::to_mdast(source, &markdown::ParseOptions::gfm()).map_err(|err| {
+            ParseError {
+                message: err.to_string(),
+            }
+        })?;
 
         let mut blocks = Vec::new();
         if let Node::Root(root) = root {
@@ -111,7 +110,11 @@ impl MarkdownParserBackend for MarkdownRsBackend {
     }
 
     fn render_html(&self, source: &str) -> Result<String, ParseError> {
-        Ok(markdown::to_html(source))
+        markdown::to_html_with_options(source, &markdown::Options::gfm()).map_err(|error| {
+            ParseError {
+                message: error.to_string(),
+            }
+        })
     }
 }
 
@@ -202,6 +205,25 @@ mod tests {
         assert!(html.contains("<h1>标题</h1>"));
         assert!(html.contains("<strong>粗体</strong>"));
         assert!(html.contains("<code>代码</code>"));
+    }
+
+    #[test]
+    fn renders_composed_gfm_marks() {
+        let html = ParserGateway::markdown_rs()
+            .render_html("~~**同时加粗和删除**~~")
+            .expect("GFM 组合格式应能渲染");
+
+        assert!(html.contains("<del><strong>同时加粗和删除</strong></del>"));
+    }
+
+    #[test]
+    fn renders_gfm_tables_with_the_same_dialect_as_the_editor() {
+        let html = ParserGateway::markdown_rs()
+            .render_html("| 列 |\n| --- |\n| 值 |")
+            .expect("GFM 表格应能渲染");
+
+        assert!(html.contains("<table>"), "{html}");
+        assert!(html.contains("<td>值</td>"), "{html}");
     }
 
     #[test]

@@ -1,4 +1,5 @@
 mod document_layout;
+pub(crate) mod document_renderer;
 mod editor_surface;
 mod file_backstage;
 mod ribbon_groups;
@@ -6,16 +7,25 @@ mod status_bar;
 mod tabs_row;
 mod title_bar;
 
-use crate::document::ProjectDocument;
+pub(super) const MARKDOWN_DOCUMENT_BRIDGE_ID: &str = "markdown-document-bridge";
+
+use crate::document::{ProjectDocument, ResourceBundle};
 use crate::engine::EditorMode;
 #[cfg(feature = "desktop")]
 use crate::storage;
 use crate::storage::DocumentLocation;
 use dioxus::prelude::*;
-use file_backstage::{ExportTarget, FileBackstage, OpenConfigDialog, SaveAsTarget};
+use file_backstage::{ExportTarget, FileBackstage, OpenConfigDialog, SaveAsTarget, WarningAlert};
 use std::path::Path;
 #[cfg(feature = "desktop")]
 use std::path::PathBuf;
+
+#[derive(Debug, serde::Deserialize)]
+struct MarkdownChangeEnvelope {
+    document_revision: u64,
+    edit_revision: u64,
+    markdown: String,
+}
 
 pub use crate::document::PaperMode;
 pub use editor_surface::EditorSurface;
@@ -42,9 +52,15 @@ fn file_name_or(path: &Path, fallback: &str) -> String {
 #[cfg(feature = "desktop")]
 async fn browse_document_dialog() -> Option<PathBuf> {
     let picked = rfd::AsyncFileDialog::new()
-        .add_filter("Infinite Document", &["infdoc"])
-        .add_filter("Document", &["md", "txt"])
-        .add_filter("Markdown", &["md"])
+        // Keep every format the loader accepts visible in the default filter.
+        // Some Linux GTK/portal file choosers make switching away from the
+        // first filter difficult or omit the selector altogether.
+        .add_filter(
+            "Supported Documents",
+            &["infdoc", "md", "markdown", "mdown", "mkd", "txt", "idoc"],
+        )
+        .add_filter("Infinite Document", &["infdoc", "idoc"])
+        .add_filter("Markdown", &["md", "markdown", "mdown", "mkd"])
         .add_filter("Text", &["txt"])
         .pick_file()
         .await;
@@ -55,6 +71,7 @@ async fn browse_document_dialog() -> Option<PathBuf> {
 #[cfg(feature = "desktop")]
 async fn save_document_as_dialog(
     document: ProjectDocument,
+    resources: ResourceBundle,
     source_location: Option<DocumentLocation>,
     target: Option<SaveAsTarget>,
 ) -> Result<Option<DocumentLocation>, String> {
@@ -106,7 +123,7 @@ async fn save_document_as_dialog(
         storage::save_package(&path, &document, loose_source, package_source)?;
         DocumentLocation::Package { package_path: path }
     } else {
-        storage::save_loose(&path, &document)?;
+        storage::save_loose_with_resources(&path, &document, &resources)?;
         DocumentLocation::Loose {
             markdown_path: path,
         }
@@ -115,7 +132,7 @@ async fn save_document_as_dialog(
 }
 
 #[cfg(feature = "desktop")]
-async fn export_dialog(target: ExportTarget, source: String) -> Result<Option<PathBuf>, String> {
+async fn export_dialog(target: ExportTarget) -> Result<Option<PathBuf>, String> {
     let (name, extensions): (&str, &[&str]) = match target {
         ExportTarget::Markdown => ("document.md", &["md"]),
         ExportTarget::Pdf => ("document.pdf", &["pdf"]),
@@ -134,11 +151,16 @@ async fn export_dialog(target: ExportTarget, source: String) -> Result<Option<Pa
     let Some(file) = picked else {
         return Ok(None);
     };
-    let path = file.path().to_path_buf();
-
-    if target == ExportTarget::Markdown {
-        std::fs::write(&path, source).map_err(|err| format!("导出失败: {err}"))?;
-    }
+    let mut path = file.path().to_path_buf();
+    let extension = match target {
+        ExportTarget::Markdown => "md",
+        ExportTarget::Pdf => "pdf",
+        ExportTarget::Odt => "odt",
+        ExportTarget::Word => "docx",
+        ExportTarget::Png => "png",
+        ExportTarget::Jpeg => "jpg",
+    };
+    path.set_extension(extension);
 
     Ok(Some(path))
 }
@@ -148,10 +170,13 @@ async fn export_dialog(target: ExportTarget, source: String) -> Result<Option<Pa
 struct OpenDocumentState {
     active_tab: Signal<RibbonTab>,
     document: Signal<ProjectDocument>,
+    resources: Signal<ResourceBundle>,
     document_revision: Signal<u64>,
+    editor_revision: Signal<u64>,
     current_location: Signal<Option<DocumentLocation>>,
     status_hint: Signal<String>,
     open_dialog_visible: Signal<bool>,
+    warning_alert: Signal<Option<String>>,
 }
 
 fn handle_open_document_from_path(
@@ -171,11 +196,22 @@ fn handle_open_document_from_path(
         let path = PathBuf::from(trimmed);
         match storage::open_document(&path) {
             Ok(loaded) => {
-                let warnings = loaded.warnings.clone();
+                let mut warnings = loaded.warnings.clone();
+                if warnings
+                    .iter()
+                    .any(|warning| warning == storage::STALE_LAYOUT_WARNING)
+                {
+                    state
+                        .warning_alert
+                        .set(Some(storage::STALE_LAYOUT_WARNING.to_string()));
+                    warnings.retain(|warning| warning != storage::STALE_LAYOUT_WARNING);
+                }
                 state.document.set(loaded.document);
+                state.resources.set(loaded.resources);
                 state
                     .document_revision
                     .with_mut(|revision| *revision = revision.wrapping_add(1));
+                state.editor_revision.set(0);
                 state.current_location.set(Some(loaded.location));
                 let mode = if read_only_mode {
                     "只读"
@@ -220,6 +256,7 @@ fn handle_open_document_from_path(
 
 fn handle_save_document(
     document: Signal<ProjectDocument>,
+    resources: Signal<ResourceBundle>,
     current_location: Signal<Option<DocumentLocation>>,
     mut status_hint: Signal<String>,
 ) {
@@ -236,9 +273,11 @@ fn handle_save_document(
                 Err(err) => status_hint.set(err),
             }
         } else {
+            let current_resources = resources.read().clone();
             status_hint.set("请选择保存位置".to_string());
             spawn(async move {
-                match save_document_as_dialog(current_document, None, None).await {
+                match save_document_as_dialog(current_document, current_resources, None, None).await
+                {
                     Ok(Some(location)) => {
                         let name = file_name_or(location.path(), "文档");
                         current_location.set(Some(location));
@@ -254,6 +293,7 @@ fn handle_save_document(
     #[cfg(not(feature = "desktop"))]
     {
         let _ = document;
+        let _ = resources;
         let _ = current_location;
         status_hint.set("当前平台暂不支持系统文件对话框".to_string());
     }
@@ -261,6 +301,7 @@ fn handle_save_document(
 
 fn handle_save_as_document(
     document: Signal<ProjectDocument>,
+    resources: Signal<ResourceBundle>,
     current_location: Signal<Option<DocumentLocation>>,
     mut status_hint: Signal<String>,
     target: Option<SaveAsTarget>,
@@ -270,9 +311,17 @@ fn handle_save_as_document(
         let mut current_location = current_location;
         let source_location = current_location();
         let current_document = document();
+        let current_resources = resources.read().clone();
         status_hint.set("请选择另存位置".to_string());
         spawn(async move {
-            match save_document_as_dialog(current_document, source_location, target).await {
+            match save_document_as_dialog(
+                current_document,
+                current_resources,
+                source_location,
+                target,
+            )
+            .await
+            {
                 Ok(Some(location)) => {
                     let name = file_name_or(location.path(), "文档");
                     current_location.set(Some(location));
@@ -287,6 +336,7 @@ fn handle_save_as_document(
     #[cfg(not(feature = "desktop"))]
     {
         let _ = document;
+        let _ = resources;
         let _ = current_location;
         let _ = target;
         status_hint.set("当前平台暂不支持系统文件对话框".to_string());
@@ -296,23 +346,44 @@ fn handle_save_as_document(
 fn handle_export_document(
     target: ExportTarget,
     document: Signal<ProjectDocument>,
+    resources: Signal<ResourceBundle>,
     mut status_hint: Signal<String>,
 ) {
     #[cfg(feature = "desktop")]
     {
-        let markdown = document.read().markdown.clone();
+        let current_document = document.read().clone();
+        let current_resources = resources.read().clone();
         status_hint.set("请选择导出位置".to_string());
         spawn(async move {
-            match export_dialog(target, markdown).await {
+            match export_dialog(target).await {
                 Ok(Some(path)) => {
-                    if target == ExportTarget::Markdown {
-                        status_hint.set(format!("已导出 {}", file_name_or(&path, "文件")));
-                    } else {
-                        status_hint.set(format!(
-                            "已选择导出路径：{}（{} 导出引擎待接入）",
-                            file_name_or(&path, "文件"),
-                            target.label()
-                        ));
+                    let result = match target {
+                        ExportTarget::Markdown => std::fs::write(&path, &current_document.markdown)
+                            .map_err(|error| format!("导出 Markdown 失败: {error}")),
+                        ExportTarget::Pdf => {
+                            status_hint.set("正在排版并生成 PDF".to_string());
+                            let (sender, receiver) = futures_channel::oneshot::channel();
+                            let export_path = path.clone();
+                            std::thread::spawn(move || {
+                                let result = crate::export::export_pdf(
+                                    &export_path,
+                                    &current_document,
+                                    &current_resources,
+                                );
+                                let _ = sender.send(result);
+                            });
+                            receiver
+                                .await
+                                .unwrap_or_else(|_| Err("PDF 导出任务意外终止".to_string()))
+                        }
+                        _ => Err(format!("{} 导出引擎尚未接入", target.label())),
+                    };
+
+                    match result {
+                        Ok(()) => {
+                            status_hint.set(format!("已导出 {}", file_name_or(&path, "文件")))
+                        }
+                        Err(error) => status_hint.set(error),
                     }
                 }
                 Ok(None) => status_hint.set("已取消导出".to_string()),
@@ -325,6 +396,7 @@ fn handle_export_document(
     {
         let _ = target;
         let _ = document;
+        let _ = resources;
         status_hint.set("当前平台暂不支持系统文件对话框".to_string());
     }
 }
@@ -432,10 +504,13 @@ pub fn WordWorkspace() -> Element {
         )
     });
     let document_revision = use_signal(|| 0u64);
+    let mut editor_revision = use_signal(|| 0u64);
+    let resources = use_signal(ResourceBundle::default);
     let mut show_ruler = use_signal(|| true);
     let current_location = use_signal(|| None::<DocumentLocation>);
     let status_hint = use_signal(|| "就绪".to_string());
     let mut open_dialog_visible = use_signal(|| false);
+    let mut warning_alert = use_signal(|| None::<String>);
     let mut open_path_input = use_signal(String::new);
     let mut open_read_only_mode = use_signal(|| false);
     let mut open_auto_detect_encoding = use_signal(|| true);
@@ -465,13 +540,16 @@ pub fn WordWorkspace() -> Element {
                     custom_height_mm: paper.height_mm.round() as u16,
                     show_ruler: show_ruler(),
                     on_paper_mode_change: move |mode| document.write().layout.paper.mode = mode,
-                    on_custom_width_change: move |width| {
-                        document.write().layout.paper.width_mm = width as f32
-                    },
-                    on_custom_height_change: move |height| {
-                        document.write().layout.paper.height_mm = height as f32
-                    },
+                    on_custom_width_change: move |width| { document.write().layout.paper.width_mm = width as f32 },
+                    on_custom_height_change: move |height| { document.write().layout.paper.height_mm = height as f32 },
                     on_toggle_ruler: move |_| show_ruler.set(!show_ruler()),
+                    on_editor_command: move |command| {
+                        if editor_mode() == EditorMode::Wysiwyg {
+                            document_renderer::run_wysiwyg_command(command);
+                        } else {
+                            document_renderer::run_markdown_command(command);
+                        }
+                    },
                 }
             }
             if active_tab() == RibbonTab::File {
@@ -487,18 +565,19 @@ pub fn WordWorkspace() -> Element {
                         }
                     },
                     on_save: move |_| {
-                        handle_save_document(document, current_location, status_hint);
+                        handle_save_document(document, resources, current_location, status_hint);
                     },
                     on_save_as: move |target| {
                         handle_save_as_document(
                             document,
+                            resources,
                             current_location,
                             status_hint,
                             Some(target),
                         );
                     },
                     on_export: move |target| {
-                        handle_export_document(target, document, status_hint);
+                        handle_export_document(target, document, resources, status_hint);
                     },
                 }
             } else {
@@ -506,20 +585,29 @@ pub fn WordWorkspace() -> Element {
                     editor_mode: editor_mode(),
                     markdown_preview_open: markdown_preview_open(),
                     document,
+                    resources,
                     document_revision,
-                    on_markdown_change: move |next| document.write().markdown = next,
+                    editor_revision,
+                    on_markdown_change: move |payload: String| {
+                        let Ok(change) = serde_json::from_str::<MarkdownChangeEnvelope>(&payload) else {
+                            return;
+                        };
+                        if change.document_revision != document_revision()
+                            || change.edit_revision <= editor_revision()
+                        {
+                            return;
+                        }
+                        document.write().markdown = change.markdown;
+                        editor_revision.set(change.edit_revision);
+                    },
                     paper_mode: paper.mode,
                     custom_width_mm: paper.width_mm,
                     custom_height_mm: paper.height_mm,
                     orientation: paper.orientation,
                     margins: margins.clone(),
                     show_ruler: show_ruler(),
-                    on_left_margin_change: move |value| {
-                        document.write().layout.margins.left_mm = value
-                    },
-                    on_right_margin_change: move |value| {
-                        document.write().layout.margins.right_mm = value
-                    },
+                    on_left_margin_change: move |value| { document.write().layout.margins.left_mm = value },
+                    on_right_margin_change: move |value| { document.write().layout.margins.right_mm = value },
                 }
             }
             OpenConfigDialog {
@@ -531,9 +619,7 @@ pub fn WordWorkspace() -> Element {
                 on_close: move |_| open_dialog_visible.set(false),
                 on_path_input: move |value| open_path_input.set(value),
                 on_toggle_read_only: move |_| open_read_only_mode.set(!open_read_only_mode()),
-                on_toggle_auto_detect: move |_| {
-                    open_auto_detect_encoding.set(!open_auto_detect_encoding())
-                },
+                on_toggle_auto_detect: move |_| { open_auto_detect_encoding.set(!open_auto_detect_encoding()) },
                 on_browse: move |_| {
                     #[cfg(feature = "desktop")]
                     {
@@ -560,13 +646,20 @@ pub fn WordWorkspace() -> Element {
                         OpenDocumentState {
                             active_tab,
                             document,
+                            resources,
                             document_revision,
+                            editor_revision,
                             current_location,
                             status_hint,
                             open_dialog_visible,
+                            warning_alert,
                         },
                     );
                 },
+            }
+            WarningAlert {
+                message: warning_alert(),
+                on_close: move |_| warning_alert.set(None),
             }
             StatusBar {
                 zoom: zoom(),

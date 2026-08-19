@@ -1,6 +1,8 @@
 #![cfg_attr(not(feature = "desktop"), allow(dead_code))]
 
-use crate::document::{LayoutDocument, ProjectDocument};
+use crate::document::{LayoutDocument, ProjectDocument, ResourceBundle};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -14,6 +16,9 @@ const PACKAGE_VERSION: u32 = 1;
 const MAX_PACKAGE_FILES: usize = 10_000;
 const MAX_PACKAGE_FILE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_PACKAGE_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
+
+pub const STALE_LAYOUT_WARNING: &str =
+    "布局文件记录的 Markdown 摘要与当前内容不一致，布局可能来自较早版本";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DocumentLocation {
@@ -34,6 +39,7 @@ impl DocumentLocation {
 pub struct LoadedDocument {
     pub document: ProjectDocument,
     pub location: DocumentLocation,
+    pub resources: ResourceBundle,
     pub warnings: Vec<String>,
 }
 
@@ -100,6 +106,41 @@ pub fn save_loose(markdown_path: &Path, document: &ProjectDocument) -> Result<()
 
     atomic_write(markdown_path, document.markdown.as_bytes())?;
     atomic_write(&sidecar_path(markdown_path), layout_source.as_bytes())?;
+    Ok(())
+}
+
+pub fn save_loose_with_resources(
+    markdown_path: &Path,
+    document: &ProjectDocument,
+    resources: &ResourceBundle,
+) -> Result<(), String> {
+    save_loose(markdown_path, document)?;
+    let root_name = if document.layout.resources.root.is_empty() {
+        default_assets_path(markdown_path)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("document.assets")
+            .to_string()
+    } else {
+        document.layout.resources.root.clone()
+    };
+    validate_package_path(&root_name)?;
+    let parent = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    let prefix = format!("{}/", root_name.trim_end_matches('/'));
+
+    for (key, data_url) in resources.entries() {
+        let Some(relative) = key.strip_prefix(&prefix) else {
+            continue;
+        };
+        validate_package_path(relative)?;
+        let destination = parent.join(&root_name).join(relative);
+        if let Some(directory) = destination.parent() {
+            std::fs::create_dir_all(directory)
+                .map_err(|error| format!("创建资源目录失败: {error}"))?;
+        }
+        let bytes = decode_data_url(data_url)?;
+        atomic_write(&destination, &bytes)?;
+    }
     Ok(())
 }
 
@@ -198,12 +239,20 @@ fn open_loose(path: &Path) -> Result<LoadedDocument, String> {
     };
     warnings.extend(layout.validate_and_normalize()?);
     warn_if_hash_mismatch(&layout, &markdown, &mut warnings);
+    let resources = match load_loose_resources(path, &layout) {
+        Ok(resources) => resources,
+        Err(error) => {
+            warnings.push(error);
+            ResourceBundle::default()
+        }
+    };
 
     Ok(LoadedDocument {
         document: ProjectDocument { markdown, layout },
         location: DocumentLocation::Loose {
             markdown_path: path.to_path_buf(),
         },
+        resources,
         warnings,
     })
 }
@@ -234,14 +283,152 @@ fn open_package(path: &Path) -> Result<LoadedDocument, String> {
         toml::from_str(&layout_source).map_err(|error| format!("解析包内布局文件失败: {error}"))?;
     let mut warnings = layout.validate_and_normalize()?;
     warn_if_hash_mismatch(&layout, &markdown, &mut warnings);
+    let resources = load_package_resources(&mut archive, &manifest.entry.resources)?;
 
     Ok(LoadedDocument {
         document: ProjectDocument { markdown, layout },
         location: DocumentLocation::Package {
             package_path: path.to_path_buf(),
         },
+        resources,
         warnings,
     })
+}
+
+fn load_loose_resources(
+    markdown_path: &Path,
+    layout: &LayoutDocument,
+) -> Result<ResourceBundle, String> {
+    let root_name = if layout.resources.root.is_empty() {
+        default_assets_path(markdown_path)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("document.assets")
+            .to_string()
+    } else {
+        layout.resources.root.clone()
+    };
+    validate_package_path(&root_name)?;
+    let directory = markdown_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(&root_name);
+    if !directory.is_dir() {
+        return Ok(ResourceBundle::default());
+    }
+
+    let mut bundle = ResourceBundle::default();
+    let mut count = 0usize;
+    let mut total = 0u64;
+    load_directory_resources(&directory, &root_name, &mut bundle, &mut count, &mut total)?;
+    Ok(bundle)
+}
+
+fn load_directory_resources(
+    directory: &Path,
+    resource_prefix: &str,
+    bundle: &mut ResourceBundle,
+    count: &mut usize,
+    total: &mut u64,
+) -> Result<(), String> {
+    for entry in
+        std::fs::read_dir(directory).map_err(|error| format!("读取资源目录失败: {error}"))?
+    {
+        let entry = entry.map_err(|error| format!("读取资源条目失败: {error}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("读取资源类型失败: {error}"))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let key = format!("{resource_prefix}/{name}");
+        validate_package_path(&key)?;
+        if file_type.is_dir() {
+            load_directory_resources(&path, &key, bundle, count, total)?;
+        } else if file_type.is_file() {
+            *count += 1;
+            if *count > MAX_PACKAGE_FILES {
+                return Err("资源文件数量超过限制".to_string());
+            }
+            let metadata = entry
+                .metadata()
+                .map_err(|error| format!("读取资源大小失败: {error}"))?;
+            *total = total.saturating_add(metadata.len());
+            if metadata.len() > MAX_PACKAGE_FILE_BYTES || *total > MAX_PACKAGE_TOTAL_BYTES {
+                return Err("资源文件大小超过限制".to_string());
+            }
+            if let Some(mime) = resource_mime(&path) {
+                let bytes = std::fs::read(&path)
+                    .map_err(|error| format!("读取资源 {} 失败: {error}", path.display()))?;
+                bundle.insert(key, encode_data_url(mime, &bytes));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn load_package_resources<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    resources_root: &str,
+) -> Result<ResourceBundle, String> {
+    let mut bundle = ResourceBundle::default();
+    if resources_root.is_empty() {
+        return Ok(bundle);
+    }
+    validate_package_path(resources_root)?;
+    let prefix = format!("{}/", resources_root.trim_end_matches('/'));
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("读取包内资源失败: {error}"))?;
+        let name = entry.name().to_string();
+        if entry.is_dir() || !name.starts_with(&prefix) {
+            continue;
+        }
+        let Some(mime) = resource_mime(Path::new(&name)) else {
+            continue;
+        };
+        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        entry
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("读取包内资源 {name} 失败: {error}"))?;
+        bundle.insert(name, encode_data_url(mime, &bytes));
+    }
+    Ok(bundle)
+}
+
+fn encode_data_url(mime: &str, bytes: &[u8]) -> String {
+    format!("data:{mime};base64,{}", BASE64.encode(bytes))
+}
+
+fn decode_data_url(data_url: &str) -> Result<Vec<u8>, String> {
+    let (header, encoded) = data_url
+        .split_once(',')
+        .ok_or_else(|| "资源 Data URL 格式无效".to_string())?;
+    if !header.starts_with("data:") || !header.ends_with(";base64") {
+        return Err("仅支持 Base64 资源 Data URL".to_string());
+    }
+    BASE64
+        .decode(encoded)
+        .map_err(|error| format!("解码资源失败: {error}"))
+}
+
+fn resource_mime(path: &Path) -> Option<&'static str> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "avif" => Some("image/avif"),
+        "svg" => Some("image/svg+xml"),
+        "woff" => Some("font/woff"),
+        "woff2" => Some("font/woff2"),
+        "ttf" => Some("font/ttf"),
+        "otf" => Some("font/otf"),
+        _ => None,
+    }
 }
 
 fn prepare_layout_for_source(layout: &mut LayoutDocument, path: &Path, markdown: &str) {
@@ -268,8 +455,7 @@ fn warn_if_hash_mismatch(layout: &LayoutDocument, markdown: &str, warnings: &mut
     if !layout.document.source_hash.is_empty()
         && layout.document.source_hash != markdown_hash(markdown)
     {
-        warnings
-            .push("布局文件记录的 Markdown 摘要与当前内容不一致，布局可能来自较早版本".to_string());
+        warnings.push(STALE_LAYOUT_WARNING.to_string());
     }
 }
 
@@ -283,7 +469,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     replace_file(&temporary, path)
 }
 
-fn temporary_sibling(path: &Path) -> PathBuf {
+pub(crate) fn temporary_sibling(path: &Path) -> PathBuf {
     let name = path
         .file_name()
         .and_then(|value| value.to_str())
@@ -292,12 +478,12 @@ fn temporary_sibling(path: &Path) -> PathBuf {
 }
 
 #[cfg(not(windows))]
-fn replace_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+pub(crate) fn replace_file(temporary: &Path, destination: &Path) -> Result<(), String> {
     std::fs::rename(temporary, destination).map_err(|error| format!("提交文件失败: {error}"))
 }
 
 #[cfg(windows)]
-fn replace_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+pub(crate) fn replace_file(temporary: &Path, destination: &Path) -> Result<(), String> {
     if !destination.exists() {
         return std::fs::rename(temporary, destination)
             .map_err(|error| format!("提交文件失败: {error}"));
@@ -455,6 +641,9 @@ mod tests {
     fn loose_document_saves_and_restores_layout() {
         let directory = test_directory();
         let path = directory.join("proposal.md");
+        let assets = directory.join("proposal.assets");
+        std::fs::create_dir_all(&assets).expect("应创建资源目录");
+        std::fs::write(assets.join("cover.png"), b"fake-png").expect("应创建图片资源");
         let mut document = ProjectDocument::new("# 标题".to_string());
         document.layout.paper.mode = crate::document::PaperMode::Custom;
         document.layout.paper.width_mm = 180.0;
@@ -466,6 +655,10 @@ mod tests {
         assert_eq!(loaded.document.markdown, "# 标题");
         assert_eq!(loaded.document.layout.paper.width_mm, 180.0);
         assert_eq!(loaded.document.layout.margins.left_mm, 16.0);
+        assert!(loaded
+            .resources
+            .entries()
+            .contains_key("proposal.assets/cover.png"));
         assert!(sidecar_path(&path).exists());
         std::fs::remove_dir_all(directory).expect("应清理测试目录");
     }
@@ -486,6 +679,10 @@ mod tests {
 
         assert_eq!(loaded.document.markdown, document.markdown);
         assert_eq!(loaded.document.layout.paper, document.layout.paper);
+        assert!(loaded
+            .resources
+            .entries()
+            .contains_key("proposal.assets/cover.png"));
         assert!(matches!(loaded.location, DocumentLocation::Package { .. }));
 
         loaded.document.markdown.push_str("\n\n正文");
@@ -499,6 +696,17 @@ mod tests {
             .read_to_end(&mut resource)
             .expect("应读取包内资源");
         assert_eq!(resource, b"fake-png");
+
+        let unpacked_directory = directory.join("unpacked");
+        std::fs::create_dir(&unpacked_directory).expect("应创建解包目录");
+        let unpacked_markdown = unpacked_directory.join("renamed.md");
+        save_loose_with_resources(&unpacked_markdown, &loaded.document, &loaded.resources)
+            .expect("另存为 Markdown 项目时应释放资源");
+        assert_eq!(
+            std::fs::read(unpacked_directory.join("proposal.assets/cover.png"))
+                .expect("应写出项目资源"),
+            b"fake-png"
+        );
         std::fs::remove_dir_all(directory).expect("应清理测试目录");
     }
 

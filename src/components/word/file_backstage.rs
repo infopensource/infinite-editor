@@ -53,7 +53,7 @@ impl ExportTarget {
     }
 
     pub fn available(self) -> bool {
-        self == ExportTarget::Markdown
+        matches!(self, ExportTarget::Markdown | ExportTarget::Pdf)
     }
 }
 
@@ -330,6 +330,44 @@ pub fn OpenConfigDialog(
                         class: "dialog-btn primary",
                         onclick: move |_| on_confirm.call(()),
                         "打开"
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn WarningAlert(message: Option<String>, on_close: EventHandler<()>) -> Element {
+    let Some(message) = message else {
+        return rsx! {};
+    };
+
+    rsx! {
+        div {
+            class: "dialog-overlay",
+            role: "presentation",
+            onclick: move |_| on_close.call(()),
+            div {
+                class: "dialog-card warning-alert",
+                role: "alertdialog",
+                aria_modal: "true",
+                aria_labelledby: "layout-warning-title",
+                aria_describedby: "layout-warning-message",
+                onclick: move |evt| evt.stop_propagation(),
+                header { class: "dialog-header",
+                    h3 { id: "layout-warning-title", "布局版本提示" }
+                    p {
+                        id: "layout-warning-message",
+                        "{message}"
+                    }
+                }
+                footer { class: "dialog-footer",
+                    button {
+                        class: "dialog-btn primary",
+                        autofocus: true,
+                        onclick: move |_| on_close.call(()),
+                        "知道了"
                     }
                 }
             }

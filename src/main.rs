@@ -9,6 +9,7 @@ mod components;
 mod config;
 mod document;
 mod engine;
+mod export;
 mod storage;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
 mod views;
@@ -29,6 +30,7 @@ enum Route {
 // The macro returns an `Asset` type that will display as the path to the asset in the browser or a local path in desktop bundles.
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const EDITOR_JS: Asset = asset!("/assets/editor.bundle.js");
+const DOCUMENT_RENDERER_JS: Asset = asset!("/assets/document_renderer.js");
 const APP_CSS: &str = concat!(
     include_str!("../assets/styling/main.css"),
     "\n",
@@ -69,6 +71,7 @@ fn App() -> Element {
         // we are using the `document::Link` component to add a link to our favicon and main CSS file into the head of our app.
         dioxus::document::Link { rel: "icon", href: FAVICON }
         dioxus::document::Script { src: EDITOR_JS }
+        dioxus::document::Script { src: DOCUMENT_RENDERER_JS }
         style { "{APP_CSS}" }
 
         // The router component renders the route enum we defined above. It will handle synchronization of the URL and render
