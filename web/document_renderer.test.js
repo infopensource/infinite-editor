@@ -33,7 +33,10 @@ Object.defineProperty(dom.window.HTMLElement.prototype, "scrollHeight", {
   configurable: true,
   get() {
     if (!this.classList.contains("document-page-content")) return 0;
-    return this.childElementCount * 60;
+    return Math.max(
+      this.childElementCount * 60,
+      Math.ceil((this.textContent?.length ?? 0) / 8) * 60,
+    );
   },
 });
 
@@ -112,6 +115,63 @@ test("paginates using measured content height", () => {
     [...root.querySelectorAll(".document-page-content")].map((page) => page.textContent),
     ["第一段", "第二段", "第三段"]
   );
+});
+
+test("splits one long pasted paragraph across physical pages", () => {
+  const root = document.getElementById("renderer");
+  const text = "这是一段粘贴进所见即所得编辑器的长文本。".repeat(8);
+  root.querySelector(".document-pagination-source").innerHTML = `<p>${text}</p>`;
+
+  const result = api.paginate(root, false);
+
+  assert.equal(result.ok, true);
+  assert.ok(result.pages > 1);
+  assert.equal(root.dataset.oversizedBlocks, "0");
+  assert.equal(
+    [...root.querySelectorAll(".document-page-content")].map((page) => page.textContent).join(""),
+    text,
+  );
+});
+
+test("keeps pages visible when a margin render carries an older edit revision", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "不会因拖动标尺消失的正文";
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<p data-markdown-from="0" data-markdown-to="${markdown.length}">${markdown}</p>`;
+  const controller = mockMarkdownController(markdown, 51, 7);
+  window.InfiniteMarkdownEditor = controller;
+
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", markdown, 51, 7, 1);
+  await flushRenderer();
+  root.querySelector("[data-document-pages]").replaceChildren();
+
+  const result = api.mount(
+    "renderer", false, {}, true, "wysiwyg-bridge", markdown, 51, 6, 2,
+  );
+  await flushRenderer();
+
+  assert.equal(result.stale, undefined);
+  assert.equal(result.revision, 7);
+  assert.equal(root.querySelector("[data-document-pages]").textContent, markdown);
+});
+
+test("restores the last good pages instead of showing blank on a stale snapshot", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "受保护的正文";
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<p data-markdown-from="0" data-markdown-to="${markdown.length}">${markdown}</p>`;
+  window.InfiniteMarkdownEditor = mockMarkdownController(markdown, 52, 3);
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", markdown, 52, 3, 1);
+  await flushRenderer();
+  root.querySelector("[data-document-pages]").replaceChildren();
+
+  const result = api.mount(
+    "renderer", false, {}, true, "wysiwyg-bridge", "过期正文", 52, 2, 2,
+  );
+
+  assert.equal(result.stale, true);
+  assert.equal(root.querySelector("[data-document-pages]").textContent, markdown);
+  assert.equal(window.InfiniteMarkdownEditor.value(), markdown);
 });
 
 test("initializes pending WYSIWYG mounts when the Markdown controller becomes ready", async () => {
@@ -270,7 +330,266 @@ test("dispatches direct page edits through the Markdown bridge", async () => {
     origin: "wysiwyg-input",
     markdown: "修改后的正文",
   });
-  assert.equal(root.querySelector(".document-page-content").getAttribute("contenteditable"), "true");
+  assert.equal(root.querySelector("[data-document-pages]").getAttribute("contenteditable"), "true");
+  assert.equal(root.querySelector(".document-page-content").hasAttribute("contenteditable"), false);
+});
+
+test("uses one editing host so native selection can span every page", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "第一段\n\n第二段\n\n第三段";
+  root.querySelector(".document-pagination-source").innerHTML =
+    '<p data-markdown-from="0" data-markdown-to="3">第一段</p>'
+    + '<p data-markdown-from="5" data-markdown-to="8">第二段</p>'
+    + '<p data-markdown-from="10" data-markdown-to="13">第三段</p>';
+  window.InfiniteMarkdownEditor = mockMarkdownController(markdown, 60, 0);
+
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", markdown, 60, 0, 1);
+  await flushRenderer();
+
+  const host = root.querySelector("[data-document-pages]");
+  const contents = [...root.querySelectorAll(".document-page-content")];
+  assert.ok(contents.length > 1);
+  assert.equal(host.getAttribute("contenteditable"), "true");
+  assert.ok(contents.every((content) => !content.hasAttribute("contenteditable")));
+
+  const range = document.createRange();
+  range.setStart(contents[0].firstElementChild.firstChild, 0);
+  range.setEnd(contents.at(-1).firstElementChild.firstChild, 3);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+  assert.equal(window.getSelection().toString(), "第一段第二段第三段");
+});
+
+test("redirects a structural host caret back into page content", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "正文";
+  root.querySelector(".document-pagination-source").innerHTML =
+    '<p data-markdown-from="0" data-markdown-to="2">正文</p>';
+  window.InfiniteMarkdownEditor = mockMarkdownController(markdown, 65, 0);
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", markdown, 65, 0, 1);
+  await flushRenderer();
+
+  const host = root.querySelector("[data-document-pages]");
+  const range = document.createRange();
+  range.setStart(host, 0);
+  range.collapse(true);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+  document.dispatchEvent(new dom.window.Event("selectionchange"));
+
+  const anchor = window.getSelection().anchorNode;
+  const anchorElement = anchor.nodeType === Node.ELEMENT_NODE ? anchor : anchor.parentElement;
+  assert.ok(anchorElement.closest(".document-page-content"));
+  assert.notEqual(anchor, host);
+});
+
+test("clips custom selection painting to the visible editor page", async () => {
+  const root = document.getElementById("renderer");
+  const surface = document.createElement("main");
+  surface.className = "editor-surface";
+  const ruler = document.createElement("div");
+  ruler.className = "page-ruler-sticky";
+  root.before(surface);
+  surface.append(ruler, root);
+  surface.getBoundingClientRect = () => ({
+    left: 100, top: 300, right: 1200, bottom: 900, width: 1100, height: 600,
+  });
+  ruler.getBoundingClientRect = () => ({
+    left: 100, top: 300, right: 1200, bottom: 335, width: 1100, height: 35,
+  });
+
+  const markdown = "选区不能覆盖工具栏";
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<p data-markdown-from="0" data-markdown-to="${markdown.length}">${markdown}</p>`;
+  window.InfiniteMarkdownEditor = mockMarkdownController(markdown, 62, 0);
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", markdown, 62, 0, 1);
+  await flushRenderer();
+
+  const content = root.querySelector(".document-page-content");
+  content.getBoundingClientRect = () => ({
+    left: 280, top: 200, right: 1120, bottom: 1200, width: 840, height: 1000,
+  });
+  const originalClientRects = dom.window.Range.prototype.getClientRects;
+  dom.window.Range.prototype.getClientRects = () => [{
+    left: 200, top: 50, right: 1250, bottom: 500, width: 1050, height: 450,
+  }];
+  try {
+    selectContents(content.firstElementChild);
+    document.dispatchEvent(new dom.window.Event("selectionchange"));
+    await flushRenderer();
+
+    const highlight = document.querySelector('.wysiwyg-selection-layer[data-renderer-root="renderer"] .wysiwyg-selection-rect');
+    assert.ok(highlight);
+    assert.equal(highlight.style.left, "280px");
+    assert.equal(highlight.style.top, "335px");
+    assert.equal(highlight.style.width, `${Math.min(1120, window.innerWidth) - 280}px`);
+    assert.equal(highlight.style.height, "165px");
+  } finally {
+    if (originalClientRects) dom.window.Range.prototype.getClientRects = originalClientRects;
+    else delete dom.window.Range.prototype.getClientRects;
+  }
+});
+
+test("normalizes a direct text-node paste before committing Markdown", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "第一段\n\n第二段\n\n第三段";
+  root.querySelector(".document-pagination-source").innerHTML =
+    '<p data-markdown-from="0" data-markdown-to="3">第一段</p>'
+    + '<p data-markdown-from="5" data-markdown-to="8">第二段</p>'
+    + '<p data-markdown-from="10" data-markdown-to="13">第三段</p>';
+  const controller = mockMarkdownController(markdown, 61, 0);
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", markdown, 61, 0, 1);
+  await flushRenderer();
+
+  const host = root.querySelector("[data-document-pages]");
+  selectContents(host);
+  host.dispatchEvent(new dom.window.InputEvent("beforeinput", {
+    bubbles: true,
+    inputType: "insertFromPaste",
+  }));
+  const pasted = "安全粘贴的长文本".repeat(12);
+  const text = document.createTextNode(pasted);
+  host.replaceChildren(text);
+  const range = document.createRange();
+  range.setStart(text, pasted.length);
+  range.collapse(true);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+  host.dispatchEvent(new dom.window.InputEvent("input", {
+    bubbles: true,
+    inputType: "insertFromPaste",
+  }));
+
+  assert.equal(controller.value(), pasted);
+  assert.equal(
+    [...root.querySelectorAll(".document-page-content")].map((page) => page.textContent).join(""),
+    pasted,
+  );
+  assert.ok(Number(root.dataset.pageCount) > 1);
+});
+
+test("replaces the full Markdown source without inheriting or escaping block formatting", async () => {
+  const root = document.getElementById("renderer");
+  const source = "# 原标题\n\n> 原引用";
+  root.querySelector(".document-pagination-source").innerHTML =
+    '<h1 data-markdown-from="0" data-markdown-to="5">原标题</h1>'
+    + `<blockquote data-markdown-from="7" data-markdown-to="${source.length}"><p>原引用</p></blockquote>`;
+  const controller = mockMarkdownController(source, 69, 0);
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", source, 69, 0, 1);
+  await flushRenderer();
+
+  const host = root.querySelector("[data-document-pages]");
+  host.focus();
+  const selectAll = new dom.window.KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    key: "a",
+  });
+  assert.equal(host.dispatchEvent(selectAll), false);
+  assert.equal(window.getSelection().getRangeAt(0).commonAncestorContainer, host);
+
+  const paste = new dom.window.Event("paste", { bubbles: true, cancelable: true });
+  const pasted = "粘贴第一段\n\n**关键词：** 人工智能";
+  Object.defineProperty(paste, "clipboardData", {
+    value: { getData: (type) => type === "text/plain" ? pasted : "" },
+  });
+  assert.equal(host.dispatchEvent(paste), false);
+
+  assert.equal(controller.value(), pasted);
+  assert.equal(controller.value().includes("\\*\\*"), false);
+  assert.equal(root.querySelectorAll(".document-page-content > h1, .document-page-content > blockquote").length, 0);
+
+  root.querySelector(".document-pagination-source").innerHTML =
+    '<p data-markdown-from="0" data-markdown-to="5">粘贴第一段</p>'
+    + `<p data-markdown-from="7" data-markdown-to="${pasted.length}"><strong>关键词：</strong> 人工智能</p>`;
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", pasted, 69, 1, 2);
+  await flushRenderer();
+
+  assert.equal(root.querySelector(".document-page-content strong")?.textContent, "关键词：");
+});
+
+test("keeps the caret inside a page while repeated empty paragraphs repaginate", async () => {
+  const root = document.getElementById("renderer");
+  root.querySelector(".document-pagination-source").innerHTML =
+    '<p class="wysiwyg-empty-paragraph" data-markdown-from="0" data-markdown-to="0"><br></p>';
+  const controller = mockMarkdownController("", 63, 0);
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", "", 63, 0, 1);
+  await flushRenderer();
+
+  for (let index = 0; index < 3; index += 1) {
+    const host = root.querySelector("[data-document-pages]");
+    const content = root.querySelector(".document-page:last-child .document-page-content");
+    const current = content.lastElementChild;
+    const beforeRange = document.createRange();
+    beforeRange.selectNodeContents(current);
+    beforeRange.collapse(false);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(beforeRange);
+    host.dispatchEvent(new dom.window.InputEvent("beforeinput", {
+      bubbles: true,
+      inputType: "insertParagraph",
+    }));
+
+    const paragraph = document.createElement("p");
+    paragraph.className = "wysiwyg-empty-paragraph";
+    paragraph.appendChild(document.createElement("br"));
+    content.appendChild(paragraph);
+    const afterRange = document.createRange();
+    afterRange.selectNodeContents(paragraph);
+    afterRange.collapse(true);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(afterRange);
+    host.dispatchEvent(new dom.window.InputEvent("input", {
+      bubbles: true,
+      inputType: "insertParagraph",
+    }));
+
+    const anchor = window.getSelection().anchorNode;
+    const anchorElement = anchor.nodeType === Node.ELEMENT_NODE ? anchor : anchor.parentElement;
+    assert.ok(anchorElement.closest(".document-page-content"));
+    assert.notEqual(anchor, host);
+  }
+  assert.ok(Number(root.dataset.pageCount) > 1);
+});
+
+test("repairs an emptied page host after Backspace without moving the caret outside paper", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "正文\n\n&nbsp;";
+  root.querySelector(".document-pagination-source").innerHTML =
+    '<p data-markdown-from="0" data-markdown-to="2">正文</p>'
+    + '<p class="wysiwyg-empty-paragraph" data-markdown-from="4" data-markdown-to="10"><br></p>';
+  const controller = mockMarkdownController(markdown, 64, 0);
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", markdown, 64, 0, 1);
+  await flushRenderer();
+
+  const host = root.querySelector("[data-document-pages]");
+  const trailing = root.querySelector(".wysiwyg-empty-paragraph");
+  selectContents(trailing);
+  host.dispatchEvent(new dom.window.InputEvent("beforeinput", {
+    bubbles: true,
+    inputType: "deleteContentBackward",
+  }));
+  host.replaceChildren();
+  const hostRange = document.createRange();
+  hostRange.setStart(host, 0);
+  hostRange.collapse(true);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(hostRange);
+  host.dispatchEvent(new dom.window.InputEvent("input", {
+    bubbles: true,
+    inputType: "deleteContentBackward",
+  }));
+
+  const anchor = window.getSelection().anchorNode;
+  const anchorElement = anchor.nodeType === Node.ELEMENT_NODE ? anchor : anchor.parentElement;
+  assert.ok(anchorElement.closest(".document-page-content"));
+  assert.notEqual(anchor, host);
+  assert.ok(controller.value().includes("正文"));
 });
 
 test("commits only the edited Markdown source block", async () => {
@@ -978,7 +1297,11 @@ test("keeps a normal Enter in the live page instead of rebuilding the document",
   const second = document.createElement("p");
   second.textContent = "第二行";
   first.after(second);
-  selectContents(second);
+  const secondCaret = document.createRange();
+  secondCaret.selectNodeContents(second);
+  secondCaret.collapse(true);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(secondCaret);
   second.dispatchEvent(new dom.window.InputEvent("input", {
     bubbles: true,
     inputType: "insertParagraph",
@@ -998,6 +1321,118 @@ test("keeps a normal Enter in the live page instead of rebuilding the document",
     [...root.querySelectorAll(".document-page-content > p")],
     [first, second]
   );
+});
+
+test("preserves Enter when the browser splits one heading into two headings", async () => {
+  const root = document.getElementById("renderer");
+  const initial = "# 标题文字";
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<h1 data-markdown-from="0" data-markdown-to="${initial.length}">标题文字</h1>`;
+  const controller = mockMarkdownController(initial, 66, 0);
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", true, {}, true, "wysiwyg-bridge", initial, 66, 0, 1);
+  await flushRenderer();
+
+  const first = root.querySelector(".document-page-content h1");
+  const caret = document.createRange();
+  caret.setStart(first.firstChild, 2);
+  caret.collapse(true);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(caret);
+  first.dispatchEvent(new dom.window.InputEvent("beforeinput", {
+    bubbles: true,
+    inputType: "insertParagraph",
+  }));
+  first.textContent = "标题";
+  const second = document.createElement("h1");
+  second.textContent = "文字";
+  first.after(second);
+  const secondCaret = document.createRange();
+  secondCaret.selectNodeContents(second);
+  secondCaret.collapse(true);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(secondCaret);
+  second.dispatchEvent(new dom.window.InputEvent("input", {
+    bubbles: true,
+    inputType: "insertParagraph",
+  }));
+
+  assert.equal(controller.value(), "# 标题\n\n# 文字");
+  assert.deepEqual(
+    [...root.querySelectorAll(".document-page-content > h1")].map((heading) => heading.textContent),
+    ["标题", "文字"],
+  );
+});
+
+test("keeps the caret in the new paragraph after canonical rendering changes block ids", async () => {
+  const root = document.getElementById("renderer");
+  const initial = "第一行";
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<p data-markdown-from="0" data-markdown-to="${initial.length}">${initial}</p>`;
+  const controller = mockMarkdownController(initial, 68, 0);
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", true, {}, true, "wysiwyg-bridge", initial, 68, 0, 1);
+  await flushRenderer();
+
+  const first = root.querySelector(".document-page-content p");
+  selectContents(first);
+  first.dispatchEvent(new dom.window.InputEvent("beforeinput", {
+    bubbles: true,
+    inputType: "insertParagraph",
+  }));
+  const second = document.createElement("p");
+  second.textContent = "第二行";
+  first.after(second);
+  const secondCaret = document.createRange();
+  secondCaret.selectNodeContents(second);
+  secondCaret.collapse(true);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(secondCaret);
+  second.dispatchEvent(new dom.window.InputEvent("input", {
+    bubbles: true,
+    inputType: "insertParagraph",
+  }));
+  const expected = "第一行\n\n第二行";
+  assert.equal(controller.value(), expected);
+
+  root.querySelector(".document-pagination-source").innerHTML =
+    '<p data-markdown-from="0" data-markdown-to="3">第一行</p>'
+    + '<p data-markdown-from="5" data-markdown-to="8">第二行</p>';
+  root.querySelector("[data-document-pages]").replaceChildren();
+  api.mount("renderer", true, {}, true, "wysiwyg-bridge", expected, 68, 1, 2);
+  await flushRenderer();
+
+  const paragraphs = root.querySelectorAll(".document-page-content > p");
+  const anchor = window.getSelection().anchorNode;
+  const anchorElement = anchor.nodeType === Node.ELEMENT_NODE ? anchor : anchor.parentElement;
+  assert.equal(paragraphs.length, 2);
+  assert.equal(anchorElement.closest("p"), paragraphs[1]);
+});
+
+test("preserves a soft line break inside a heading", async () => {
+  const root = document.getElementById("renderer");
+  const initial = "# 标题文字";
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<h1 data-markdown-from="0" data-markdown-to="${initial.length}">标题文字</h1>`;
+  const controller = mockMarkdownController(initial, 67, 0);
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", true, {}, true, "wysiwyg-bridge", initial, 67, 0, 1);
+  await flushRenderer();
+
+  const heading = root.querySelector(".document-page-content h1");
+  selectContents(heading);
+  heading.dispatchEvent(new dom.window.InputEvent("beforeinput", {
+    bubbles: true,
+    inputType: "insertLineBreak",
+  }));
+  heading.replaceChildren("标题", document.createElement("br"), "文字");
+  selectContents(heading);
+  heading.dispatchEvent(new dom.window.InputEvent("input", {
+    bubbles: true,
+    inputType: "insertLineBreak",
+  }));
+
+  assert.equal(controller.value(), "# 标题  \n文字");
 });
 
 test("keeps a normal Enter inside the same Markdown quote block", async () => {

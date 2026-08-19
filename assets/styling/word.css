@@ -1593,28 +1593,31 @@
     min-width: 0;
     height: 100%;
     overflow: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     display: flow-root;
 }
 
-.document-page-content[contenteditable="true"] {
+.document-flow[contenteditable="true"] .document-page-content {
     cursor: text;
     outline: none;
     caret-color: #174f7e;
 }
 
-.document-page-content[contenteditable="true"]:focus {
+.document-flow[contenteditable="true"]:focus,
+.document-flow[contenteditable="true"] .document-page-content:focus {
     outline: none;
 }
 
-.document-page-content[contenteditable="true"] a {
+.document-flow[contenteditable="true"] .document-page-content a {
     cursor: text;
 }
 
 /* The native range includes invisible block separators and WebKit paints them
    to the edge of the block. Keep the native range for editing semantics, but
    paint its visible highlight from text-node client rects instead. */
-.document-page-content[contenteditable="true"]::selection,
-.document-page-content[contenteditable="true"] *::selection {
+.document-flow[contenteditable="true"] .document-page-content::selection,
+.document-flow[contenteditable="true"] .document-page-content *::selection {
     background: transparent;
     color: inherit;
 }
@@ -1644,7 +1647,8 @@
 }
 
 .document-page.contains-oversized-block .document-page-content {
-    overflow: auto;
+    /* A physical page must never turn into a nested scrolling editor. */
+    overflow: hidden;
 }
 
 .infinite-page-break {

@@ -144,16 +144,16 @@
         return nodes;
     }
 
-    function paginate(root, seamless, instance = null) {
+    function paginate(root, seamless, instance = null, projectedNodes = null) {
         const source = root.querySelector(".document-pagination-source");
         const pages = root.querySelector("[data-document-pages]");
         if (!source || !pages) {
             return { ok: false, error: "缺少分页源节点或页面容器" };
         }
 
+        const nodes = projectedNodes ?? sourceNodes(source, instance);
         pages.replaceChildren();
         pages.className = seamless ? "document-flow seamless" : "document-flow paged";
-        const nodes = sourceNodes(source, instance);
 
         if (seamless) {
             const current = createPage(pages, true);
@@ -161,6 +161,7 @@
             root.dataset.pageCount = "1";
             root.dataset.oversizedBlocks = "0";
             configureEditable(instance);
+            if (instance) instance.pageBackup = pages.cloneNode(true);
             return { ok: true, pages: 1, oversized: 0 };
         }
 
@@ -223,7 +224,31 @@
         root.dataset.pageCount = String(pages.childElementCount);
         root.dataset.oversizedBlocks = String(oversized);
         configureEditable(instance);
+        if (instance) instance.pageBackup = pages.cloneNode(true);
         return { ok: true, pages: pages.childElementCount, oversized };
+    }
+
+    function restorePageBackup(instance) {
+        const pages = instance?.root.querySelector("[data-document-pages]");
+        if (!pages || pages.childElementCount > 0 || !instance.pageBackup) return false;
+        pages.className = instance.pageBackup.className;
+        pages.replaceChildren(...[...instance.pageBackup.children].map((page) => page.cloneNode(true)));
+        configureEditable(instance);
+        return true;
+    }
+
+    function reflowProjection(instance) {
+        const pages = instance.root.querySelector("[data-document-pages]");
+        const fragments = [...(pages?.querySelectorAll(".document-page-content > *") ?? [])];
+        if (fragments.length === 0) return false;
+        const nodes = coalescePaginationFragments(fragments);
+        const selection = instance.pendingSelection ?? captureSelection(instance);
+        instance.reconciling = true;
+        paginate(instance.root, instance.seamless, instance, nodes);
+        if (selection) restoreSelection(instance, selection);
+        instance.pendingSelection = null;
+        instance.reconciling = false;
+        return true;
     }
 
     function schedule(instance, force = false) {
@@ -247,6 +272,7 @@
                     || snapshot.documentRevision !== expectedDocumentRevision
                     || snapshot.editRevision !== expectedContentRevision
                 ) {
+                    restorePageBackup(instance);
                     return;
                 }
             }
@@ -744,7 +770,11 @@
             const tag = fragment.tagName.toLowerCase();
             if (
                 current.length > 0
-                && (tag !== currentTag || fragment.dataset.separateBlock === "true")
+                && (
+                    tag !== currentTag
+                    || fragment.dataset.separateBlock === "true"
+                    || fragment.dataset.documentFragmentContinuation !== "true"
+                )
             ) {
                 sections.push(serializeFragments(current));
                 current = [];
@@ -840,18 +870,140 @@
 
     function inheritBlockMetadata(instance) {
         for (const content of instance.root.querySelectorAll(".document-page-content")) {
+            const blockSelector = "p, h1, h2, h3, h4, h5, h6, pre, blockquote, ul, ol, hr, table, div";
+            let inlineRun = null;
+            for (const child of [...content.childNodes]) {
+                const isBlock = child.nodeType === Node.ELEMENT_NODE && child.matches(blockSelector);
+                if (isBlock) {
+                    inlineRun = null;
+                    continue;
+                }
+                if (child.nodeType === Node.TEXT_NODE && child.data.length === 0) {
+                    child.remove();
+                    continue;
+                }
+                if (!inlineRun) {
+                    inlineRun = document.createElement("p");
+                    content.insertBefore(inlineRun, child);
+                }
+                inlineRun.appendChild(child);
+            }
+
             const children = [...content.children];
             for (let index = 0; index < children.length; index += 1) {
                 const node = children[index];
                 if (node.dataset.documentBlockId) continue;
                 const neighbor = children.slice(0, index).reverse().find((item) => item.dataset.documentBlockId)
                     || children.slice(index + 1).find((item) => item.dataset.documentBlockId);
-                if (!neighbor) continue;
-                node.dataset.documentBlockId = neighbor.dataset.documentBlockId;
-                node.dataset.markdownFrom = neighbor.dataset.markdownFrom;
-                node.dataset.markdownTo = neighbor.dataset.markdownTo;
+                if (neighbor) {
+                    node.dataset.documentBlockId = neighbor.dataset.documentBlockId;
+                    node.dataset.markdownFrom = neighbor.dataset.markdownFrom;
+                    node.dataset.markdownTo = neighbor.dataset.markdownTo;
+                    continue;
+                }
+                const fallbackId = instance.pendingBlockIds?.[0];
+                const fallbackRange = fallbackId && instance.pendingGroupRanges?.get(fallbackId);
+                if (!fallbackId || !fallbackRange) continue;
+                node.dataset.documentBlockId = fallbackId;
+                node.dataset.markdownFrom = String(fallbackRange.from);
+                node.dataset.markdownTo = String(fallbackRange.to);
             }
         }
+    }
+
+    function repairPageStructure(instance) {
+        const pages = instance.root.querySelector("[data-document-pages]");
+        if (!pages) return;
+
+        for (const page of pages.querySelectorAll(":scope > .document-page")) {
+            if (page.querySelector(":scope > .document-page-content")) continue;
+            const content = document.createElement("div");
+            content.className = "document-page-content markdown-rendered-html";
+            content.append(...page.childNodes);
+            page.appendChild(content);
+        }
+
+        const stray = [...pages.childNodes].filter((node) =>
+            node.nodeType !== Node.ELEMENT_NODE || !node.classList.contains("document-page")
+        );
+        if (stray.length > 0) {
+            const { content } = createPage(pages, instance.seamless);
+            content.append(...stray);
+        }
+        if (!pages.querySelector(":scope > .document-page")) {
+            createPage(pages, instance.seamless);
+        }
+        ensureEditablePageBlocks(instance, pages);
+    }
+
+    function createEditablePlaceholder(instance, content, pageIndex) {
+        const paragraph = document.createElement("p");
+        paragraph.className = "wysiwyg-empty-paragraph";
+        paragraph.dataset.syntheticEditablePlaceholder = "true";
+        const allBlocks = [...instance.root.querySelectorAll(".document-page-content > *")];
+        const previous = allBlocks.filter((block) => content.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_PRECEDING).at(-1);
+        const next = allBlocks.find((block) => content.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING);
+        const position = Number.isFinite(Number(next?.dataset.markdownFrom))
+            ? Number(next.dataset.markdownFrom)
+            : Number.isFinite(Number(previous?.dataset.markdownTo))
+                ? Number(previous.dataset.markdownTo)
+                : instance.markdownLength ?? 0;
+        const pendingId = instance.pendingBlockIds?.[0];
+        const pendingRange = pendingId && instance.pendingGroupRanges?.get(pendingId);
+        paragraph.dataset.documentBlockId = pendingId ?? `empty-page-${pageIndex}-${position}`;
+        paragraph.dataset.markdownFrom = String(pendingRange?.from ?? position);
+        paragraph.dataset.markdownTo = String(pendingRange?.to ?? position);
+        paragraph.appendChild(document.createElement("br"));
+        content.appendChild(paragraph);
+        return paragraph;
+    }
+
+    function ensureEditablePageBlocks(instance, pages) {
+        if (!instance?.editable || !pages) return;
+        const contents = [...pages.querySelectorAll(".document-page-content")];
+        for (let index = 0; index < contents.length; index += 1) {
+            if (contents[index].childNodes.length === 0) {
+                createEditablePlaceholder(instance, contents[index], index);
+            }
+        }
+    }
+
+    function normalizeStructuralCaret(instance) {
+        const pages = instance.root.querySelector("[data-document-pages]");
+        const selection = window.getSelection?.();
+        if (
+            !pages
+            || !selection
+            || !selection.isCollapsed
+            || !pages.contains(selection.anchorNode)
+            || topLevelBlock(selection.anchorNode)
+        ) {
+            return;
+        }
+
+        let content = (selection.anchorNode.nodeType === Node.ELEMENT_NODE
+            ? selection.anchorNode
+            : selection.anchorNode.parentElement)?.closest?.(".document-page-content");
+        let atStart = selection.anchorOffset === 0;
+        if (!content) {
+            const pagesList = [...pages.querySelectorAll(":scope > .document-page")];
+            const pageIndex = selection.anchorNode === pages && selection.anchorOffset > 0
+                ? Math.min(selection.anchorOffset - 1, pagesList.length - 1)
+                : 0;
+            content = pagesList[Math.max(0, pageIndex)]?.querySelector(".document-page-content");
+            atStart = selection.anchorOffset === 0;
+        }
+        if (!content) return;
+        const blocks = [...content.children];
+        const targetIndex = atStart
+            ? Math.min(selection.anchorOffset, Math.max(0, blocks.length - 1))
+            : Math.min(Math.max(0, selection.anchorOffset - 1), Math.max(0, blocks.length - 1));
+        const target = blocks[targetIndex] ?? createEditablePlaceholder(instance, content, 0);
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        range.collapse(atStart);
+        selection.removeAllRanges();
+        selection.addRange(range);
     }
 
     function updateSourceRanges(instance, edits) {
@@ -924,11 +1076,13 @@
         instance.pendingBlockIds = [];
         const pendingGroupRanges = instance.pendingGroupRanges ?? new Map();
         instance.pendingGroupRanges = new Map();
+        const combinedInput = instance.pendingCombinedInput;
+        instance.pendingCombinedInput = null;
         const source = window.InfiniteMarkdownEditor?.getValue?.();
         const currentGroups = markdownGroups(instance.root);
         const affectedGroups = currentGroups
             .filter((group) => affected.has(group.id) && Number.isFinite(group.from) && Number.isFinite(group.to));
-        const edits = affectedGroups
+        let edits = affectedGroups
             .map((group) => {
                 const insert = serializeBlockGroup(group.fragments);
                 const lostNonEmptyList = group.fragments.some((fragment) =>
@@ -942,9 +1096,26 @@
                     : { id: group.id, from: group.from, to: group.to, insert };
             })
             .filter(Boolean);
+        if (combinedInput && typeof source === "string") {
+            const insert = affectedGroups
+                .map((group) => [
+                    group.explicitPageBreak ? PAGE_BREAK_MARKER : null,
+                    serializeBlockGroup(group.fragments),
+                ].filter(Boolean).join("\n\n"))
+                .filter(Boolean)
+                .join("\n\n");
+            const combinedEdit = minimalEdit(
+                source,
+                combinedInput.from,
+                combinedInput.to,
+                insert,
+                combinedInput.id,
+            );
+            edits = combinedEdit ? [combinedEdit] : [];
+        }
         if (typeof source === "string") {
             const currentIds = new Set(currentGroups.map((group) => group.id));
-            for (const id of affected) {
+            for (const id of combinedInput ? [] : affected) {
                 if (currentIds.has(id)) continue;
                 const range = pendingGroupRanges.get(id);
                 if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to)) continue;
@@ -965,6 +1136,23 @@
                 } else {
                     index += 1;
                 }
+            }
+
+            const pages = instance.root.querySelector("[data-document-pages]");
+            const projectedContent = Boolean(
+                pages?.textContent.trim()
+                || pages?.querySelector("img, video, audio, iframe, table, hr")
+            );
+            let nextSource = source;
+            for (const edit of [...edits].sort((left, right) => right.from - left.from)) {
+                nextSource = nextSource.slice(0, edit.from) + edit.insert + nextSource.slice(edit.to);
+            }
+            if (source.trim() && !nextSource.trim() && projectedContent) {
+                return {
+                    ok: false,
+                    changed: false,
+                    error: "已阻止会清空文档的无效 WYSIWYG transaction",
+                };
             }
         }
 
@@ -1031,13 +1219,48 @@
         const selection = window.getSelection?.();
         if (!pages || !selection || selection.rangeCount === 0) return null;
         if (!pages.contains(selection.anchorNode) || !pages.contains(selection.focusNode)) return null;
+        const structural = (() => {
+            if (!selection.isCollapsed) return null;
+            const block = topLevelBlock(selection.anchorNode);
+            const id = block?.dataset.documentBlockId;
+            if (!block || !id) return null;
+            const matches = [...pages.querySelectorAll(".document-page-content > *")]
+                .filter((candidate) => candidate.dataset.documentBlockId === id);
+            const allBlocks = [...pages.querySelectorAll(".document-page-content > *")];
+            const logicalBlocks = allBlocks.filter((candidate) =>
+                candidate.dataset.documentFragmentContinuation !== "true"
+            );
+            let logicalBlock = block;
+            if (block.dataset.documentFragmentContinuation === "true") {
+                const blockIndex = allBlocks.indexOf(block);
+                logicalBlock = allBlocks.slice(0, blockIndex + 1).reverse().find((candidate) =>
+                    candidate.dataset.documentFragmentContinuation !== "true"
+                ) ?? block;
+            }
+            let offset = 0;
+            try {
+                const prefix = document.createRange();
+                prefix.selectNodeContents(block);
+                prefix.setEnd(selection.anchorNode, selection.anchorOffset);
+                offset = prefix.toString().length;
+            } catch (_) {
+                offset = 0;
+            }
+            return {
+                blockId: id,
+                blockOrdinal: Math.max(0, matches.indexOf(block)),
+                logicalBlockIndex: Math.max(0, logicalBlocks.indexOf(logicalBlock)),
+                offset,
+            };
+        })();
         const anchor = selectionOffset(pages, selection.anchorNode, selection.anchorOffset);
         const focus = selectionOffset(pages, selection.focusNode, selection.focusOffset);
-        return anchor === null || focus === null
+        return (anchor === null || focus === null) && !structural
             ? null
             : {
                 anchor,
                 focus,
+                structural,
                 focused: instance.hasEditorFocus || pages.contains(document.activeElement),
             };
     }
@@ -1060,12 +1283,36 @@
 
     function restoreSelection(instance, bookmark) {
         const pages = instance.root.querySelector("[data-document-pages]");
-        const anchor = pages && globalTextPosition(pages, bookmark.anchor);
-        const focus = pages && globalTextPosition(pages, bookmark.focus);
         const selection = window.getSelection?.();
-        if (!anchor || !focus || !selection) return;
+        if (!pages || !selection) return;
+        if (bookmark.structural) {
+            const matches = [...pages.querySelectorAll(".document-page-content > *")]
+                .filter((candidate) => candidate.dataset.documentBlockId === bookmark.structural.blockId);
+            const logicalBlocks = [...pages.querySelectorAll(".document-page-content > *")]
+                .filter((candidate) => candidate.dataset.documentFragmentContinuation !== "true");
+            const block = matches[bookmark.structural.blockOrdinal]
+                ?? logicalBlocks[bookmark.structural.logicalBlockIndex];
+            if (block) {
+                const position = globalTextPosition(block, bookmark.structural.offset);
+                const range = document.createRange();
+                if (position) {
+                    range.setStart(position.node, position.offset);
+                } else {
+                    range.selectNodeContents(block);
+                    range.collapse(true);
+                }
+                if (bookmark.focused) pages.focus({ preventScroll: true });
+                selection.removeAllRanges();
+                selection.addRange(range);
+                instance.hasEditorFocus = bookmark.focused;
+                return;
+            }
+        }
+        const anchor = bookmark.anchor === null ? null : globalTextPosition(pages, bookmark.anchor);
+        const focus = bookmark.focus === null ? null : globalTextPosition(pages, bookmark.focus);
+        if (!anchor || !focus) return;
         if (bookmark.focused) {
-            anchor.node.parentElement?.closest(".document-page-content")?.focus({ preventScroll: true });
+            pages.focus({ preventScroll: true });
             instance.hasEditorFocus = true;
         }
         selection.removeAllRanges();
@@ -1086,8 +1333,6 @@
         userEvent = "input.type",
         isolate = false,
     ) {
-        const bridge = instance.bridgeId && document.getElementById(instance.bridgeId);
-        if (!bridge) return { ok: false, error: "Markdown bridge 不存在" };
         const markdown = snapshot ?? serializeMarkdown(instance.root);
         if (window.InfiniteMarkdownEditor) {
             const result = window.InfiniteMarkdownEditor.replaceAll(
@@ -1098,6 +1343,8 @@
             );
             if (result?.ok) return result;
         }
+        const bridge = instance.bridgeId && document.getElementById(instance.bridgeId);
+        if (!bridge) return { ok: false, error: "Markdown bridge 不存在" };
         const revision = (instance.fallbackRevision ?? 0) + 1;
         instance.fallbackRevision = revision;
         const payload = JSON.stringify({
@@ -1115,17 +1362,26 @@
     function configureEditable(instance) {
         if (!instance) return;
         const pages = instance.root.querySelector("[data-document-pages]");
+        if (!pages) return;
+        if (instance.editable) {
+            pages.setAttribute("contenteditable", "true");
+            pages.setAttribute("spellcheck", "true");
+            pages.setAttribute("role", "textbox");
+            pages.setAttribute("aria-multiline", "true");
+            ensureEditablePageBlocks(instance, pages);
+        } else {
+            pages.removeAttribute("contenteditable");
+            pages.removeAttribute("spellcheck");
+            pages.removeAttribute("role");
+            pages.removeAttribute("aria-multiline");
+        }
         for (const content of pages?.querySelectorAll(".document-page-content") ?? []) {
-            if (instance.editable) {
-                content.setAttribute("contenteditable", "true");
-                content.setAttribute("spellcheck", "true");
-                content.setAttribute("role", "textbox");
-                content.setAttribute("aria-multiline", "true");
-            } else {
-                content.removeAttribute("contenteditable");
-                content.removeAttribute("role");
-                content.removeAttribute("aria-multiline");
-            }
+            // Page contents inherit editability from one shared host. Separate
+            // editing hosts prevent native selections from crossing pages.
+            content.removeAttribute("contenteditable");
+            content.removeAttribute("spellcheck");
+            content.removeAttribute("role");
+            content.removeAttribute("aria-multiline");
         }
     }
 
@@ -1159,7 +1415,16 @@
             transaction.userEvent,
             transaction.isolate,
         );
+        if (
+            result?.ok
+            && result.changed
+            && !instance.seamless
+            && (transaction.policy === RENDER_CANONICAL || layoutNeedsPagination(instance))
+        ) {
+            reflowProjection(instance);
+        }
         markPendingRender(instance, result, transaction.policy);
+        if (!result?.ok) schedule(instance, true);
         return result;
     }
 
@@ -1290,13 +1555,13 @@
         }
     }
 
-    function placeCaretAtStart(instance, element) {
+    function placeCaret(instance, element, atStart = true) {
         const selection = window.getSelection?.();
         if (!selection || !element) return;
-        element.closest(".document-page-content")?.focus({ preventScroll: true });
+        instance.root.querySelector("[data-document-pages]")?.focus({ preventScroll: true });
         const range = document.createRange();
         range.selectNodeContents(element);
-        range.collapse(true);
+        range.collapse(atStart);
         selection.removeAllRanges();
         selection.addRange(range);
         instance.hasEditorFocus = true;
@@ -1311,7 +1576,7 @@
         paragraph.className = "wysiwyg-empty-paragraph";
         paragraph.appendChild(document.createElement("br"));
         block.after(rule, paragraph);
-        placeCaretAtStart(instance, paragraph);
+        placeCaret(instance, paragraph);
         return true;
     }
 
@@ -1354,7 +1619,7 @@
                 changed = true;
             }
         }
-        if (changed) placeCaretAtStart(instance, caretTarget);
+        if (changed) placeCaret(instance, caretTarget);
     }
 
     function removeSelectedEmptyStructures(instance, inputType) {
@@ -1369,12 +1634,123 @@
         }
     }
 
+    function selectionCoversDocument(instance) {
+        const pages = instance.root.querySelector("[data-document-pages]");
+        const selection = window.getSelection?.();
+        if (!pages || !selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+        const range = selection.getRangeAt(0);
+        const blocks = [...pages.querySelectorAll(".document-page-content > *")];
+        if (blocks.length === 0) return true;
+
+        try {
+            const documentRange = document.createRange();
+            documentRange.setStartBefore(blocks[0]);
+            documentRange.setEndAfter(blocks.at(-1));
+            if (
+                range.compareBoundaryPoints(window.Range.START_TO_START, documentRange) <= 0
+                && range.compareBoundaryPoints(window.Range.END_TO_END, documentRange) >= 0
+            ) {
+                return true;
+            }
+        } catch (_) {
+            // Text boundary checks below also cover browser selections whose
+            // endpoints are inside the first and last blocks.
+        }
+
+        const walker = document.createTreeWalker(pages, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        let node = walker.nextNode();
+        while (node) {
+            if (node.data.length > 0) nodes.push(node);
+            node = walker.nextNode();
+        }
+        if (nodes.length === 0) return true;
+        const first = selectedSlice(nodes[0], range);
+        const lastNode = nodes.at(-1);
+        const last = selectedSlice(lastNode, range);
+        return Boolean(first?.start === 0 && last?.end === lastNode.data.length);
+    }
+
+    function selectEntireDocument(instance) {
+        const pages = instance.root.querySelector("[data-document-pages]");
+        const selection = window.getSelection?.();
+        if (!pages || !selection) return false;
+        const range = document.createRange();
+        range.selectNodeContents(pages);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        instance.lastEditorRange = range.cloneRange();
+        return true;
+    }
+
+    function replaceDocumentWithMarkdown(instance, markdown) {
+        const pages = instance.root.querySelector("[data-document-pages]");
+        const groups = markdownGroups(instance.root);
+        const firstContent = pages?.querySelector(".document-page-content");
+        if (!pages || !firstContent || groups.length === 0) {
+            return false;
+        }
+
+        const id = groups.find((group) => group.id)?.id;
+        if (!id) return false;
+        const normalized = markdown.replace(/\r\n?/g, "\n");
+        const result = dispatchMarkdown(
+            instance,
+            normalized,
+            "wysiwyg-input",
+            "input",
+            true,
+        );
+        if (!result?.ok) {
+            schedule(instance, true);
+            return false;
+        }
+        if (!result.changed) return true;
+
+        // This is only a temporary projection until the canonical Markdown
+        // renderer returns. It must never be serialized back into the source.
+        const paragraphs = normalized.split("\n").map((line) => {
+            const paragraph = document.createElement("p");
+            paragraph.dataset.documentBlockId = id;
+            paragraph.dataset.markdownFrom = "0";
+            paragraph.dataset.markdownTo = String(normalized.length);
+            if (line) {
+                paragraph.textContent = line;
+            } else {
+                paragraph.className = "wysiwyg-empty-paragraph";
+                paragraph.appendChild(document.createElement("br"));
+            }
+            return paragraph;
+        });
+
+        for (const content of pages.querySelectorAll(".document-page-content")) {
+            content.replaceChildren();
+        }
+        firstContent.append(...paragraphs);
+        placeCaret(instance, paragraphs.at(-1), false);
+        instance.pendingSelection = captureSelection(instance);
+        instance.markdownLength = normalized.length;
+        reflowProjection(instance);
+        markPendingRender(instance, result, RENDER_CANONICAL);
+        return true;
+    }
+
     function bindEditing(instance) {
         const pages = instance.root.querySelector("[data-document-pages]");
         if (!pages) return;
         if (!instance.keydownHandler) {
             instance.keydownHandler = (event) => {
                 if (!instance.root.isConnected || !instance.editable || !instance.hasEditorFocus) return;
+                if (
+                    (event.ctrlKey || event.metaKey)
+                    && !event.altKey
+                    && event.key.toLowerCase() === "a"
+                    && selectEntireDocument(instance)
+                ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
                 const shortcut = editorShortcut(event);
                 if (!shortcut) return;
                 event.preventDefault();
@@ -1390,6 +1766,9 @@
             if (instance.composing) return;
             const inputType = event.inputType || instance.pendingInputType || "insertText";
             instance.pendingInputType = null;
+            repairPageStructure(instance);
+            inheritBlockMetadata(instance);
+            normalizeStructuralCaret(instance);
             normalizeParagraphInput(instance, inputType);
             removeSelectedEmptyStructures(instance, inputType);
             instance.pendingSelection = captureSelection(instance);
@@ -1414,10 +1793,40 @@
                 if (!selectedIds.has(group.id)) continue;
                 instance.pendingGroupRanges.set(group.id, { from: group.from, to: group.to });
             }
+            if (
+                (event.inputType === "insertFromPaste" || event.inputType === "insertFromDrop")
+                && selectedIds.size > 0
+            ) {
+                instance.pendingCombinedInput = null;
+                const selectedGroups = groups.filter((group) =>
+                    selectedIds.has(group.id)
+                    && Number.isFinite(group.from)
+                    && Number.isFinite(group.to)
+                );
+                if (selectedGroups.length > 0) {
+                    if (selectedGroups.length > 1) {
+                        instance.pendingCombinedInput = {
+                            id: selectedGroups[0].id,
+                            from: Math.min(...selectedGroups.map((group) => group.from)),
+                            to: Math.max(...selectedGroups.map((group) => group.to)),
+                        };
+                    }
+                }
+            } else {
+                instance.pendingCombinedInput = null;
+            }
             instance.pendingInputType = event.inputType || "insertText";
             const selection = window.getSelection?.();
             instance.pendingEmptyQuoteBreak = event.inputType === "insertParagraph"
                 && emptyEditableBlock(quoteParagraph(selection?.anchorNode));
+        });
+        pages.addEventListener("paste", (event) => {
+            if (!instance.editable || !selectionCoversDocument(instance)) return;
+            const text = event.clipboardData?.getData?.("text/plain");
+            if (!text) return;
+            event.preventDefault();
+            event.stopPropagation();
+            replaceDocumentWithMarkdown(instance, text);
         });
         pages.addEventListener("compositionstart", () => {
             instance.composing = true;
@@ -1451,6 +1860,46 @@
         instance.selectionLayer?.replaceChildren();
     }
 
+    function selectionClipBounds(instance, node) {
+        const content = node.parentElement?.closest(".document-page-content");
+        if (!content) return null;
+        const contentRect = content.getBoundingClientRect();
+        const surface = instance.root.closest(".editor-surface");
+        const surfaceRect = surface?.getBoundingClientRect();
+        const stickyRulerRect = surface
+            ?.querySelector(".page-ruler-sticky")
+            ?.getBoundingClientRect();
+        return {
+            left: Math.max(contentRect.left, surfaceRect?.left ?? 0, 0),
+            top: Math.max(
+                contentRect.top,
+                surfaceRect?.top ?? 0,
+                stickyRulerRect?.bottom ?? 0,
+                0,
+            ),
+            right: Math.min(
+                contentRect.right,
+                surfaceRect?.right ?? window.innerWidth,
+                window.innerWidth,
+            ),
+            bottom: Math.min(
+                contentRect.bottom,
+                surfaceRect?.bottom ?? window.innerHeight,
+                window.innerHeight,
+            ),
+        };
+    }
+
+    function clipSelectionRect(rect, bounds) {
+        const left = Math.max(rect.left, bounds.left);
+        const top = Math.max(rect.top, bounds.top);
+        const right = Math.min(rect.right, bounds.right);
+        const bottom = Math.min(rect.bottom, bounds.bottom);
+        return right > left && bottom > top
+            ? { left, top, width: right - left, height: bottom - top }
+            : null;
+    }
+
     function paintTextSelection(instance) {
         instance.selectionFrame = null;
         clearSelectionHighlight(instance);
@@ -1479,14 +1928,21 @@
                 if (start < end) {
                     textRange.setStart(node, start);
                     textRange.setEnd(node, end);
+                    const bounds = selectionClipBounds(instance, node);
+                    if (!bounds) {
+                        node = walker.nextNode();
+                        continue;
+                    }
                     for (const rect of textRange.getClientRects?.() ?? []) {
                         if (rect.width <= 0 || rect.height <= 0) continue;
+                        const clipped = clipSelectionRect(rect, bounds);
+                        if (!clipped) continue;
                         const highlight = document.createElement("span");
                         highlight.className = "wysiwyg-selection-rect";
-                        highlight.style.left = `${rect.left}px`;
-                        highlight.style.top = `${rect.top}px`;
-                        highlight.style.width = `${rect.width}px`;
-                        highlight.style.height = `${rect.height}px`;
+                        highlight.style.left = `${clipped.left}px`;
+                        highlight.style.top = `${clipped.top}px`;
+                        highlight.style.width = `${clipped.width}px`;
+                        highlight.style.height = `${clipped.height}px`;
                         layer.appendChild(highlight);
                     }
                 }
@@ -1503,6 +1959,7 @@
     function bindSelectionHighlight(instance) {
         if (instance.selectionChangeHandler) return;
         instance.selectionChangeHandler = () => {
+            normalizeStructuralCaret(instance);
             editorRange(instance);
             scheduleSelectionHighlight(instance);
         };
@@ -1657,9 +2114,11 @@
                 || renderRequestRevision < instance.acceptedRenderRequest
             )
         ) {
+            restorePageBackup(instance);
             return { ok: true, stale: true };
         }
 
+        let authoritativeContentRevision = contentRevision;
         if (editable && markdown !== null && window.InfiniteMarkdownEditor) {
             const initialized = window.InfiniteMarkdownEditor.initialize(
                 markdown,
@@ -1672,11 +2131,15 @@
                 initialized?.staleDocument
                 || !snapshot
                 || snapshot.documentRevision !== documentRevision
-                || snapshot.editRevision !== contentRevision
                 || snapshot.markdown !== markdown
             ) {
+                restorePageBackup(instance);
                 return { ok: true, stale: true };
             }
+            // Layout updates can arrive before Rust has processed the latest
+            // WYSIWYG bridge revision. When the Markdown is identical, the
+            // browser controller's newer revision is authoritative.
+            authoritativeContentRevision = snapshot.editRevision;
         }
 
         if (!instance || instance.root !== root) {
@@ -1696,6 +2159,7 @@
                 lastEditorRange: null,
                 pendingBlockIds: [],
                 pendingGroupRanges: new Map(),
+                pendingCombinedInput: null,
                 pendingInputType: null,
                 pendingEmptyQuoteBreak: false,
                 documentRevision,
@@ -1708,6 +2172,7 @@
                 selectionLayer: null,
                 selectionFrame: null,
                 pages: null,
+                pageBackup: null,
                 awaitingContentRevision: null,
                 pendingRenderPolicy: RENDER_NONE,
                 acceptedDocumentRevision: -1,
@@ -1732,7 +2197,7 @@
         if (
             !documentChanged
             && instance.awaitingContentRevision !== null
-            && contentRevision >= instance.awaitingContentRevision
+            && authoritativeContentRevision >= instance.awaitingContentRevision
         ) {
             renderPolicy = instance.pendingRenderPolicy;
             instance.awaitingContentRevision = null;
@@ -1749,6 +2214,7 @@
             instance.pendingSelection = null;
             instance.pendingBlockIds = [];
             instance.pendingGroupRanges = new Map();
+            instance.pendingCombinedInput = null;
             instance.pendingInputType = null;
             instance.pendingEmptyQuoteBreak = false;
             instance.awaitingContentRevision = null;
@@ -1756,7 +2222,7 @@
         }
         instance.documentRevision = documentRevision;
         instance.acceptedDocumentRevision = documentRevision;
-        instance.acceptedContentRevision = contentRevision;
+        instance.acceptedContentRevision = authoritativeContentRevision;
         instance.acceptedRenderRequest = renderRequestRevision;
         bindEditing(instance);
         bindSelectionHighlight(instance);
@@ -1767,7 +2233,7 @@
             if (layoutNeedsPagination(instance)) schedule(instance, true);
             else instance.pendingSelection = null;
         }
-        return { ok: true, revision: contentRevision, renderPolicy };
+        return { ok: true, revision: authoritativeContentRevision, renderPolicy };
     }
 
     function destroy(rootId) {
