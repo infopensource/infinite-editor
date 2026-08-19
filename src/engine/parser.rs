@@ -85,6 +85,42 @@ impl ParserGateway {
     pub fn render_html(&self, source: &str) -> Result<String, ParseError> {
         self.backend.render_html(source)
     }
+
+    /// Counts visible characters instead of Markdown source punctuation.
+    pub fn character_count(&self, source: &str) -> usize {
+        markdown::to_mdast(source, &markdown::ParseOptions::gfm())
+            .map(|root| visible_character_count(&root))
+            .unwrap_or_else(|_| {
+                source
+                    .chars()
+                    .filter(|character| !character.is_whitespace())
+                    .count()
+            })
+    }
+}
+
+fn count_non_whitespace(value: &str) -> usize {
+    value
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .count()
+}
+
+fn visible_character_count(node: &Node) -> usize {
+    if let Some(children) = node.children() {
+        return children.iter().map(visible_character_count).sum();
+    }
+
+    match node {
+        Node::Text(node) => count_non_whitespace(&node.value),
+        Node::InlineCode(node) => count_non_whitespace(&node.value),
+        Node::Code(node) => count_non_whitespace(&node.value),
+        Node::InlineMath(node) => count_non_whitespace(&node.value),
+        Node::Math(node) => count_non_whitespace(&node.value),
+        Node::Image(node) => count_non_whitespace(&node.alt),
+        Node::ImageReference(node) => count_non_whitespace(&node.alt),
+        _ => 0,
+    }
 }
 
 struct MarkdownRsBackend;
@@ -277,5 +313,19 @@ mod tests {
             &document.blocks[0],
             DocumentNode::Paragraph(text) if text == "第一段"
         ));
+    }
+
+    #[test]
+    fn counts_visible_characters_without_markdown_or_whitespace() {
+        let source = "# 标题\n\n这是 **粗体** 和 [链接](https://example.com)。\n\n```rust\nfn main() {}\n```";
+
+        assert_eq!(ParserGateway::markdown_rs().character_count(source), 20);
+    }
+
+    #[test]
+    fn counts_table_text_and_image_alt_text() {
+        let source = "| 名称 | 值 |\n| --- | --- |\n| 图片 | ![风景](view.png) |";
+
+        assert_eq!(ParserGateway::markdown_rs().character_count(source), 7);
     }
 }

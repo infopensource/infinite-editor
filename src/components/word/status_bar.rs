@@ -8,6 +8,7 @@ pub fn StatusBar(
     markdown_preview_open: bool,
     status_hint: String,
     current_file: Option<String>,
+    character_count: usize,
     on_markdown_click: EventHandler<()>,
     on_wysiwyg_click: EventHandler<()>,
 ) -> Element {
@@ -41,6 +42,8 @@ pub fn StatusBar(
                 span { class: "status-state", "{status_hint}" }
                 span { class: "status-dot", "•" }
                 span { class: "status-file", "{file_label}" }
+                span { class: "status-dot", "•" }
+                span { class: "status-count", "字数：{character_count}" }
                 span { class: "status-dot", "•" }
                 span { "中文(简体)" }
             }

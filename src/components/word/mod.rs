@@ -10,7 +10,7 @@ mod title_bar;
 pub(super) const MARKDOWN_DOCUMENT_BRIDGE_ID: &str = "markdown-document-bridge";
 
 use crate::document::{ProjectDocument, ResourceBundle};
-use crate::engine::EditorMode;
+use crate::engine::{EditorMode, ParserGateway};
 #[cfg(feature = "desktop")]
 use crate::storage;
 use crate::storage::DocumentLocation;
@@ -521,6 +521,7 @@ pub fn WordWorkspace() -> Element {
         .map(|location| file_name_or(location.path(), "未命名文档"))
         .unwrap_or_else(|| "未命名文档".to_string());
     let current_document = document();
+    let character_count = ParserGateway::markdown_rs().character_count(&current_document.markdown);
     let paper = current_document.layout.paper.clone();
     let margins = current_document.layout.margins.clone();
 
@@ -667,6 +668,7 @@ pub fn WordWorkspace() -> Element {
                 markdown_preview_open: markdown_preview_open(),
                 status_hint: status_hint(),
                 current_file: current_location().map(|location| file_name_or(location.path(), "未命名文档")),
+                character_count,
                 on_markdown_click: move |_| {
                     if editor_mode() == EditorMode::MarkdownSource {
                         markdown_preview_open.set(!markdown_preview_open());
