@@ -497,12 +497,8 @@ pub fn WordWorkspace() -> Element {
     let zoom = use_signal(|| 100u16);
     let mut editor_mode = use_signal(|| EditorMode::Wysiwyg);
     let mut markdown_preview_open = use_signal(|| true);
-    let mut document = use_signal(|| {
-        ProjectDocument::new(
-            "# 项目计划书\n\n这是一个基于 **Markdown 扩展** 的富文本引擎原型。\n\n## 本阶段目标\n\n- 解析接口与后端隔离\n- Markdown 源码与 WYSIWYG 模式切换\n- Markdown 源码高亮（syntect）\n\n> 后续将在此基础上继续扩展自定义语法。\n"
-                .to_string(),
-        )
-    });
+    let mut document =
+        use_signal(|| ProjectDocument::new(include_str!("Document_1.md").to_string()));
     let document_revision = use_signal(|| 0u64);
     let mut editor_revision = use_signal(|| 0u64);
     let resources = use_signal(ResourceBundle::default);

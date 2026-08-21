@@ -26,7 +26,137 @@ import {
 } from "@codemirror/language";
 
 const views = new Map();
+const scrollSyncs = new Map();
+const pendingScrollSyncs = new Map();
 let controller = null;
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function interpolate(points, value, fromKey, toKey) {
+  if (points.length < 2) return 0;
+  const bounded = clamp(value, points[0][fromKey], points.at(-1)[fromKey]);
+  let low = 0;
+  let high = points.length - 1;
+  while (low + 1 < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (points[middle][fromKey] <= bounded) low = middle;
+    else high = middle;
+  }
+  const start = points[low];
+  const end = points[high];
+  const distance = end[fromKey] - start[fromKey];
+  if (distance <= 0) return start[toKey];
+  const progress = (bounded - start[fromKey]) / distance;
+  return start[toKey] + progress * (end[toKey] - start[toKey]);
+}
+
+function disconnectScrollSync(hostId) {
+  const sync = scrollSyncs.get(hostId);
+  if (!sync) return;
+  sync.source.removeEventListener("scroll", sync.onSourceScroll);
+  sync.preview.removeEventListener("scroll", sync.onPreviewScroll);
+  sync.observer.disconnect();
+  if (sync.frame) cancelAnimationFrame(sync.frame);
+  scrollSyncs.delete(hostId);
+}
+
+function connectScrollSync(hostId, previewId) {
+  const view = views.get(hostId)?.view;
+  const preview = document.getElementById(previewId);
+  if (!view || !preview) return { ok: false, error: "找不到源码编辑器或预览区" };
+
+  const existing = scrollSyncs.get(hostId);
+  if (existing?.preview === preview && existing.source === view.scrollDOM) {
+    existing.points = null;
+    return { ok: true, reused: true };
+  }
+  disconnectScrollSync(hostId);
+
+  const sync = {
+    source: view.scrollDOM,
+    preview,
+    view,
+    points: null,
+    frame: 0,
+    ignoreSource: null,
+    ignorePreview: null,
+  };
+
+  const buildPoints = () => {
+    const sourceMax = Math.max(0, sync.source.scrollHeight - sync.source.clientHeight);
+    const previewMax = Math.max(0, preview.scrollHeight - preview.clientHeight);
+    const previewRect = preview.getBoundingClientRect();
+    const points = [{ source: 0, preview: 0 }];
+
+    for (const node of preview.querySelectorAll("[data-markdown-from]")) {
+      const position = Number(node.dataset.markdownFrom);
+      if (!Number.isFinite(position)) continue;
+      const source = clamp(view.lineBlockAt(clamp(position, 0, view.state.doc.length)).top, 0, sourceMax);
+      const targetRect = node.getBoundingClientRect();
+      const target = clamp(targetRect.top - previewRect.top + preview.scrollTop, 0, previewMax);
+      const previous = points.at(-1);
+      if (
+        source <= previous.source
+        || target <= previous.preview
+        || source >= sourceMax
+        || target >= previewMax
+      ) continue;
+      points.push({ source, preview: target });
+    }
+
+    const previous = points.at(-1);
+    if (sourceMax > previous.source || previewMax > previous.preview) {
+      points.push({ source: sourceMax, preview: previewMax });
+    }
+    sync.points = points;
+    return points;
+  };
+
+  const schedule = (side) => {
+    if (sync.frame) return;
+    sync.frame = requestAnimationFrame(() => {
+      sync.frame = 0;
+      const points = sync.points ?? buildPoints();
+      if (side === "source") {
+        const target = interpolate(points, sync.source.scrollTop, "source", "preview");
+        sync.ignorePreview = target;
+        preview.scrollTop = target;
+      } else {
+        const target = interpolate(points, preview.scrollTop, "preview", "source");
+        sync.ignoreSource = target;
+        sync.source.scrollTop = target;
+      }
+    });
+  };
+
+  sync.onSourceScroll = () => {
+    if (sync.ignoreSource !== null && Math.abs(sync.source.scrollTop - sync.ignoreSource) < 2) {
+      sync.ignoreSource = null;
+      return;
+    }
+    schedule("source");
+  };
+  sync.onPreviewScroll = () => {
+    if (sync.ignorePreview !== null && Math.abs(preview.scrollTop - sync.ignorePreview) < 2) {
+      sync.ignorePreview = null;
+      return;
+    }
+    schedule("preview");
+  };
+  sync.observer = typeof ResizeObserver === "undefined"
+    ? { observe() {}, disconnect() {} }
+    : new ResizeObserver(() => { sync.points = null; });
+  sync.observer.observe(preview);
+  const rendered = preview.querySelector(".markdown-rendered-html");
+  if (rendered) sync.observer.observe(rendered);
+  sync.source.addEventListener("scroll", sync.onSourceScroll, { passive: true });
+  preview.addEventListener("scroll", sync.onPreviewScroll, { passive: true });
+  scrollSyncs.set(hostId, sync);
+  buildPoints();
+  return { ok: true };
+}
 
 function activeBridge() {
   return controller?.bridgeId ? document.getElementById(controller.bridgeId) : null;
@@ -320,7 +450,11 @@ window.InfiniteMarkdownEditor = {
       const initialized = initialize(initialValue, documentRevision, bridgeId);
       if (initialized.staleDocument) return initialized;
       const existing = views.get(hostId);
-      if (existing?.view.dom.isConnected) return { ok: true };
+      if (existing?.view.dom.isConnected) {
+        const previewId = pendingScrollSyncs.get(hostId);
+        if (previewId) connectScrollSync(hostId, previewId);
+        return { ok: true };
+      }
       if (existing) {
         existing.view.destroy();
         views.delete(hostId);
@@ -335,6 +469,8 @@ window.InfiniteMarkdownEditor = {
         }
       });
       views.set(hostId, { view });
+      const previewId = pendingScrollSyncs.get(hostId);
+      if (previewId) connectScrollSync(hostId, previewId);
       return { ok: true };
     } catch (error) {
       return { ok: false, error: String(error) };
@@ -449,6 +585,11 @@ window.InfiniteMarkdownEditor = {
     return { ok: true };
   },
 
+  syncPreview(hostId, previewId) {
+    pendingScrollSyncs.set(hostId, previewId);
+    return connectScrollSync(hostId, previewId);
+  },
+
   getValue() {
     return controller?.state.doc.toString() ?? null;
   },
@@ -468,9 +609,11 @@ window.InfiniteMarkdownEditor = {
   },
 
   destroy(hostId) {
+    disconnectScrollSync(hostId);
     const entry = views.get(hostId);
     if (entry) entry.view.destroy();
     views.delete(hostId);
+    pendingScrollSyncs.delete(hostId);
     controller = null;
     return { ok: true };
   }

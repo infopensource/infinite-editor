@@ -2,27 +2,42 @@ use crate::config::{
     MIN_PAGE_CONTENT_WIDTH_MM, RULER_MAJOR_STEP_MM, RULER_MID_STEP_MM, RULER_MINOR_STEP_MM,
 };
 use crate::document::{Orientation, PageMargins, PaperMode, ProjectDocument, ResourceBundle};
-use crate::engine::{EditorMode, ParserGateway};
+use crate::engine::EditorMode;
 use dioxus::prelude::*;
 
 use super::document_layout::{resolved_paper_size, ruler_position_percent};
-use super::document_renderer::DocumentRenderer;
+use super::document_renderer::{render_html_with_page_breaks, DocumentRenderer};
 use super::MARKDOWN_DOCUMENT_BRIDGE_ID;
 
 const MARKDOWN_EDITOR_HOST_ID: &str = "markdown-editor-host";
 const MARKDOWN_PREVIEW_ID: &str = "markdown-math-preview";
+const MARKDOWN_PREVIEW_PANE_ID: &str = "markdown-preview-pane";
 
 fn render_markdown_math_preview() {
     spawn(async move {
         let script = format!(
             r#"
-                const render = () => window.InfiniteMathRenderer.render(
-                    document.getElementById('{MARKDOWN_PREVIEW_ID}')
-                );
-                if (window.InfiniteMathRenderer) return JSON.stringify(render());
+                const nextFrame = () => new Promise(requestAnimationFrame);
+                const render = async () => {{
+                    // `dangerous_inner_html` and this effect can be committed in
+                    // the same render pass. Wait until the new preview DOM exists
+                    // before replacing Markdown's temporary math code nodes.
+                    await nextFrame();
+                    const result = window.InfiniteMathRenderer.render(
+                        document.getElementById('{MARKDOWN_PREVIEW_ID}')
+                    );
+                    window.InfiniteMarkdownEditor?.syncPreview(
+                        '{MARKDOWN_EDITOR_HOST_ID}',
+                        '{MARKDOWN_PREVIEW_PANE_ID}'
+                    );
+                    return result;
+                }};
+                if (window.InfiniteMathRenderer) {{
+                    return JSON.stringify(await render());
+                }}
                 return await new Promise((resolve) => window.addEventListener(
                     'infinite-math-renderer-ready',
-                    () => resolve(JSON.stringify(render())),
+                    async () => resolve(JSON.stringify(await render())),
                     {{ once: true }}
                 ));
             "#
@@ -131,11 +146,9 @@ pub fn EditorSurface(
 
     let paper_size =
         resolved_paper_size(paper_mode, custom_width_mm, custom_height_mm, orientation);
-    let parser = ParserGateway::markdown_rs();
     let should_render_html = editor_mode == EditorMode::MarkdownSource && markdown_preview_open;
     let rendered_html = if should_render_html {
-        parser
-            .render_html(&source)
+        render_html_with_page_breaks(&source)
             .unwrap_or_else(|_| "<p>渲染失败</p>".to_string())
     } else {
         String::new()
@@ -187,7 +200,9 @@ pub fn EditorSurface(
                     }
                     if markdown_preview_open {
                         div { class: "markdown-split-line" }
-                        section { class: "markdown-preview-pane",
+                        section {
+                            id: MARKDOWN_PREVIEW_PANE_ID,
+                            class: "markdown-preview-pane",
                             if source.trim().is_empty() {
                                 p { class: "markdown-preview-placeholder", "预览区" }
                             } else {
@@ -195,6 +210,7 @@ pub fn EditorSurface(
                                     id: MARKDOWN_PREVIEW_ID,
                                     class: "markdown-rendered-html",
                                     dangerous_inner_html: "{rendered_html.clone()}",
+                                    onmounted: move |_| render_markdown_math_preview(),
                                 }
                             }
                         }
