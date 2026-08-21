@@ -1,0 +1,5 @@
+# Exclude generated JavaScript bundles from GitHub language statistics.
+/assets/*.bundle.js linguist-generated=true
+
+# Keep JavaScript tests tracked while excluding them from language statistics.
+/web/*.test.js linguist-detectable=false
