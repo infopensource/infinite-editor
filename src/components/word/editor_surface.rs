@@ -10,6 +10,26 @@ use super::document_renderer::DocumentRenderer;
 use super::MARKDOWN_DOCUMENT_BRIDGE_ID;
 
 const MARKDOWN_EDITOR_HOST_ID: &str = "markdown-editor-host";
+const MARKDOWN_PREVIEW_ID: &str = "markdown-math-preview";
+
+fn render_markdown_math_preview() {
+    spawn(async move {
+        let script = format!(
+            r#"
+                const render = () => window.InfiniteMathRenderer.render(
+                    document.getElementById('{MARKDOWN_PREVIEW_ID}')
+                );
+                if (window.InfiniteMathRenderer) return JSON.stringify(render());
+                return await new Promise((resolve) => window.addEventListener(
+                    'infinite-math-renderer-ready',
+                    () => resolve(JSON.stringify(render())),
+                    {{ once: true }}
+                ));
+            "#
+        );
+        let _ = document::eval(&script).join::<String>().await;
+    });
+}
 
 fn report_editor_result(
     operation: &str,
@@ -121,6 +141,13 @@ pub fn EditorSurface(
         String::new()
     };
 
+    use_effect(move || {
+        let _ = document.read().markdown.clone();
+        if editor_mode == EditorMode::MarkdownSource && markdown_preview_open {
+            render_markdown_math_preview();
+        }
+    });
+
     if editor_mode == EditorMode::MarkdownSource {
         let markdown_layout_class = if markdown_preview_open {
             "markdown-workspace with-preview"
@@ -165,6 +192,7 @@ pub fn EditorSurface(
                                 p { class: "markdown-preview-placeholder", "预览区" }
                             } else {
                                 div {
+                                    id: MARKDOWN_PREVIEW_ID,
                                     class: "markdown-rendered-html",
                                     dangerous_inner_html: "{rendered_html.clone()}",
                                 }

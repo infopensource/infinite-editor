@@ -40,6 +40,7 @@ Object.defineProperty(dom.window.HTMLElement.prototype, "scrollHeight", {
   },
 });
 
+await import("../assets/math.bundle.js");
 await import("../assets/document_renderer.js");
 const api = window.InfiniteDocumentRenderer;
 
@@ -75,6 +76,11 @@ function mockMarkdownController(initial, documentRevision, editRevision, receive
     applyEdits(edits) {
       received.push(edits);
       return apply(edits);
+    },
+    applyChange(from, to, insert) {
+      const edit = { from, to, insert };
+      received.push([edit]);
+      return apply([edit]);
     },
     replaceAll(next) {
       if (next === markdown) return { ok: true, changed: false, revision };
@@ -115,6 +121,119 @@ test("paginates using measured content height", () => {
     [...root.querySelectorAll(".document-page-content")].map((page) => page.textContent),
     ["第一段", "第二段", "第三段"]
   );
+});
+
+test("renders inline, display, and mhchem formulas before pagination", () => {
+  const root = document.getElementById("renderer");
+  root.querySelector(".document-pagination-source").innerHTML = `
+    <p>能量 <code class="language-math math-inline">E=mc^2</code></p>
+    <pre><code class="language-math math-display">\\ce{2H2 + O2 -&gt; 2H2O}</code></pre>`;
+
+  const result = api.paginate(root, true);
+
+  assert.equal(result.ok, true);
+  assert.equal(root.querySelectorAll(".document-pagination-source .infinite-math").length, 2);
+  assert.equal(root.querySelectorAll(".document-page-content .katex").length, 2);
+  assert.match(root.querySelector(".math-inline").dataset.mathSource, /E=mc\^2/);
+  assert.match(root.querySelector(".math-display").textContent, /2H2O/);
+});
+
+test("provides caret boundaries that delete inline formulas atomically", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "前 $x^2$ 后";
+  const from = markdown.indexOf("$");
+  const to = markdown.lastIndexOf("$") + 1;
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<p data-markdown-from="0" data-markdown-to="${markdown.length}">前 `
+    + `<code class="language-math math-inline" data-math-from="${from}" data-math-to="${to}">x^2</code> 后</p>`;
+  const controller = mockMarkdownController(markdown, 80, 0);
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", true, {}, true, "wysiwyg-bridge", markdown, 80, 0, 1);
+  await flushRenderer();
+
+  const pages = root.querySelector("[data-document-pages]");
+  const boundaries = pages.querySelectorAll(".wysiwyg-formula-boundary.inline");
+  assert.equal(boundaries.length, 2);
+  pages.focus();
+  const range = document.createRange();
+  range.selectNodeContents(boundaries[1]);
+  range.collapse(false);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+  pages.dispatchEvent(new dom.window.KeyboardEvent("keydown", {
+    key: "Backspace", bubbles: true, cancelable: true,
+  }));
+
+  assert.equal(controller.value(), "前  后");
+});
+
+test("crosses each inline formula boundary with one horizontal arrow press", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "前 $x$ 后";
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<p data-markdown-from="0" data-markdown-to="${markdown.length}">前 `
+    + `<code class="language-math math-inline" data-math-from="2" data-math-to="5">x</code> 后</p>`;
+  window.InfiniteMarkdownEditor = mockMarkdownController(markdown, 82, 0);
+  api.mount("renderer", true, {}, true, "wysiwyg-bridge", markdown, 82, 0, 1);
+  await flushRenderer();
+
+  const pages = root.querySelector("[data-document-pages]");
+  const before = pages.querySelector('.wysiwyg-formula-boundary.inline[data-formula-side="before"]');
+  const after = pages.querySelector('.wysiwyg-formula-boundary.inline[data-formula-side="after"]');
+  pages.focus();
+  const leftText = before.previousSibling;
+  const rightText = after.nextSibling;
+  const range = document.createRange();
+  range.selectNodeContents(leftText);
+  range.collapse(false);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+
+  pages.dispatchEvent(new dom.window.KeyboardEvent("keydown", {
+    key: "ArrowRight", bubbles: true, cancelable: true,
+  }));
+  assert.equal(window.getSelection().anchorNode, rightText);
+  assert.equal(window.getSelection().anchorOffset, 0);
+
+  const reverseRange = document.createRange();
+  reverseRange.selectNodeContents(rightText);
+  reverseRange.collapse(true);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(reverseRange);
+  pages.dispatchEvent(new dom.window.KeyboardEvent("keydown", {
+    key: "ArrowLeft", bubbles: true, cancelable: true,
+  }));
+  assert.equal(window.getSelection().anchorNode, leftText);
+  assert.equal(window.getSelection().anchorOffset, leftText.data.length);
+});
+
+test("provides before and after caret paragraphs for a display formula", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "$$\na=b\n$$";
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<pre data-markdown-from="0" data-markdown-to="${markdown.length}">`
+    + `<code class="language-math math-display" data-math-from="0" data-math-to="${markdown.length}">a=b\n</code></pre>`;
+  const controller = mockMarkdownController(markdown, 81, 0);
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", true, {}, true, "wysiwyg-bridge", markdown, 81, 0, 1);
+  await flushRenderer();
+
+  const pages = root.querySelector("[data-document-pages]");
+  const before = pages.querySelector('.wysiwyg-formula-boundary.block[data-formula-side="before"]');
+  const after = pages.querySelector('.wysiwyg-formula-boundary.block[data-formula-side="after"]');
+  assert.ok(before);
+  assert.ok(after);
+  pages.focus();
+  const range = document.createRange();
+  range.selectNodeContents(after);
+  range.collapse(true);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+  pages.dispatchEvent(new dom.window.KeyboardEvent("keydown", {
+    key: "Backspace", bubbles: true, cancelable: true,
+  }));
+
+  assert.equal(controller.value(), "");
 });
 
 test("splits one long pasted paragraph across physical pages", () => {

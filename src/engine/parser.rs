@@ -48,6 +48,7 @@ pub enum DocumentNode {
         language: Option<String>,
         code: String,
     },
+    MathBlock(String),
     Quote(Vec<DocumentNode>),
     List {
         ordered: bool,
@@ -88,7 +89,7 @@ impl ParserGateway {
 
     /// Counts visible characters instead of Markdown source punctuation.
     pub fn character_count(&self, source: &str) -> usize {
-        markdown::to_mdast(source, &markdown::ParseOptions::gfm())
+        markdown::to_mdast(source, &math_parse_options())
             .map(|root| visible_character_count(&root))
             .unwrap_or_else(|_| {
                 source
@@ -96,6 +97,20 @@ impl ParserGateway {
                     .filter(|character| !character.is_whitespace())
                     .count()
             })
+    }
+}
+
+pub(crate) fn math_parse_options() -> markdown::ParseOptions {
+    let mut options = markdown::ParseOptions::gfm();
+    options.constructs.math_text = true;
+    options.constructs.math_flow = true;
+    options
+}
+
+fn math_options() -> markdown::Options {
+    markdown::Options {
+        parse: math_parse_options(),
+        compile: markdown::CompileOptions::gfm(),
     }
 }
 
@@ -127,10 +142,8 @@ struct MarkdownRsBackend;
 
 impl MarkdownParserBackend for MarkdownRsBackend {
     fn parse(&self, source: &str) -> Result<Document, ParseError> {
-        let root = markdown::to_mdast(source, &markdown::ParseOptions::gfm()).map_err(|err| {
-            ParseError {
-                message: err.to_string(),
-            }
+        let root = markdown::to_mdast(source, &math_parse_options()).map_err(|err| ParseError {
+            message: err.to_string(),
         })?;
 
         let mut blocks = Vec::new();
@@ -146,10 +159,8 @@ impl MarkdownParserBackend for MarkdownRsBackend {
     }
 
     fn render_html(&self, source: &str) -> Result<String, ParseError> {
-        markdown::to_html_with_options(source, &markdown::Options::gfm()).map_err(|error| {
-            ParseError {
-                message: error.to_string(),
-            }
+        markdown::to_html_with_options(source, &math_options()).map_err(|error| ParseError {
+            message: error.to_string(),
         })
     }
 }
@@ -167,6 +178,7 @@ fn node_to_block(node: Node) -> Option<DocumentNode> {
             language: code.lang,
             code: code.value,
         }),
+        Node::Math(math) => Some(DocumentNode::MathBlock(math.value)),
         Node::Blockquote(quote) => {
             let blocks = quote
                 .children
@@ -210,6 +222,7 @@ fn inline_text(children: Vec<Node>) -> String {
         match child {
             Node::Text(node) => text.push_str(&node.value),
             Node::InlineCode(node) => text.push_str(&node.value),
+            Node::InlineMath(node) => text.push_str(&node.value),
             Node::Delete(node) => text.push_str(&inline_text(node.children)),
             Node::Emphasis(node) => text.push_str(&inline_text(node.children)),
             Node::Strong(node) => text.push_str(&inline_text(node.children)),
@@ -260,6 +273,29 @@ mod tests {
 
         assert!(html.contains("<table>"), "{html}");
         assert!(html.contains("<td>值</td>"), "{html}");
+    }
+
+    #[test]
+    fn recognizes_inline_and_display_math() {
+        let parser = ParserGateway::markdown_rs();
+        let html = parser
+            .render_html("质能方程 $E=mc^2$。\n\n$$\n\\ce{2H2 + O2 -> 2H2O}\n$$")
+            .expect("数学 Markdown 应能渲染为 KaTeX 挂载节点");
+
+        assert!(
+            html.contains(r#"class="language-math math-inline""#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"class="language-math math-display""#),
+            "{html}"
+        );
+
+        let document = parser.parse("$$\nx^2\n$$").expect("块公式应进入文档模型");
+        assert!(matches!(
+            document.blocks.first(),
+            Some(DocumentNode::MathBlock(value)) if value == "x^2"
+        ));
     }
 
     #[test]

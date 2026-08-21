@@ -6,6 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use url::Url;
 
 const DOCUMENT_CSS: &str = include_str!("../../assets/styling/word.css");
+const MATH_CSS: &str = include_str!("../../assets/math.bundle.css");
+const MATH_JS: &str = include_str!("../../assets/math.bundle.js");
 const PAGINATION_JS: &str = include_str!("../../assets/document_renderer.js");
 
 pub fn export_pdf(
@@ -76,6 +78,7 @@ fn build_print_html(
 <title>Infinite Editor PDF</title>
 <style>
 {DOCUMENT_CSS}
+{MATH_CSS}
 {font_css}
 @page {{ size: {width_mm:.3}mm {height_mm:.3}mm; margin: 0; }}
 html, body {{ margin: 0; padding: 0; background: #fff; }}
@@ -89,6 +92,7 @@ html, body {{ margin: 0; padding: 0; background: #fff; }}
   <div class="document-pagination-source markdown-rendered-html" aria-hidden="true">{content}</div>
   <div class="document-flow paged" data-document-pages="true"></div>
 </section>
+<script>{MATH_JS}</script>
 <script>{PAGINATION_JS}</script>
 <script>
 const resources = {resources};
@@ -207,6 +211,9 @@ mod tests {
         assert!(html.contains("@page { size: 180.000mm 260.000mm"));
         assert!(html.contains("data:image/png;base64,AA=="));
         assert!(html.contains("InfiniteDocumentRenderer.paginate"));
+        assert!(html.contains("InfiniteMathRenderer"));
+        assert!(html.contains("font-family:KaTeX_Main"));
+        assert!(html.contains("data:font/woff2;base64,"));
         assert!(!html.contains("<script>alert"));
     }
 

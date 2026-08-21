@@ -30,6 +30,8 @@ enum Route {
 // The macro returns an `Asset` type that will display as the path to the asset in the browser or a local path in desktop bundles.
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const EDITOR_JS: Asset = asset!("/assets/editor.bundle.js");
+const MATH_JS: Asset = asset!("/assets/math.bundle.js");
+const MATH_CSS: Asset = asset!("/assets/math.bundle.css");
 const DOCUMENT_RENDERER_JS: Asset = asset!("/assets/document_renderer.js");
 const APP_CSS: &str = concat!(
     include_str!("../assets/styling/main.css"),
@@ -70,7 +72,9 @@ fn App() -> Element {
         // In addition to element and text (which we will see later), rsx can contain other components. In this case,
         // we are using the `document::Link` component to add a link to our favicon and main CSS file into the head of our app.
         dioxus::document::Link { rel: "icon", href: FAVICON }
+        dioxus::document::Link { rel: "stylesheet", href: MATH_CSS }
         dioxus::document::Script { src: EDITOR_JS }
+        dioxus::document::Script { src: MATH_JS }
         dioxus::document::Script { src: DOCUMENT_RENDERER_JS }
         style { "{APP_CSS}" }
 

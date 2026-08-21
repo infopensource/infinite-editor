@@ -1,5 +1,5 @@
 use crate::document::{LayoutDocument, ProjectDocument, ResourceBundle};
-use crate::engine::ParserGateway;
+use crate::engine::{math_parse_options, ParserGateway};
 use dioxus::prelude::*;
 use markdown::mdast::Node;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -48,7 +48,7 @@ pub(crate) fn render_html_with_page_breaks(source: &str) -> Result<String, Strin
         if section.trim().is_empty() {
             output.push_str(r#"<p class="wysiwyg-empty-paragraph"><br></p>"#);
         } else {
-            let tree = markdown::to_mdast(section, &markdown::ParseOptions::gfm())
+            let tree = markdown::to_mdast(section, &math_parse_options())
                 .map_err(|error| error.to_string())?;
             let Node::Root(root) = tree else {
                 return Err("Markdown 根节点无效".to_string());
@@ -57,10 +57,12 @@ pub(crate) fn render_html_with_page_breaks(source: &str) -> Result<String, Strin
                 let Some(position) = child.position() else {
                     continue;
                 };
+                let math_ranges = math_source_ranges(&child, source, section_start);
                 let block_source = &section[position.start.offset..position.end.offset];
                 let html = parser
                     .render_html(block_source)
                     .map_err(|error| error.message)?;
+                let html = annotate_math_source_ranges(&html, &math_ranges);
                 let from = byte_offset_to_utf16(source, section_start + position.start.offset);
                 let to = byte_offset_to_utf16(source, section_start + position.end.offset);
                 output.push_str(&annotate_source_range(&html, from, to));
@@ -79,6 +81,64 @@ pub(crate) fn render_html_with_page_breaks(source: &str) -> Result<String, Strin
     }
 
     Ok(output)
+}
+
+fn math_source_ranges(
+    node: &Node,
+    source: &str,
+    section_start: usize,
+) -> Vec<(bool, usize, usize)> {
+    let mut ranges = Vec::new();
+    fn visit(
+        node: &Node,
+        source: &str,
+        section_start: usize,
+        ranges: &mut Vec<(bool, usize, usize)>,
+    ) {
+        let display = match node {
+            Node::InlineMath(_) => Some(false),
+            Node::Math(_) => Some(true),
+            _ => None,
+        };
+        if let (Some(display), Some(position)) = (display, node.position()) {
+            ranges.push((
+                display,
+                byte_offset_to_utf16(source, section_start + position.start.offset),
+                byte_offset_to_utf16(source, section_start + position.end.offset),
+            ));
+        }
+        if let Some(children) = node.children() {
+            for child in children {
+                visit(child, source, section_start, ranges);
+            }
+        }
+    }
+    visit(node, source, section_start, &mut ranges);
+    ranges
+}
+
+fn annotate_math_source_ranges(html: &str, ranges: &[(bool, usize, usize)]) -> String {
+    let mut output = html.to_string();
+    let mut search_from = 0;
+    for (display, from, to) in ranges {
+        let class = if *display {
+            "math-display"
+        } else {
+            "math-inline"
+        };
+        let Some(relative_class) = output[search_from..].find(class) else {
+            continue;
+        };
+        let class_position = search_from + relative_class;
+        let Some(relative_tag_end) = output[class_position..].find('>') else {
+            continue;
+        };
+        let tag_end = class_position + relative_tag_end;
+        let attributes = format!(r#" data-math-from="{from}" data-math-to="{to}""#);
+        output.insert_str(tag_end, &attributes);
+        search_from = tag_end + attributes.len() + 1;
+    }
+    output
 }
 
 fn byte_offset_to_utf16(source: &str, offset: usize) -> usize {
@@ -299,6 +359,21 @@ mod tests {
             "{html}"
         );
         assert!(html.contains(r#"data-markdown-from="0""#), "{html}");
+    }
+
+    #[test]
+    fn formulas_expose_source_ranges_for_atomic_deletion() {
+        let html = render_html_with_page_breaks("前 $x$ 后\n\n$$\ny\n$$")
+            .expect("公式应带有删除所需的源码范围");
+
+        assert!(
+            html.contains(r#"data-math-from="2" data-math-to="5""#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"data-math-from="9" data-math-to="16""#),
+            "{html}"
+        );
     }
 
     #[test]

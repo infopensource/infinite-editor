@@ -58,7 +58,7 @@
         if (
             length < 2 ||
             !node.matches("p, pre, blockquote, ul, ol") ||
-            node.querySelector("img, video, iframe, svg, table")
+            node.querySelector("img, video, iframe, svg, table, .infinite-math")
         ) {
             return null;
         }
@@ -144,6 +144,55 @@
         return nodes;
     }
 
+    function createFormulaBoundary(formula, side, block = false) {
+        const boundary = document.createElement(block ? "p" : "span");
+        boundary.className = `wysiwyg-formula-boundary ${block ? "block" : "inline"}`;
+        boundary.dataset.formulaSide = side;
+        boundary.dataset.mathFrom = formula.dataset.mathFrom;
+        boundary.dataset.mathTo = formula.dataset.mathTo;
+        if (block) {
+            const position = side === "before" ? formula.dataset.mathFrom : formula.dataset.mathTo;
+            boundary.dataset.documentBlockId = `formula-boundary-${side}-${position}`;
+            boundary.dataset.markdownFrom = position;
+            boundary.dataset.markdownTo = position;
+            boundary.appendChild(document.createElement("br"));
+        } else {
+            boundary.textContent = "\u200b";
+        }
+        return boundary;
+    }
+
+    function addFormulaBoundaries(nodes, editable) {
+        if (!editable) return nodes;
+        for (const node of nodes) {
+            for (const formula of node.querySelectorAll?.(".infinite-math.math-inline") ?? []) {
+                if (!formula.previousSibling?.classList?.contains("wysiwyg-formula-boundary")) {
+                    formula.before(createFormulaBoundary(formula, "before"));
+                }
+                if (!formula.nextSibling?.classList?.contains("wysiwyg-formula-boundary")) {
+                    formula.after(createFormulaBoundary(formula, "after"));
+                }
+            }
+        }
+
+        const expanded = [];
+        for (let index = 0; index < nodes.length; index += 1) {
+            const node = nodes[index];
+            if (node.matches?.(".infinite-math.math-display")) {
+                if (!expanded.at(-1)?.matches?.(".wysiwyg-formula-boundary.block")) {
+                    expanded.push(createFormulaBoundary(node, "before", true));
+                }
+                expanded.push(node);
+                if (!nodes[index + 1]?.matches?.(".wysiwyg-formula-boundary.block")) {
+                    expanded.push(createFormulaBoundary(node, "after", true));
+                }
+            } else {
+                expanded.push(node);
+            }
+        }
+        return expanded;
+    }
+
     function paginate(root, seamless, instance = null, projectedNodes = null) {
         const source = root.querySelector(".document-pagination-source");
         const pages = root.querySelector("[data-document-pages]");
@@ -151,7 +200,9 @@
             return { ok: false, error: "缺少分页源节点或页面容器" };
         }
 
-        const nodes = projectedNodes ?? sourceNodes(source, instance);
+        window.InfiniteMathRenderer?.render(source);
+        let nodes = projectedNodes ?? sourceNodes(source, instance);
+        nodes = addFormulaBoundaries(nodes, Boolean(instance?.editable));
         pages.replaceChildren();
         pages.className = seamless ? "document-flow seamless" : "document-flow paged";
 
@@ -369,6 +420,13 @@
         if (node.nodeType !== Node.ELEMENT_NODE) return "";
 
         const element = node;
+        if (element.matches?.(".wysiwyg-formula-boundary")) {
+            return escapeText((element.textContent ?? "").replaceAll("\u200b", ""));
+        }
+        if (element.matches?.(".infinite-math")) {
+            const source = element.dataset.mathSource ?? "";
+            return element.dataset.mathDisplay === "true" ? `$$\n${source}\n$$` : `$${source}$`;
+        }
         const content = (marks = activeMarks) =>
             [...element.childNodes].map((child) => inlineMarkdown(child, marks)).join("");
         const hasMarkableContent = () => element.textContent.trim().length > 0
@@ -739,6 +797,16 @@
         const paragraphs = () => fragments
             .map((fragment) => inlineMarkdown(fragment).trim() || BLANK_PARAGRAPH_MARKER)
             .join("\n\n");
+
+        if (first.matches(".infinite-math[data-math-display='true']")) {
+            return `$$\n${first.dataset.mathSource ?? ""}\n$$`;
+        }
+
+        if (first.matches(".wysiwyg-formula-boundary.block")) {
+            const text = paragraphs();
+            if (!text || text === BLANK_PARAGRAPH_MARKER) return "";
+            return first.dataset.formulaSide === "before" ? `${text}\n\n` : `\n\n${text}`;
+        }
 
         if (/^h[1-6]$/.test(tag)) return `${"#".repeat(Number(tag[1]))} ${inline()}`;
         if (tag === "p" || tag === "div") return paragraphs();
@@ -1735,12 +1803,153 @@
         return true;
     }
 
+    function formulaBoundaryAtCaret(range, key) {
+        if (!range?.collapsed) return null;
+        const element = range.startContainer.nodeType === Node.ELEMENT_NODE
+            ? range.startContainer
+            : range.startContainer.parentElement;
+        const direct = element?.closest?.(".wysiwyg-formula-boundary");
+        if (direct) return direct;
+
+        let candidate = null;
+        if (range.startContainer.nodeType === Node.ELEMENT_NODE) {
+            const children = range.startContainer.childNodes;
+            candidate = key === "Backspace"
+                ? children[Math.max(0, range.startOffset - 1)]
+                : children[range.startOffset];
+        } else if (key === "Backspace" && range.startOffset === 0) {
+            candidate = range.startContainer.previousSibling;
+        } else if (key === "Delete" && range.startOffset === range.startContainer.data.length) {
+            candidate = range.startContainer.nextSibling;
+        }
+        const candidateElement = candidate?.nodeType === Node.ELEMENT_NODE
+            ? candidate
+            : candidate?.parentElement;
+        if (candidateElement?.matches?.(".infinite-math")) {
+            const sibling = key === "Backspace"
+                ? candidateElement.nextSibling
+                : candidateElement.previousSibling;
+            return sibling?.nodeType === Node.ELEMENT_NODE
+                && sibling.matches(".wysiwyg-formula-boundary")
+                ? sibling
+                : null;
+        }
+        return candidateElement?.closest?.(".wysiwyg-formula-boundary") ?? null;
+    }
+
+    function deleteFormulaFromBoundary(instance, boundary, key) {
+        const side = boundary?.dataset.formulaSide;
+        if (!((side === "after" && key === "Backspace") || (side === "before" && key === "Delete"))) {
+            return null;
+        }
+        const from = Number(boundary.dataset.mathFrom);
+        const to = Number(boundary.dataset.mathTo);
+        const controller = window.InfiniteMarkdownEditor;
+        if (!Number.isFinite(from) || !Number.isFinite(to) || !controller?.applyChange) {
+            return { ok: false, error: "无法确定公式对应的 Markdown 范围" };
+        }
+        const result = controller.applyChange(
+            from,
+            to,
+            "",
+            "wysiwyg-delete",
+            key === "Backspace" ? "delete.backward" : "delete.forward",
+            true,
+        );
+        markPendingRender(instance, result, RENDER_CANONICAL);
+        return result;
+    }
+
+    function moveFromInlineFormulaBoundary(instance, range, key) {
+        if (!range?.collapsed || (key !== "ArrowLeft" && key !== "ArrowRight")) return false;
+        const element = range.startContainer.nodeType === Node.ELEMENT_NODE
+            ? range.startContainer
+            : range.startContainer.parentElement;
+        let boundary = element?.closest?.(".wysiwyg-formula-boundary.inline");
+        if (!boundary && range.startContainer.nodeType === Node.ELEMENT_NODE) {
+            const children = range.startContainer.childNodes;
+            const candidate = key === "ArrowRight"
+                ? children[range.startOffset]
+                : children[range.startOffset - 1];
+            if (candidate?.matches?.(".wysiwyg-formula-boundary.inline")) boundary = candidate;
+        } else if (!boundary && range.startContainer.nodeType === Node.TEXT_NODE) {
+            const atEdge = key === "ArrowRight"
+                ? range.startOffset === range.startContainer.data.length
+                : range.startOffset === 0;
+            const candidate = atEdge
+                ? (key === "ArrowRight"
+                    ? range.startContainer.nextSibling
+                    : range.startContainer.previousSibling)
+                : null;
+            if (candidate?.matches?.(".wysiwyg-formula-boundary.inline")) boundary = candidate;
+        }
+        if (!boundary) return false;
+
+        const side = boundary.dataset.formulaSide;
+        if ((key === "ArrowRight" && side !== "before") || (key === "ArrowLeft" && side !== "after")) {
+            const insideBoundary = element?.closest?.(".wysiwyg-formula-boundary.inline") === boundary;
+            if (!insideBoundary) return false;
+        }
+        const crossingFormula = (key === "ArrowRight" && side === "before")
+            || (key === "ArrowLeft" && side === "after");
+        if (crossingFormula) {
+            const formula = side === "before" ? boundary.nextSibling : boundary.previousSibling;
+            const oppositeBoundary = side === "before" ? formula?.nextSibling : formula?.previousSibling;
+            if (!oppositeBoundary?.classList?.contains("wysiwyg-formula-boundary")) return false;
+            const adjacentText = side === "before"
+                ? oppositeBoundary.nextSibling
+                : oppositeBoundary.previousSibling;
+            if (adjacentText && !adjacentText.matches?.(".infinite-math")) {
+                placeCaret(instance, adjacentText, side === "before");
+            } else {
+                placeCaret(instance, oppositeBoundary, side !== "before");
+            }
+            return true;
+        }
+
+        const sibling = key === "ArrowLeft" ? boundary.previousSibling : boundary.nextSibling;
+        if (sibling && !sibling.matches?.(".infinite-math")) {
+            placeCaret(instance, sibling, key === "ArrowRight");
+            return true;
+        }
+        const selection = window.getSelection?.();
+        if (!selection) return false;
+        const targetRange = document.createRange();
+        if (key === "ArrowLeft") targetRange.setStartBefore(boundary);
+        else targetRange.setStartAfter(boundary);
+        targetRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(targetRange);
+        instance.lastEditorRange = targetRange.cloneRange();
+        return true;
+    }
+
     function bindEditing(instance) {
         const pages = instance.root.querySelector("[data-document-pages]");
         if (!pages) return;
         if (!instance.keydownHandler) {
             instance.keydownHandler = (event) => {
                 if (!instance.root.isConnected || !instance.editable || !instance.hasEditorFocus) return;
+                if (
+                    !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+                    && moveFromInlineFormulaBoundary(instance, editorRange(instance), event.key)
+                ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+                if (event.key === "Backspace" || event.key === "Delete") {
+                    const result = deleteFormulaFromBoundary(
+                        instance,
+                        formulaBoundaryAtCaret(editorRange(instance), event.key),
+                        event.key,
+                    );
+                    if (result) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                    }
+                }
                 if (
                     (event.ctrlKey || event.metaKey)
                     && !event.altKey

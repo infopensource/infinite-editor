@@ -1329,6 +1329,14 @@
     height: auto;
 }
 
+/* KaTeX uses absolutely positioned SVG pieces for extensible arrows. The
+   general Markdown media rule above must not turn those pieces into images. */
+.markdown-rendered-html .katex svg {
+    display: block;
+    max-width: none;
+    height: inherit;
+}
+
 .markdown-rendered-html table {
     display: block;
     width: 100%;
@@ -1408,6 +1416,54 @@
 
 .markdown-rendered-html code {
     font-family: Consolas, "Cascadia Mono", "JetBrains Mono", monospace;
+}
+
+.markdown-rendered-html .infinite-math {
+    color: inherit;
+    max-width: 100%;
+}
+
+.markdown-rendered-html .infinite-math.math-inline {
+    display: inline-block;
+    vertical-align: baseline;
+}
+
+.markdown-rendered-html .infinite-math.math-display {
+    display: block;
+    margin: 0 0 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: center;
+}
+
+.document-flow[contenteditable="true"] .infinite-math {
+    cursor: default;
+    user-select: all;
+}
+
+.wysiwyg-formula-boundary.inline {
+    /* Keep this in the surrounding text line. A fixed-size inline block makes
+       the native caret shorter than (and vertically detached from) the text. */
+    display: inline;
+    font: inherit;
+    line-height: inherit;
+    white-space: pre;
+    cursor: text;
+}
+
+.document-renderer .markdown-rendered-html p.wysiwyg-formula-boundary.block {
+    /* The <br> supplies a real editable line, so its caret follows the current
+       document font size and line height at every zoom/font setting. */
+    min-height: 1em;
+    margin: 0 !important;
+    padding: 0;
+    font: inherit;
+    line-height: inherit;
+    cursor: text;
+}
+
+.wysiwyg-formula-boundary.block:focus-within {
+    outline: none;
 }
 
 .markdown-preview-code-lang {
