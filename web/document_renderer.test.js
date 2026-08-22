@@ -167,6 +167,25 @@ test("provides caret boundaries that delete inline formulas atomically", async (
   assert.equal(controller.value(), "前  后");
 });
 
+test("prevents Ctrl plus primary click from reaching native contenteditable handling", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "正文";
+  window.InfiniteMarkdownEditor = mockMarkdownController(markdown, 83, 0);
+  api.mount("renderer", true, {}, true, "wysiwyg-bridge", markdown, 83, 0, 1);
+  await flushRenderer();
+
+  const pages = root.querySelector("[data-document-pages]");
+  const gesture = new dom.window.MouseEvent("mousedown", {
+    button: 0,
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+
+  assert.equal(pages.dispatchEvent(gesture), false);
+  assert.equal(gesture.defaultPrevented, true);
+});
+
 test("crosses each inline formula boundary with one horizontal arrow press", async () => {
   const root = document.getElementById("renderer");
   const markdown = "前 $x$ 后";

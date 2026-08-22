@@ -26,7 +26,9 @@
 
 [普通链接](https://commonmark.org/ "CommonMark")、[引用式链接][markdown-guide]，以及带说明文字的图片：
 
-![一张用于测试资源缺失占位和替代文本的示例图片](sample-image.png "示例图片")
+![Infinite Editor 的文档与 Markdown 编辑场景](sample-image.png "示例图片")
+
+*图 1：Infinite Editor 示例文档中的图片、替代文本与资源加载。*
 
 [markdown-guide]: https://www.markdownguide.org/ "Markdown Guide"
 

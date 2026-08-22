@@ -13,8 +13,10 @@ const MARKDOWN_EDITOR_HOST_ID: &str = "markdown-editor-host";
 const MARKDOWN_PREVIEW_ID: &str = "markdown-math-preview";
 const MARKDOWN_PREVIEW_PANE_ID: &str = "markdown-preview-pane";
 
-fn render_markdown_math_preview() {
+fn render_markdown_preview(resources: ResourceBundle) {
     spawn(async move {
+        let resources =
+            serde_json::to_string(resources.entries()).unwrap_or_else(|_| "{}".into());
         let script = format!(
             r#"
                 const nextFrame = () => new Promise(requestAnimationFrame);
@@ -23,6 +25,10 @@ fn render_markdown_math_preview() {
                     // the same render pass. Wait until the new preview DOM exists
                     // before replacing Markdown's temporary math code nodes.
                     await nextFrame();
+                    window.InfiniteDocumentRenderer?.hydrateResources(
+                        document.getElementById('{MARKDOWN_PREVIEW_ID}'),
+                        {resources}
+                    );
                     const result = window.InfiniteMathRenderer.render(
                         document.getElementById('{MARKDOWN_PREVIEW_ID}')
                     );
@@ -157,7 +163,7 @@ pub fn EditorSurface(
     use_effect(move || {
         let _ = document.read().markdown.clone();
         if editor_mode == EditorMode::MarkdownSource && markdown_preview_open {
-            render_markdown_math_preview();
+            render_markdown_preview(resources.read().clone());
         }
     });
 
@@ -193,7 +199,9 @@ pub fn EditorSurface(
                                 div { class: "markdown-editor-fallback",
                                     strong { "Markdown 编辑器加载失败" }
                                     p { "{message}" }
-                                    p { "请检查 editor.bundle.js 是否为最新版本，然后重启应用。" }
+                                    p {
+                                        "请检查 editor.bundle.js 是否为最新版本，然后重启应用。"
+                                    }
                                 }
                             }
                         }
@@ -210,7 +218,7 @@ pub fn EditorSurface(
                                     id: MARKDOWN_PREVIEW_ID,
                                     class: "markdown-rendered-html",
                                     dangerous_inner_html: "{rendered_html.clone()}",
-                                    onmounted: move |_| render_markdown_math_preview(),
+                                    onmounted: move |_| render_markdown_preview(resources.read().clone()),
                                 }
                             }
                         }
@@ -265,26 +273,20 @@ pub fn EditorSurface(
                         div { class: "ruler-track",
                             for millimeter in (0..=ruler_width_mm.unwrap()).step_by(RULER_MINOR_STEP_MM as usize) {
                                 span {
-                                    class: if millimeter % RULER_MAJOR_STEP_MM == 0 {
-                                        "ruler-tick major"
-                                    } else if millimeter % RULER_MID_STEP_MM == 0 {
-                                        "ruler-tick mid"
-                                    } else {
-                                        "ruler-tick minor"
-                                    },
-                                    style: format!("left: {:.6}%;", ruler_position_percent(millimeter, ruler_width_mm.unwrap())),
+                                    class: if millimeter % RULER_MAJOR_STEP_MM == 0 { "ruler-tick major" } else if millimeter % RULER_MID_STEP_MM == 0 { "ruler-tick mid" } else { "ruler-tick minor" },
+                                    style: format!(
+                                        "left: {:.6}%;",
+                                        ruler_position_percent(millimeter, ruler_width_mm.unwrap()),
+                                    ),
                                 }
                             }
                             for millimeter in (0..=ruler_width_mm.unwrap()).step_by(RULER_MAJOR_STEP_MM as usize) {
                                 span {
-                                    class: if millimeter == 0 {
-                                        "ruler-mark origin"
-                                    } else if millimeter == ruler_width_mm.unwrap() {
-                                        "ruler-mark endpoint"
-                                    } else {
-                                        "ruler-mark"
-                                    },
-                                    style: format!("left: {:.6}%;", ruler_position_percent(millimeter, ruler_width_mm.unwrap())),
+                                    class: if millimeter == 0 { "ruler-mark origin" } else if millimeter == ruler_width_mm.unwrap() { "ruler-mark endpoint" } else { "ruler-mark" },
+                                    style: format!(
+                                        "left: {:.6}%;",
+                                        ruler_position_percent(millimeter, ruler_width_mm.unwrap()),
+                                    ),
                                     "{millimeter}"
                                 }
                             }
@@ -299,7 +301,8 @@ pub fn EditorSurface(
                                 value: effective_left_mm,
                                 oninput: move |evt| {
                                     if let Ok(next) = evt.value().parse::<u16>() {
-                                        let maximum = ruler_width_mm.unwrap()
+                                        let maximum = ruler_width_mm
+                                            .unwrap()
                                             .saturating_sub(effective_right_mm + MIN_PAGE_CONTENT_WIDTH_MM);
                                         on_left_margin_change.call(next.min(maximum) as f32);
                                     }

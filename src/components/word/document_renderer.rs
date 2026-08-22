@@ -37,6 +37,7 @@ pub(crate) fn escape_css_string(value: &str) -> String {
 
 pub(crate) fn render_html_with_page_breaks(source: &str) -> Result<String, String> {
     let parser = ParserGateway::markdown_rs();
+    let reference_definitions = reference_definition_source(source)?;
     let mut output = String::new();
     let mut section_start = 0usize;
 
@@ -59,8 +60,15 @@ pub(crate) fn render_html_with_page_breaks(source: &str) -> Result<String, Strin
                 };
                 let math_ranges = math_source_ranges(&child, source, section_start);
                 let block_source = &section[position.start.offset..position.end.offset];
+                let render_source = if reference_definitions.is_empty()
+                    || matches!(child, Node::Definition(_))
+                {
+                    block_source.to_string()
+                } else {
+                    format!("{block_source}\n\n{reference_definitions}")
+                };
                 let html = parser
-                    .render_html(block_source)
+                    .render_html(&render_source)
                     .map_err(|error| error.message)?;
                 let html = annotate_math_source_ranges(&html, &math_ranges);
                 let from = byte_offset_to_utf16(source, section_start + position.start.offset);
@@ -81,6 +89,23 @@ pub(crate) fn render_html_with_page_breaks(source: &str) -> Result<String, Strin
     }
 
     Ok(output)
+}
+
+fn reference_definition_source(source: &str) -> Result<String, String> {
+    let tree = markdown::to_mdast(source, &math_parse_options())
+        .map_err(|error| error.to_string())?;
+    let Node::Root(root) = tree else {
+        return Err("Markdown 根节点无效".to_string());
+    };
+
+    Ok(root
+        .children
+        .iter()
+        .filter(|node| matches!(node, Node::Definition(_)))
+        .filter_map(Node::position)
+        .map(|position| &source[position.start.offset..position.end.offset])
+        .collect::<Vec<_>>()
+        .join("\n"))
 }
 
 fn math_source_ranges(
@@ -359,6 +384,22 @@ mod tests {
             "{html}"
         );
         assert!(html.contains(r#"data-markdown-from="0""#), "{html}");
+    }
+
+    #[test]
+    fn reference_links_share_definitions_across_rendered_blocks() {
+        let html = render_html_with_page_breaks(
+            "[引用式链接][markdown-guide]\n\n后续段落\n\n[markdown-guide]: https://www.markdownguide.org/ \"Markdown Guide\"",
+        )
+        .expect("引用式链接应能访问文档级定义");
+
+        assert!(
+            html.contains(
+                r#"<a href="https://www.markdownguide.org/" title="Markdown Guide">引用式链接</a>"#
+            ),
+            "{html}"
+        );
+        assert!(!html.contains("[markdown-guide]:"), "{html}");
     }
 
     #[test]

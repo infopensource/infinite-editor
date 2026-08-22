@@ -193,6 +193,13 @@ function extensions() {
     highlightActiveLine(),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     markdown({ extensions: GFM }),
+    EditorView.domEventHandlers({
+      mousedown(event) {
+        if (event.button !== 0 || !event.ctrlKey || event.metaKey) return false;
+        event.preventDefault();
+        return true;
+      }
+    }),
     keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
     EditorView.lineWrapping,
     EditorView.theme({

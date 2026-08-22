@@ -383,12 +383,11 @@
         }
     }
 
-    function hydrateResources(instance) {
-        const source = instance.root.querySelector(".document-pagination-source");
-        for (const image of source?.querySelectorAll("img[src]") ?? []) {
+    function hydrateResourceImages(root, resources = {}) {
+        for (const image of root?.querySelectorAll("img[src]") ?? []) {
             const original = image.dataset.infiniteResourceSource || image.getAttribute("src");
             const key = normalizeResourceUrl(original);
-            const resolved = key ? instance.resources[key] : null;
+            const resolved = key ? resources[key] : null;
             if (resolved) {
                 image.dataset.infiniteResourceSource = original;
                 image.setAttribute("src", resolved);
@@ -398,7 +397,7 @@
 
     function bindResourceReflow(instance) {
         const source = instance.root.querySelector(".document-pagination-source");
-        hydrateResources(instance);
+        hydrateResourceImages(source, instance.resources);
         const reflow = () => {
             if (!instance.editable || layoutNeedsPagination(instance)) schedule(instance);
         };
@@ -1970,6 +1969,15 @@
         }
         if (instance.pages === pages) return;
         instance.pages = pages;
+        pages.addEventListener("mousedown", (event) => {
+            // WebKitGTK may hand Ctrl+primary-click to the native editable
+            // widget, where it can be interpreted as a primary-selection
+            // paste. It is not an editor shortcut, so keep it out of the
+            // browser's default contenteditable handling.
+            if (event.button === 0 && event.ctrlKey && !event.metaKey) {
+                event.preventDefault();
+            }
+        });
         pages.addEventListener("input", (event) => {
             if (!instance.editable) return;
             if (instance.composing) return;
@@ -2464,6 +2472,13 @@
         instances.delete(rootId);
     }
 
-    window.InfiniteDocumentRenderer = { mount, paginate, serializeMarkdown, command, destroy };
+    window.InfiniteDocumentRenderer = {
+        mount,
+        paginate,
+        serializeMarkdown,
+        command,
+        destroy,
+        hydrateResources: hydrateResourceImages,
+    };
     window.dispatchEvent(new CustomEvent("infinite-document-renderer-ready"));
 })();
