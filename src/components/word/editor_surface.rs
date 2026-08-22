@@ -12,6 +12,55 @@ use super::MARKDOWN_DOCUMENT_BRIDGE_ID;
 const MARKDOWN_EDITOR_HOST_ID: &str = "markdown-editor-host";
 const MARKDOWN_PREVIEW_ID: &str = "markdown-math-preview";
 const MARKDOWN_PREVIEW_PANE_ID: &str = "markdown-preview-pane";
+const MARKDOWN_WORKSPACE_ID: &str = "markdown-workspace";
+const MARKDOWN_SPLITTER_ID: &str = "markdown-splitter";
+
+fn mount_markdown_splitter() {
+    spawn(async move {
+        let script = format!(
+            r#"
+                const workspace = document.getElementById('{MARKDOWN_WORKSPACE_ID}');
+                const splitter = document.getElementById('{MARKDOWN_SPLITTER_ID}');
+                if (!workspace || !splitter || splitter.dataset.ready === 'true') return;
+                splitter.dataset.ready = 'true';
+
+                const setRatio = (ratio) => {{
+                    const next = Math.max(15, Math.min(85, ratio));
+                    workspace.style.setProperty('--markdown-editor-ratio', `${{next}}%`);
+                    splitter.setAttribute('aria-valuenow', String(Math.round(next)));
+                    window.InfiniteMarkdownEditor?.layout?.('{MARKDOWN_EDITOR_HOST_ID}');
+                }};
+                const ratioFromPointer = (event) => {{
+                    const bounds = workspace.getBoundingClientRect();
+                    const splitterCenter = splitter.getBoundingClientRect().width / 2;
+                    setRatio(((event.clientX - bounds.left - splitterCenter) / bounds.width) * 100);
+                }};
+
+                splitter.addEventListener('pointerdown', (event) => {{
+                    event.preventDefault();
+                    splitter.setPointerCapture(event.pointerId);
+                    splitter.classList.add('dragging');
+                    document.body.classList.add('markdown-split-resizing');
+                    ratioFromPointer(event);
+                }});
+                splitter.addEventListener('pointermove', (event) => {{
+                    if (splitter.hasPointerCapture(event.pointerId)) ratioFromPointer(event);
+                }});
+                const stopDragging = (event) => {{
+                    if (splitter.hasPointerCapture(event.pointerId)) {{
+                        splitter.releasePointerCapture(event.pointerId);
+                    }}
+                    splitter.classList.remove('dragging');
+                    document.body.classList.remove('markdown-split-resizing');
+                }};
+                splitter.addEventListener('pointerup', stopDragging);
+                splitter.addEventListener('pointercancel', stopDragging);
+                splitter.addEventListener('dblclick', () => setRatio(50));
+            "#
+        );
+        let _ = document::eval(&script).await;
+    });
+}
 
 fn render_markdown_preview(resources: ResourceBundle) {
     spawn(async move {
@@ -181,7 +230,9 @@ pub fn EditorSurface(
                 oninput: move |evt| on_markdown_change.call(evt.value()),
             }
             main { class: "editor-surface markdown-mode",
-                div { class: markdown_layout_class,
+                div {
+                    id: MARKDOWN_WORKSPACE_ID,
+                    class: markdown_layout_class,
                     section { class: "markdown-editor-pane",
                         div { class: "markdown-editor-stack",
                             div {
@@ -207,7 +258,18 @@ pub fn EditorSurface(
                         }
                     }
                     if markdown_preview_open {
-                        div { class: "markdown-split-line" }
+                        div {
+                            id: MARKDOWN_SPLITTER_ID,
+                            class: "markdown-split-line",
+                            role: "separator",
+                            aria_orientation: "vertical",
+                            aria_label: "调整 Markdown 编辑区与预览区宽度",
+                            aria_valuemin: 15,
+                            aria_valuemax: 85,
+                            aria_valuenow: 50,
+                            title: "拖动调整双栏比例，双击恢复均分",
+                            onmounted: move |_| mount_markdown_splitter(),
+                        }
                         section {
                             id: MARKDOWN_PREVIEW_PANE_ID,
                             class: "markdown-preview-pane",
