@@ -20,17 +20,6 @@ use std::path::Path;
 #[cfg(feature = "desktop")]
 use std::path::PathBuf;
 
-const SAMPLE_IMAGE: Asset = asset!("/assets/sample-image.png");
-
-fn sample_resources() -> ResourceBundle {
-    let mut resources = ResourceBundle::default();
-    resources.insert(
-        "sample-image.png".to_string(),
-        SAMPLE_IMAGE.to_string(),
-    );
-    resources
-}
-
 #[derive(Debug, serde::Deserialize)]
 struct MarkdownChangeEnvelope {
     document_revision: u64,
@@ -508,11 +497,10 @@ pub fn WordWorkspace() -> Element {
     let zoom = use_signal(|| 100u16);
     let mut editor_mode = use_signal(|| EditorMode::Wysiwyg);
     let mut markdown_preview_open = use_signal(|| true);
-    let mut document =
-        use_signal(|| ProjectDocument::new(include_str!("Document_1.md").to_string()));
+    let mut document = use_signal(|| ProjectDocument::new(String::new()));
     let document_revision = use_signal(|| 0u64);
     let mut editor_revision = use_signal(|| 0u64);
-    let resources = use_signal(sample_resources);
+    let resources = use_signal(ResourceBundle::default);
     let mut show_ruler = use_signal(|| true);
     let current_location = use_signal(|| None::<DocumentLocation>);
     let status_hint = use_signal(|| "就绪".to_string());

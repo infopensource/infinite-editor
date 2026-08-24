@@ -1,0 +1,41 @@
+format = "infinite-editor-layout"
+version = 1
+
+[document]
+source = "document.md"
+source_hash = "sha256:cf10208c05f782fab26173105766b588bc4e13711d216c595294e2086e63c0ee"
+
+[paper]
+mode = "a4"
+width_mm = 210.0
+height_mm = 297.0
+orientation = "portrait"
+
+[margins]
+top_mm = 25.0
+right_mm = 22.0
+bottom_mm = 25.0
+left_mm = 22.0
+
+[pagination]
+enabled = true
+header_height_mm = 0.0
+footer_height_mm = 0.0
+widow_lines = 2
+orphan_lines = 2
+
+[typography]
+body_font = "system-ui"
+body_font_size_pt = 11.0
+line_height = 1.8
+paragraph_spacing_pt = 8.0
+
+[resources]
+root = "document.assets"
+fonts = []
+
+[export.pdf]
+print_background = true
+prefer_css_page_size = true
+scale = 1.0
+embed_fonts = true

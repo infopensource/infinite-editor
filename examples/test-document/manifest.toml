@@ -1,0 +1,7 @@
+format = "infinite-editor-package"
+version = 1
+
+[entry]
+document = "document.md"
+layout = "document.layout.toml"
+resources = "document.assets"
