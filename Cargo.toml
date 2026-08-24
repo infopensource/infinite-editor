@@ -18,12 +18,13 @@ toml = "0.8"
 url = "2.5"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 rfd = { version = "0.15.4", optional = true, default-features = false, features = ["gtk3"] }
+gtk = { version = "0.18.2", optional = true }
 
 [features]
 default = ["desktop"]
 # The feature that are only required for the web = ["dioxus/web"] build target should be optional and only enabled in the web = ["dioxus/web"] feature
 web = ["dioxus/web"]
 # The feature that are only required for the desktop = ["dioxus/desktop"] build target should be optional and only enabled in the desktop = ["dioxus/desktop"] feature
-desktop = ["dioxus/desktop", "dep:rfd"]
+desktop = ["dioxus/desktop", "dep:rfd", "dep:gtk"]
 # The feature that are only required for the mobile = ["dioxus/mobile"] build target should be optional and only enabled in the mobile = ["dioxus/mobile"] feature
 mobile = ["dioxus/mobile"]

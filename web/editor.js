@@ -29,6 +29,41 @@ const views = new Map();
 const scrollSyncs = new Map();
 const pendingScrollSyncs = new Map();
 let controller = null;
+const pendingClipboardImagePastes = new Map();
+let clipboardPasteRequest = 0;
+
+function clipboardMayContainImage(clipboardData) {
+  const bridge = document.getElementById("clipboard-paste-bridge");
+  if (bridge?.dataset.nativeClipboard !== "true") return false;
+  const text = clipboardData?.getData?.("text/plain") ?? "";
+  const html = clipboardData?.getData?.("text/html") ?? "";
+  if (/<img[\s>]/i.test(html)) return true;
+  for (let index = 0; index < Number(clipboardData?.types?.length ?? 0); index += 1) {
+    const type = clipboardData.types[index] ?? clipboardData.types.item?.(index);
+    if (String(type).startsWith("image/")) return true;
+  }
+  return text.length === 0;
+}
+
+function requestClipboardImage(onImage) {
+  const bridge = document.getElementById("clipboard-paste-bridge");
+  if (!bridge) return false;
+  const requestId = ++clipboardPasteRequest;
+  const timeout = setTimeout(() => pendingClipboardImagePastes.delete(requestId), 10000);
+  pendingClipboardImagePastes.set(requestId, { onImage, timeout });
+  bridge.value = JSON.stringify({ request_id: requestId });
+  bridge.dispatchEvent(new Event("input", { bubbles: true }));
+  return true;
+}
+
+function completeClipboardImagePaste(requestId, path) {
+  const pending = pendingClipboardImagePastes.get(requestId);
+  if (!pending) return false;
+  pendingClipboardImagePastes.delete(requestId);
+  clearTimeout(pending.timeout);
+  pending.onImage(path);
+  return true;
+}
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -197,6 +232,24 @@ function extensions() {
       mousedown(event) {
         if (event.button !== 0 || !event.ctrlKey || event.metaKey) return false;
         event.preventDefault();
+        return true;
+      },
+      paste(event, view) {
+        if (!clipboardMayContainImage(event.clipboardData)) return false;
+        event.preventDefault();
+        const selection = view.state.selection.main;
+        requestClipboardImage((path) => {
+          if (!path || !controller) return;
+          const markdown = `![粘贴的图片](${path})`;
+          const transaction = controller.state.update({
+            changes: { from: selection.from, to: selection.to, insert: markdown },
+            selection: { anchor: selection.from + markdown.length },
+            userEvent: "input.paste",
+          });
+          applyTransactions([transaction], "source", view);
+          view.update([transaction]);
+          view.focus();
+        });
         return true;
       }
     }),
@@ -445,6 +498,9 @@ function transactionSpec(changes, userEvent, isolate) {
 
 window.InfiniteMarkdownEditor = {
   initialize,
+  clipboardMayContainImage,
+  requestClipboardImage,
+  completeClipboardImagePaste,
 
   mount(hostId, bridgeId, initialValue, documentRevision) {
     const host = document.getElementById(hostId);

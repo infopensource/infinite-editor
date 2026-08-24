@@ -1313,11 +1313,18 @@
             } catch (_) {
                 offset = 0;
             }
+            const precedingImage = selection.anchorNode.nodeType === Node.ELEMENT_NODE
+                ? selection.anchorNode.childNodes[selection.anchorOffset - 1]
+                : null;
+            const afterImage = precedingImage?.nodeName === "IMG"
+                ? [...block.querySelectorAll("img")].indexOf(precedingImage)
+                : -1;
             return {
                 blockId: id,
                 blockOrdinal: Math.max(0, matches.indexOf(block)),
                 logicalBlockIndex: Math.max(0, logicalBlocks.indexOf(logicalBlock)),
                 offset,
+                afterImage,
             };
         })();
         const anchor = selectionOffset(pages, selection.anchorNode, selection.anchorOffset);
@@ -1360,14 +1367,22 @@
             const block = matches[bookmark.structural.blockOrdinal]
                 ?? logicalBlocks[bookmark.structural.logicalBlockIndex];
             if (block) {
-                const position = globalTextPosition(block, bookmark.structural.offset);
                 const range = document.createRange();
-                if (position) {
+                const precedingImage = bookmark.structural.afterImage >= 0
+                    ? block.querySelectorAll("img")[bookmark.structural.afterImage]
+                    : null;
+                const position = precedingImage
+                    ? null
+                    : globalTextPosition(block, bookmark.structural.offset);
+                if (precedingImage) {
+                    range.setStartAfter(precedingImage);
+                } else if (position) {
                     range.setStart(position.node, position.offset);
                 } else {
                     range.selectNodeContents(block);
                     range.collapse(true);
                 }
+                range.collapse(true);
                 if (bookmark.focused) pages.focus({ preventScroll: true });
                 selection.removeAllRanges();
                 selection.addRange(range);
@@ -2038,7 +2053,41 @@
                 && emptyEditableBlock(quoteParagraph(selection?.anchorNode));
         });
         pages.addEventListener("paste", (event) => {
-            if (!instance.editable || !selectionCoversDocument(instance)) return;
+            if (!instance.editable) return;
+            const shouldReadImage = window.InfiniteMarkdownEditor
+                ?.clipboardMayContainImage?.(event.clipboardData);
+            if (shouldReadImage && window.InfiniteMarkdownEditor?.requestClipboardImage) {
+                event.preventDefault();
+                event.stopPropagation();
+                const range = editorRange(instance)?.cloneRange();
+                window.InfiniteMarkdownEditor.requestClipboardImage((path) => {
+                    if (!range || !path) return;
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    const image = document.createElement("img");
+                    image.src = path;
+                    image.alt = "粘贴的图片";
+                    image.dataset.infiniteResourceSource = path;
+                    range.deleteContents();
+                    range.insertNode(image);
+                    range.setStartAfter(image);
+                    range.collapse(true);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    instance.pendingSelection = captureSelection(instance);
+                    const result = dispatchMarkdown(
+                        instance,
+                        serializeMarkdown(instance.root),
+                        "wysiwyg-input",
+                        "input.paste",
+                        true,
+                    );
+                    markPendingRender(instance, result, RENDER_CANONICAL);
+                });
+                return;
+            }
+            if (!selectionCoversDocument(instance)) return;
             const text = event.clipboardData?.getData?.("text/plain");
             if (!text) return;
             event.preventDefault();

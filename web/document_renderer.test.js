@@ -649,6 +649,58 @@ test("replaces the full Markdown source without inheriting or escaping block for
   assert.equal(root.querySelector(".document-page-content strong")?.textContent, "关键词：");
 });
 
+test("inserts a system clipboard image into WYSIWYG Markdown", async () => {
+  const root = document.getElementById("renderer");
+  const markdown = "正文";
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<p data-markdown-from="0" data-markdown-to="${markdown.length}">正文</p>`;
+  const controller = mockMarkdownController(markdown, 70, 0);
+  let completePaste = null;
+  controller.clipboardMayContainImage = () => true;
+  controller.requestClipboardImage = (complete) => {
+    completePaste = complete;
+    return true;
+  };
+  window.InfiniteMarkdownEditor = controller;
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", markdown, 70, 0, 1);
+  await flushRenderer();
+
+  const pages = root.querySelector("[data-document-pages]");
+  const paragraph = pages.querySelector("p");
+  const range = document.createRange();
+  range.selectNodeContents(paragraph);
+  range.collapse(false);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+  const paste = new dom.window.Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(paste, "clipboardData", { value: { getData: () => "" } });
+
+  assert.equal(pages.dispatchEvent(paste), false);
+  assert.equal(typeof completePaste, "function");
+  completePaste("document.assets/pasted-image.png");
+
+  assert.equal(
+    controller.value(),
+    "正文![粘贴的图片](document.assets/pasted-image.png)",
+  );
+  assert.equal(controller.value().includes("blob:dioxus://"), false);
+
+  const updated = controller.value();
+  root.querySelector(".document-pagination-source").innerHTML =
+    `<p data-markdown-from="0" data-markdown-to="${updated.length}">正文`
+    + '<img src="document.assets/pasted-image.png" alt="粘贴的图片"></p>';
+  api.mount("renderer", false, {}, true, "wysiwyg-bridge", updated, 70, 1, 2);
+  await flushRenderer();
+
+  const renderedImage = root.querySelector(".document-page-content img");
+  const restoredSelection = window.getSelection();
+  assert.equal(restoredSelection.anchorNode, renderedImage.parentNode);
+  assert.equal(
+    restoredSelection.anchorOffset,
+    [...renderedImage.parentNode.childNodes].indexOf(renderedImage) + 1,
+  );
+});
+
 test("keeps the caret inside a page while repeated empty paragraphs repaginate", async () => {
   const root = document.getElementById("renderer");
   root.querySelector(".document-pagination-source").innerHTML =

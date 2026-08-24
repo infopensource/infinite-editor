@@ -8,6 +8,7 @@ mod tabs_row;
 mod title_bar;
 
 pub(super) const MARKDOWN_DOCUMENT_BRIDGE_ID: &str = "markdown-document-bridge";
+pub(super) const CLIPBOARD_PASTE_BRIDGE_ID: &str = "clipboard-paste-bridge";
 
 use crate::document::{ProjectDocument, ResourceBundle};
 use crate::engine::{EditorMode, ParserGateway};
@@ -25,6 +26,32 @@ struct MarkdownChangeEnvelope {
     document_revision: u64,
     edit_revision: u64,
     markdown: String,
+}
+
+#[cfg(feature = "desktop")]
+#[derive(Debug, serde::Deserialize)]
+struct ClipboardPasteRequest {
+    request_id: u64,
+}
+
+#[cfg(feature = "desktop")]
+fn read_clipboard_png() -> Result<String, String> {
+    use base64::Engine as _;
+
+    let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
+    let image = clipboard
+        .wait_for_image()
+        .ok_or_else(|| "剪贴板中没有可读取的图片".to_string())?;
+    let png = image
+        .save_to_bufferv("png", &[])
+        .map_err(|error| format!("编码剪贴板图片失败：{error}"))?;
+    if png.len() > 128 * 1024 * 1024 {
+        return Err("剪贴板图片超过 128 MiB 限制".to_string());
+    }
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png)
+    ))
 }
 
 pub use crate::document::PaperMode;
@@ -500,10 +527,12 @@ pub fn WordWorkspace() -> Element {
     let mut document = use_signal(|| ProjectDocument::new(String::new()));
     let document_revision = use_signal(|| 0u64);
     let mut editor_revision = use_signal(|| 0u64);
-    let resources = use_signal(ResourceBundle::default);
+    #[allow(unused_mut)]
+    let mut resources = use_signal(ResourceBundle::default);
     let mut show_ruler = use_signal(|| true);
     let current_location = use_signal(|| None::<DocumentLocation>);
-    let status_hint = use_signal(|| "就绪".to_string());
+    #[allow(unused_mut)]
+    let mut status_hint = use_signal(|| "就绪".to_string());
     let mut open_dialog_visible = use_signal(|| false);
     let mut warning_alert = use_signal(|| None::<String>);
     let mut open_path_input = use_signal(String::new);
@@ -595,6 +624,47 @@ pub fn WordWorkspace() -> Element {
                         }
                         document.write().markdown = change.markdown;
                         editor_revision.set(change.edit_revision);
+                    },
+                    on_clipboard_paste: move |payload: String| {
+                        #[cfg(feature = "desktop")]
+                        if let Ok(request) = serde_json::from_str::<ClipboardPasteRequest>(&payload) {
+                            match read_clipboard_png() {
+                                Ok(data_url) => {
+                                    let configured_root = document.read().layout.resources.root.clone();
+                                    let resource_root = if configured_root.is_empty() {
+                                        document.write().layout.resources.root =
+                                            "document.assets".to_string();
+                                        "document.assets".to_string()
+                                    } else {
+                                        configured_root
+                                    };
+                                    let path = format!(
+                                        "{}/pasted-image-{}-{}.png",
+                                        resource_root.trim_end_matches('/'),
+                                        std::process::id(),
+                                        request.request_id,
+                                    );
+                                    spawn(async move {
+                                        let script_path = serde_json::to_string(&path)
+                                            .unwrap_or_else(|_| "\"\"".into());
+                                        let script = format!(
+                                            "return window.InfiniteMarkdownEditor?.completeClipboardImagePaste({}, {}) ?? false;",
+                                            request.request_id,
+                                            script_path,
+                                        );
+                                        if matches!(
+                                            document::eval(&script).join::<bool>().await,
+                                            Ok(true)
+                                        ) {
+                                            resources.write().insert(path, data_url);
+                                        }
+                                    });
+                                }
+                                Err(error) => status_hint.set(error),
+                            }
+                        }
+                        #[cfg(not(feature = "desktop"))]
+                        let _ = payload;
                     },
                     paper_mode: paper.mode,
                     custom_width_mm: paper.width_mm,

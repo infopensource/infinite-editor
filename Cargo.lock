@@ -2350,6 +2350,7 @@ dependencies = [
  "base64",
  "dioxus",
  "futures-channel",
+ "gtk",
  "markdown",
  "rfd 0.15.4",
  "serde",

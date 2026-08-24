@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 
 use super::document_layout::{resolved_paper_size, ruler_position_percent};
 use super::document_renderer::{render_html_with_page_breaks, DocumentRenderer};
-use super::MARKDOWN_DOCUMENT_BRIDGE_ID;
+use super::{CLIPBOARD_PASTE_BRIDGE_ID, MARKDOWN_DOCUMENT_BRIDGE_ID};
 
 const MARKDOWN_EDITOR_HOST_ID: &str = "markdown-editor-host";
 const MARKDOWN_PREVIEW_ID: &str = "markdown-math-preview";
@@ -177,6 +177,7 @@ pub fn EditorSurface(
     document_revision: ReadSignal<u64>,
     editor_revision: ReadSignal<u64>,
     on_markdown_change: EventHandler<String>,
+    on_clipboard_paste: EventHandler<String>,
     paper_mode: PaperMode,
     custom_width_mm: f32,
     custom_height_mm: f32,
@@ -228,6 +229,12 @@ pub fn EditorSurface(
                 id: MARKDOWN_DOCUMENT_BRIDGE_ID,
                 class: "markdown-editor-bridge",
                 oninput: move |evt| on_markdown_change.call(evt.value()),
+            }
+            textarea {
+                id: CLIPBOARD_PASTE_BRIDGE_ID,
+                class: "markdown-editor-bridge",
+                "data-native-clipboard": cfg!(feature = "desktop"),
+                oninput: move |evt| on_clipboard_paste.call(evt.value()),
             }
             main { class: "editor-surface markdown-mode",
                 div {
@@ -327,6 +334,12 @@ pub fn EditorSurface(
             id: MARKDOWN_DOCUMENT_BRIDGE_ID,
             class: "markdown-editor-bridge",
             oninput: move |evt| on_markdown_change.call(evt.value()),
+        }
+        textarea {
+            id: CLIPBOARD_PASTE_BRIDGE_ID,
+            class: "markdown-editor-bridge",
+            "data-native-clipboard": cfg!(feature = "desktop"),
+            oninput: move |evt| on_clipboard_paste.call(evt.value()),
         }
         main { class: "editor-surface",
             if show_ruler && ruler_width_mm.is_some() {

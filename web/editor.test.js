@@ -74,6 +74,46 @@ test("sends user edits through the Dioxus bridge", () => {
   assert.equal(api.getValue("host"), " worldhello");
 });
 
+test("requests a system clipboard image through the Dioxus bridge", () => {
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    '<textarea id="clipboard-paste-bridge" data-native-clipboard="true"></textarea>',
+  );
+  let received = null;
+  document.getElementById("clipboard-paste-bridge").addEventListener("input", (event) => {
+    received = JSON.parse(event.target.value);
+  });
+  let completed = null;
+  assert.equal(api.requestClipboardImage((path) => completed = path), true);
+  assert.equal(typeof received.request_id, "number");
+  assert.equal(
+    api.completeClipboardImagePaste(received.request_id, "document.assets/pasted-image.png"),
+    true,
+  );
+  assert.equal(completed, "document.assets/pasted-image.png");
+});
+
+test("pastes a native clipboard image into Markdown source", () => {
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    '<textarea id="clipboard-paste-bridge" data-native-clipboard="true"></textarea>',
+  );
+  api.mount("host", "bridge", "正文", 2);
+  let request = null;
+  document.getElementById("clipboard-paste-bridge").addEventListener("input", (event) => {
+    request = JSON.parse(event.target.value);
+  });
+  const paste = new dom.window.Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(paste, "clipboardData", {
+    value: { types: { length: 0 }, getData: () => "" },
+  });
+
+  assert.equal(document.querySelector("#host .cm-content").dispatchEvent(paste), false);
+  assert.ok(request);
+  api.completeClipboardImagePaste(request.request_id, "document.assets/pasted-image.png");
+  assert.equal(api.getValue(), "![粘贴的图片](document.assets/pasted-image.png)正文");
+});
+
 test("ignores an asynchronous stale snapshot from the same document revision", () => {
   api.mount("host", "bridge", "old", 1);
   api.insertText("host", "new ");
