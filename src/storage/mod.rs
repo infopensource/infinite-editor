@@ -89,11 +89,14 @@ pub fn open_document(path: &Path) -> Result<LoadedDocument, String> {
 pub fn save_document(
     location: &DocumentLocation,
     document: &ProjectDocument,
+    resources: &ResourceBundle,
 ) -> Result<(), String> {
     match location {
-        DocumentLocation::Loose { markdown_path } => save_loose(markdown_path, document),
+        DocumentLocation::Loose { markdown_path } => {
+            save_loose_with_resources(markdown_path, document, resources)
+        }
         DocumentLocation::Package { package_path } => {
-            save_package(package_path, document, None, Some(package_path))
+            save_package(package_path, document, Some(resources), None, Some(package_path))
         }
     }
 }
@@ -147,6 +150,7 @@ pub fn save_loose_with_resources(
 pub fn save_package(
     package_path: &Path,
     document: &ProjectDocument,
+    resources: Option<&ResourceBundle>,
     loose_source: Option<&Path>,
     package_source: Option<&Path>,
 ) -> Result<(), String> {
@@ -210,7 +214,9 @@ pub fn save_package(
     )?;
     write_zip_entry(&mut writer, &layout_name, layout_source.as_bytes(), options)?;
 
-    if let Some(assets_path) = loose_assets.filter(|path| path.is_dir()) {
+    if let Some(resources) = resources {
+        add_resource_bundle_to_zip(&mut writer, resources, &layout.resources.root, options)?;
+    } else if let Some(assets_path) = loose_assets.filter(|path| path.is_dir()) {
         add_directory_to_zip(&mut writer, &assets_path, &resources_name, options)?;
     } else if let Some(source) = package_source.filter(|path| path.exists()) {
         copy_package_resources(&mut writer, source, &layout.resources.root, options)?;
@@ -222,6 +228,26 @@ pub fn save_package(
     file.sync_all()
         .map_err(|error| format!("同步 INFDoc 到磁盘失败: {error}"))?;
     replace_file(&temporary, package_path)
+}
+
+fn add_resource_bundle_to_zip<W: Write + Seek>(
+    writer: &mut ZipWriter<W>,
+    resources: &ResourceBundle,
+    resources_root: &str,
+    options: SimpleFileOptions,
+) -> Result<(), String> {
+    if resources_root.is_empty() {
+        return Ok(());
+    }
+    let prefix = format!("{}/", resources_root.trim_end_matches('/'));
+    for (path, data_url) in resources.entries() {
+        if !path.starts_with(&prefix) {
+            continue;
+        }
+        validate_package_path(path)?;
+        write_zip_entry(writer, path, &decode_data_url(data_url)?, options)?;
+    }
+    Ok(())
 }
 
 fn open_loose(path: &Path) -> Result<LoadedDocument, String> {
@@ -664,6 +690,60 @@ mod tests {
     }
 
     #[test]
+    fn save_writes_in_memory_resources_to_loose_document() {
+        let directory = test_directory();
+        let path = directory.join("notes.md");
+        let location = DocumentLocation::Loose {
+            markdown_path: path.clone(),
+        };
+        let mut document = ProjectDocument::new(
+            "![粘贴的图片](document.assets/pasted-image.png)".to_string(),
+        );
+        document.layout.resources.root = "document.assets".to_string();
+        let mut resources = ResourceBundle::default();
+        resources.insert(
+            "document.assets/pasted-image.png".to_string(),
+            "data:image/png;base64,AQID".to_string(),
+        );
+
+        save_document(&location, &document, &resources).expect("保存时应写出内存图片资源");
+
+        assert_eq!(
+            std::fs::read(directory.join("document.assets/pasted-image.png"))
+                .expect("粘贴图片应存在于资源目录"),
+            vec![1, 2, 3],
+        );
+        std::fs::remove_dir_all(directory).expect("应清理测试目录");
+    }
+
+    #[test]
+    fn package_save_includes_in_memory_resources() {
+        let directory = test_directory();
+        let package_path = directory.join("notes.infdoc");
+        let mut document = ProjectDocument::new(
+            "![粘贴的图片](document.assets/pasted-image.png)".to_string(),
+        );
+        document.layout.resources.root = "document.assets".to_string();
+        let mut resources = ResourceBundle::default();
+        resources.insert(
+            "document.assets/pasted-image.png".to_string(),
+            "data:image/png;base64,AQID".to_string(),
+        );
+
+        save_package(&package_path, &document, Some(&resources), None, None)
+            .expect("INFDoc 应保存内存图片资源");
+
+        let loaded = open_document(&package_path).expect("应重新打开 INFDoc");
+        assert_eq!(
+            loaded
+                .resources
+                .get("document.assets/pasted-image.png"),
+            Some("data:image/png;base64,AQID"),
+        );
+        std::fs::remove_dir_all(directory).expect("应清理测试目录");
+    }
+
+    #[test]
     fn infdoc_round_trip_preserves_document_and_layout() {
         let directory = test_directory();
         let loose_path = directory.join("proposal.md");
@@ -674,7 +754,8 @@ mod tests {
         let mut document = ProjectDocument::new("# 可移植文档".to_string());
         document.layout.paper.mode = crate::document::PaperMode::A5;
 
-        save_package(&package_path, &document, Some(&loose_path), None).expect("应创建 INFDoc");
+        save_package(&package_path, &document, None, Some(&loose_path), None)
+            .expect("应创建 INFDoc");
         let mut loaded = open_document(&package_path).expect("应打开 INFDoc");
 
         assert_eq!(loaded.document.markdown, document.markdown);
@@ -686,7 +767,8 @@ mod tests {
         assert!(matches!(loaded.location, DocumentLocation::Package { .. }));
 
         loaded.document.markdown.push_str("\n\n正文");
-        save_document(&loaded.location, &loaded.document).expect("重新保存不应丢失包内资源");
+        save_document(&loaded.location, &loaded.document, &loaded.resources)
+            .expect("重新保存不应丢失包内资源");
         let file = File::open(&package_path).expect("应打开生成的包");
         let mut archive = ZipArchive::new(file).expect("应读取生成的包");
         let mut resource = Vec::new();

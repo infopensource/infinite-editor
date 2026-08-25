@@ -147,7 +147,13 @@ async fn save_document_as_dialog(
                 DocumentLocation::Package { package_path } => Some(package_path.as_path()),
                 DocumentLocation::Loose { .. } => None,
             });
-        storage::save_package(&path, &document, loose_source, package_source)?;
+        storage::save_package(
+            &path,
+            &document,
+            Some(&resources),
+            loose_source,
+            package_source,
+        )?;
         DocumentLocation::Package { package_path: path }
     } else {
         storage::save_loose_with_resources(&path, &document, &resources)?;
@@ -293,7 +299,7 @@ fn handle_save_document(
         let current_document = document();
 
         if let Some(location) = current_location() {
-            match storage::save_document(&location, &current_document) {
+            match storage::save_document(&location, &current_document, &resources.read()) {
                 Ok(_) => {
                     status_hint.set(format!("已保存 {}", file_name_or(location.path(), "文档")))
                 }
