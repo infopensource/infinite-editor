@@ -378,26 +378,65 @@ function toggleInlineMark(open, close = open) {
   const lastLine = doc.lineAt(to);
   if (firstLine.number !== lastLine.number) {
     const changes = [];
+    let mappedFrom = null;
+    let mappedTo = null;
+    let delta = 0;
     for (let number = firstLine.number; number <= lastLine.number; number += 1) {
       const line = doc.line(number);
       const structuralPrefix = /^(?:\s*(?:>\s*)?)(?:(?:[-+*]|\d+[.)])\s+)?/.exec(line.text)[0].length;
       const start = Math.max(from, line.from + structuralPrefix);
       const end = Math.min(to, line.to);
       if (start >= end) continue;
-      const surrounded = start >= open.length
+      const openerFrom = start >= open.length
         && doc.sliceString(start - open.length, start) === open
-        && doc.sliceString(end, end + close.length) === close;
+          ? start - open.length
+          : doc.sliceString(start, start + open.length) === open
+            ? start
+            : null;
+      const closerFrom = doc.sliceString(end, end + close.length) === close
+        ? end
+        : end >= close.length && doc.sliceString(end - close.length, end) === close
+          ? end - close.length
+          : null;
+      const surrounded = openerFrom !== null
+        && closerFrom !== null
+        && openerFrom + open.length <= closerFrom;
       if (surrounded) {
+        const contentFromBefore = openerFrom + open.length;
+        const contentToBefore = closerFrom;
         changes.push(
-          { from: start - open.length, to: start, insert: "" },
-          { from: end, to: end + close.length, insert: "" },
+          { from: openerFrom, to: contentFromBefore, insert: "" },
+          { from: closerFrom, to: closerFrom + close.length, insert: "" },
         );
+        const contentFrom = openerFrom + delta;
+        const contentTo = contentToBefore + delta - open.length;
+        mappedFrom ??= contentFrom;
+        mappedTo = contentTo;
+        delta -= open.length + close.length;
       } else {
         changes.push({ from: start, insert: open }, { from: end, insert: close });
+        const contentFrom = start + delta + open.length;
+        const contentTo = end + delta + open.length;
+        mappedFrom ??= contentFrom;
+        mappedTo = contentTo;
+        delta += open.length + close.length;
       }
     }
     return changes.length > 0
-      ? applySourceTransaction({ changes })
+      ? applySourceTransaction({
+          changes,
+          // Keep the selection on the original text. CodeMirror's default
+          // boundary association otherwise includes inserted delimiters, so a
+          // second toolbar click sees `****text****` and keeps stacking stars.
+          selection: EditorSelection.range(
+            controller.state.selection.main.anchor <= controller.state.selection.main.head
+              ? mappedFrom
+              : mappedTo,
+            controller.state.selection.main.anchor <= controller.state.selection.main.head
+              ? mappedTo
+              : mappedFrom,
+          ),
+        })
       : { ok: true, changed: false, revision: controller.editRevision };
   }
   let hasSurroundingMark = from >= open.length

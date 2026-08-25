@@ -200,6 +200,20 @@ test("closes bold markers independently inside each selected list item", () => {
     api.getValue(),
     "- 这是一个基于 **Markdown 扩展 的富文本引擎原型。**\n- **这是一个基于 Markdown 扩展** 的富文本引擎原型。这是",
   );
+
+  assert.equal(api.command("bold").changed, true);
+  assert.equal(api.getValue(), markdown);
+});
+
+test("does not include a trailing unselected line when toggling multiline bold", () => {
+  const markdown = "第一行\n第二行\n第三行";
+  api.mount("host", "bridge", markdown, 25);
+  api.setSelection("host", 0, markdown.indexOf("第三行"));
+
+  assert.equal(api.command("bold").changed, true);
+  assert.equal(api.getValue(), "**第一行**\n**第二行**\n第三行");
+  assert.equal(api.command("bold").changed, true);
+  assert.equal(api.getValue(), markdown);
 });
 
 test("converts bullet markers to numbering instead of stacking markers", () => {
