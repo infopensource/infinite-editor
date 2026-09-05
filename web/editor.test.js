@@ -8,6 +8,7 @@ const dom = new JSDOM(
 );
 
 globalThis.window = dom.window;
+globalThis.Window = dom.window.Window;
 globalThis.document = dom.window.document;
 globalThis.navigator = dom.window.navigator;
 globalThis.Event = dom.window.Event;
@@ -56,6 +57,41 @@ test("mounts CodeMirror with the initial Markdown", () => {
   assert.ok(document.querySelector("#host .cm-editor"));
 });
 
+test("scroll synchronization works in both directions after preview publication and resizing", async () => {
+  api.mount("host", "bridge", "one\ntwo\nthree", 1);
+  document.body.insertAdjacentHTML("beforeend",
+    '<section id="preview" class="preview-ready"><div id="markdown-math-preview" class="markdown-rendered-html"></div><div class="markdown-preview-staging" style="display:none"><p data-markdown-from="4">hidden</p></div></section>');
+  const source = document.querySelector(".cm-scroller");
+  const preview = document.getElementById("preview");
+  let previewHeight = 2100;
+  Object.defineProperties(source, {
+    scrollHeight: { get: () => 1100 },
+    clientHeight: { get: () => 100 },
+  });
+  Object.defineProperties(preview, {
+    scrollHeight: { get: () => previewHeight },
+    clientHeight: { get: () => 100 },
+  });
+  const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+  api.syncPreview("host", "preview");
+  source.scrollTop = 500;
+  source.dispatchEvent(new Event("scroll"));
+  await frame();
+  assert.equal(preview.scrollTop, 1000);
+  preview.scrollTop = 500;
+  preview.dispatchEvent(new Event("scroll"));
+  await frame();
+  assert.equal(source.scrollTop, 250);
+  previewHeight = 4100;
+  api.syncPreview("host", "preview");
+  await frame();
+  assert.equal(source.scrollTop, 125);
+  source.scrollTop = 750;
+  source.dispatchEvent(new Event("scroll"));
+  await frame();
+  assert.equal(preview.scrollTop, 3000);
+});
+
 test("sends user edits through the Dioxus bridge", () => {
   api.mount("host", "bridge", "hello", 1);
   let received = null;
@@ -70,6 +106,7 @@ test("sends user edits through the Dioxus bridge", () => {
     edit_revision: 1,
     origin: "source",
     markdown: " worldhello",
+    selection: { anchor: 6, head: 6 },
   });
   assert.equal(api.getValue("host"), " worldhello");
 });

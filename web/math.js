@@ -1,7 +1,7 @@
 import katex from "katex";
 import "katex/contrib/mhchem";
 
-function renderInto(element, source, displayMode, throwOnError = false) {
+export function renderInto(element, source, displayMode, throwOnError = false) {
   try {
     katex.render(source, element, {
       displayMode,
@@ -17,7 +17,7 @@ function renderInto(element, source, displayMode, throwOnError = false) {
   }
 }
 
-function render(root) {
+export function render(root) {
   if (!root) return { ok: false, error: "缺少公式渲染根节点" };
 
   let rendered = 0;
@@ -48,5 +48,5 @@ function render(root) {
   return { ok: true, rendered };
 }
 
-window.InfiniteMathRenderer = { render };
+window.InfiniteMathRenderer = { render, renderInto };
 window.dispatchEvent(new CustomEvent("infinite-math-renderer-ready"));

@@ -3,8 +3,10 @@
   "type": "module",
   "scripts": {
     "build:editor": "esbuild web/editor.js --bundle --minify --format=iife --outfile=assets/editor.bundle.js",
+    "build:wysiwyg": "esbuild web/wysiwyg/bridge.js --bundle --minify --format=iife --outfile=assets/wysiwyg.bundle.js",
+    "build:document-renderer": "esbuild web/document_renderer/index.js --bundle --minify-identifiers --minify-whitespace --format=iife --outfile=assets/document_renderer.js",
     "build:math": "esbuild web/math.js --bundle --minify --format=iife --outfile=assets/math.bundle.js && esbuild node_modules/katex/dist/katex.min.css --bundle --minify --loader:.woff2=dataurl --loader:.woff=dataurl --loader:.ttf=dataurl --outfile=assets/math.bundle.css",
-    "build": "npm run build:editor && npm run build:math",
+    "build": "npm run build:editor && npm run build:wysiwyg && npm run build:document-renderer && npm run build:math",
     "test:editor": "node --test web/*.test.js",
     "test": "npm run test:editor && cargo test"
   },
@@ -16,7 +18,21 @@
     "@codemirror/theme-one-dark": "^6.1.3",
     "@codemirror/view": "^6.38.1",
     "@lezer/markdown": "^1.7.2",
-    "katex": "^0.18.4"
+    "katex": "^0.18.4",
+    "prosemirror-commands": "^1.7.2",
+    "prosemirror-history": "^1.5.0",
+    "prosemirror-inputrules": "^1.5.1",
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-markdown": "^1.13.6",
+    "prosemirror-model": "^1.25.11",
+    "prosemirror-schema-list": "^1.5.1",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-view": "^1.42.3",
+    "remark-directive": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "esbuild": "^0.25.8",

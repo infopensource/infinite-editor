@@ -1,8 +1,6 @@
-#![allow(dead_code)]
-
-use std::sync::Arc;
-
 use markdown::mdast::Node;
+
+use super::InfiniteAstDocument;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum EditorMode {
@@ -19,72 +17,27 @@ impl EditorMode {
     }
 }
 
-#[derive(Clone, PartialEq)]
-pub struct Document {
-    pub blocks: Vec<DocumentNode>,
-}
-
-impl Document {
-    pub fn fallback_from_source(source: &str) -> Self {
-        let blocks = source
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(|line| DocumentNode::Paragraph(line.to_string()))
-            .collect();
-
-        Self { blocks }
-    }
-}
-
-#[derive(Clone, PartialEq)]
-pub enum DocumentNode {
-    Heading {
-        level: u8,
-        text: String,
-    },
-    Paragraph(String),
-    CodeBlock {
-        language: Option<String>,
-        code: String,
-    },
-    MathBlock(String),
-    Quote(Vec<DocumentNode>),
-    List {
-        ordered: bool,
-        items: Vec<Vec<DocumentNode>>,
-    },
-    ThematicBreak,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     pub message: String,
 }
 
-pub trait MarkdownParserBackend: Send + Sync {
-    fn parse(&self, source: &str) -> Result<Document, ParseError>;
-    fn render_html(&self, source: &str) -> Result<String, ParseError>;
-}
-
-#[derive(Clone)]
-pub struct ParserGateway {
-    backend: Arc<dyn MarkdownParserBackend>,
-}
+#[derive(Clone, Copy, Default)]
+pub struct ParserGateway;
 
 impl ParserGateway {
     pub fn markdown_rs() -> Self {
-        Self {
-            backend: Arc::new(MarkdownRsBackend),
-        }
-    }
-
-    pub fn parse(&self, source: &str) -> Result<Document, ParseError> {
-        self.backend.parse(source)
+        Self
     }
 
     pub fn render_html(&self, source: &str) -> Result<String, ParseError> {
-        self.backend.render_html(source)
+        markdown::to_html_with_options(source, &math_options()).map_err(|error| ParseError {
+            message: error.to_string(),
+        })
+    }
+
+    pub fn parse_infinite_ast(&self, source: &str) -> Result<InfiniteAstDocument, ParseError> {
+        InfiniteAstDocument::from_markdown_rs(source)
     }
 
     /// Counts visible characters instead of Markdown source punctuation.
@@ -138,109 +91,6 @@ fn visible_character_count(node: &Node) -> usize {
     }
 }
 
-struct MarkdownRsBackend;
-
-impl MarkdownParserBackend for MarkdownRsBackend {
-    fn parse(&self, source: &str) -> Result<Document, ParseError> {
-        let root = markdown::to_mdast(source, &math_parse_options()).map_err(|err| ParseError {
-            message: err.to_string(),
-        })?;
-
-        let mut blocks = Vec::new();
-        if let Node::Root(root) = root {
-            for child in root.children {
-                if let Some(block) = node_to_block(child) {
-                    blocks.push(block);
-                }
-            }
-        }
-
-        Ok(Document { blocks })
-    }
-
-    fn render_html(&self, source: &str) -> Result<String, ParseError> {
-        markdown::to_html_with_options(source, &math_options()).map_err(|error| ParseError {
-            message: error.to_string(),
-        })
-    }
-}
-
-fn node_to_block(node: Node) -> Option<DocumentNode> {
-    match node {
-        Node::Heading(heading) => Some(DocumentNode::Heading {
-            level: heading.depth,
-            text: inline_text(heading.children),
-        }),
-        Node::Paragraph(paragraph) => {
-            Some(DocumentNode::Paragraph(inline_text(paragraph.children)))
-        }
-        Node::Code(code) => Some(DocumentNode::CodeBlock {
-            language: code.lang,
-            code: code.value,
-        }),
-        Node::Math(math) => Some(DocumentNode::MathBlock(math.value)),
-        Node::Blockquote(quote) => {
-            let blocks = quote
-                .children
-                .into_iter()
-                .filter_map(node_to_block)
-                .collect::<Vec<_>>();
-            Some(DocumentNode::Quote(blocks))
-        }
-        Node::List(list) => {
-            let items = list
-                .children
-                .into_iter()
-                .filter_map(|item| {
-                    let Node::ListItem(list_item) = item else {
-                        return None;
-                    };
-                    Some(
-                        list_item
-                            .children
-                            .into_iter()
-                            .filter_map(node_to_block)
-                            .collect::<Vec<_>>(),
-                    )
-                })
-                .collect::<Vec<_>>();
-
-            Some(DocumentNode::List {
-                ordered: list.ordered,
-                items,
-            })
-        }
-        Node::ThematicBreak(_) => Some(DocumentNode::ThematicBreak),
-        _ => None,
-    }
-}
-
-fn inline_text(children: Vec<Node>) -> String {
-    let mut text = String::new();
-
-    for child in children {
-        match child {
-            Node::Text(node) => text.push_str(&node.value),
-            Node::InlineCode(node) => text.push_str(&node.value),
-            Node::InlineMath(node) => text.push_str(&node.value),
-            Node::Delete(node) => text.push_str(&inline_text(node.children)),
-            Node::Emphasis(node) => text.push_str(&inline_text(node.children)),
-            Node::Strong(node) => text.push_str(&inline_text(node.children)),
-            Node::Link(node) => text.push_str(&inline_text(node.children)),
-            Node::LinkReference(node) => text.push_str(&inline_text(node.children)),
-            Node::Image(node) => {
-                if !node.alt.is_empty() {
-                    text.push_str(&node.alt);
-                }
-            }
-            Node::Break(_) => text.push('\n'),
-            _ => {}
-        }
-    }
-
-    text
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,12 +140,6 @@ mod tests {
             html.contains(r#"class="language-math math-display""#),
             "{html}"
         );
-
-        let document = parser.parse("$$\nx^2\n$$").expect("块公式应进入文档模型");
-        assert!(matches!(
-            document.blocks.first(),
-            Some(DocumentNode::MathBlock(value)) if value == "x^2"
-        ));
     }
 
     #[test]
@@ -316,39 +160,6 @@ mod tests {
 
         assert!(!html.contains("javascript:"));
         assert!(html.contains("危险链接"));
-    }
-
-    #[test]
-    fn parses_block_structure_used_by_the_document_model() {
-        let document = ParserGateway::markdown_rs()
-            .parse("# 标题\n\n正文\n\n- 第一项\n- 第二项\n\n```rust\nfn main() {}\n```")
-            .expect("有效 Markdown 应能生成文档结构");
-
-        assert!(matches!(
-            document.blocks.first(),
-            Some(DocumentNode::Heading { level: 1, text }) if text == "标题"
-        ));
-        assert!(document.blocks.iter().any(
-            |node| matches!(node, DocumentNode::List { ordered: false, items } if items.len() == 2)
-        ));
-        assert!(document.blocks.iter().any(|node| {
-            matches!(
-                node,
-                DocumentNode::CodeBlock { language: Some(language), code }
-                    if language == "rust" && code.contains("fn main()")
-            )
-        }));
-    }
-
-    #[test]
-    fn fallback_discards_blank_lines_but_preserves_text() {
-        let document = Document::fallback_from_source(" 第一段 \n\n第二段\n");
-
-        assert_eq!(document.blocks.len(), 2);
-        assert!(matches!(
-            &document.blocks[0],
-            DocumentNode::Paragraph(text) if text == "第一段"
-        ));
     }
 
     #[test]

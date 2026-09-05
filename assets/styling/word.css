@@ -1332,6 +1332,17 @@ body.markdown-split-resizing * {
     line-height: 1.7;
 }
 
+/* Dioxus writes new HTML into the staging layer. The renderer keeps the last
+   complete preview visible until resources and math are ready, then swaps the
+   staged tree into the stable live root in one operation. */
+.markdown-preview-pane:not(.preview-ready) > #markdown-math-preview {
+    display: none;
+}
+
+.markdown-preview-pane.preview-ready > .markdown-preview-staging {
+    display: none;
+}
+
 /* Keep rendered content inside the writable area even when the margins leave
    only a very narrow column. Natural-language text may wrap normally, while
    unbroken URLs, identifiers, and inline code are allowed to break anywhere. */
@@ -1470,36 +1481,6 @@ body.markdown-split-resizing * {
     overflow-x: auto;
     overflow-y: hidden;
     text-align: center;
-}
-
-.document-flow[contenteditable="true"] .infinite-math {
-    cursor: default;
-    user-select: all;
-}
-
-.wysiwyg-formula-boundary.inline {
-    /* Keep this in the surrounding text line. A fixed-size inline block makes
-       the native caret shorter than (and vertically detached from) the text. */
-    display: inline;
-    font: inherit;
-    line-height: inherit;
-    white-space: pre;
-    cursor: text;
-}
-
-.document-renderer .markdown-rendered-html p.wysiwyg-formula-boundary.block {
-    /* The <br> supplies a real editable line, so its caret follows the current
-       document font size and line height at every zoom/font setting. */
-    min-height: 1em;
-    margin: 0 !important;
-    padding: 0;
-    font: inherit;
-    line-height: inherit;
-    cursor: text;
-}
-
-.wysiwyg-formula-boundary.block:focus-within {
-    outline: none;
 }
 
 .markdown-preview-code-lang {
@@ -1688,43 +1669,6 @@ body.markdown-split-resizing * {
     overflow-wrap: anywhere;
     word-break: break-word;
     display: flow-root;
-}
-
-.document-flow[contenteditable="true"] .document-page-content {
-    cursor: text;
-    outline: none;
-    caret-color: #174f7e;
-}
-
-.document-flow[contenteditable="true"]:focus,
-.document-flow[contenteditable="true"] .document-page-content:focus {
-    outline: none;
-}
-
-.document-flow[contenteditable="true"] .document-page-content a {
-    cursor: text;
-}
-
-/* The native range includes invisible block separators and WebKit paints them
-   to the edge of the block. Keep the native range for editing semantics, but
-   paint its visible highlight from text-node client rects instead. */
-.document-flow[contenteditable="true"] .document-page-content::selection,
-.document-flow[contenteditable="true"] .document-page-content *::selection {
-    background: transparent;
-    color: inherit;
-}
-
-.wysiwyg-selection-layer {
-    position: fixed;
-    inset: 0;
-    z-index: 2147483646;
-    pointer-events: none;
-}
-
-.wysiwyg-selection-rect {
-    position: fixed;
-    display: block;
-    background: rgba(104, 169, 225, 0.48);
 }
 
 .document-page-content,

@@ -6,11 +6,13 @@ use crate::engine::EditorMode;
 use dioxus::prelude::*;
 
 use super::document_layout::{resolved_paper_size, ruler_position_percent};
-use super::document_renderer::{render_html_with_page_breaks, DocumentRenderer};
+use super::document_renderer::render_html_with_page_breaks;
+use super::prosemirror_surface::ProseMirrorSurface;
 use super::{CLIPBOARD_PASTE_BRIDGE_ID, MARKDOWN_DOCUMENT_BRIDGE_ID};
 
 const MARKDOWN_EDITOR_HOST_ID: &str = "markdown-editor-host";
 const MARKDOWN_PREVIEW_ID: &str = "markdown-math-preview";
+const MARKDOWN_PREVIEW_STAGING_ID: &str = "markdown-math-preview-staging";
 const MARKDOWN_PREVIEW_PANE_ID: &str = "markdown-preview-pane";
 const MARKDOWN_WORKSPACE_ID: &str = "markdown-workspace";
 const MARKDOWN_SPLITTER_ID: &str = "markdown-splitter";
@@ -28,7 +30,6 @@ fn mount_markdown_splitter() {
                     const next = Math.max(15, Math.min(85, ratio));
                     workspace.style.setProperty('--markdown-editor-ratio', `${{next}}%`);
                     splitter.setAttribute('aria-valuenow', String(Math.round(next)));
-                    window.InfiniteMarkdownEditor?.layout?.('{MARKDOWN_EDITOR_HOST_ID}');
                 }};
                 const ratioFromPointer = (event) => {{
                     const bounds = workspace.getBoundingClientRect();
@@ -62,39 +63,52 @@ fn mount_markdown_splitter() {
     });
 }
 
-fn render_markdown_preview(resources: ResourceBundle) {
+fn render_markdown_preview(resources: ResourceBundle, document_revision: u64, edit_revision: u64) {
     spawn(async move {
-        let resources =
-            serde_json::to_string(resources.entries()).unwrap_or_else(|_| "{}".into());
+        let resources = serde_json::to_string(resources.entries()).unwrap_or_else(|_| "{}".into());
         let script = format!(
             r#"
-                const nextFrame = () => new Promise(requestAnimationFrame);
+                // Scrolling belongs to the two panes' lifecycle, not to math
+                // rendering. Register it even while renderer scripts load.
+                await new Promise(requestAnimationFrame);
+                window.InfiniteMarkdownEditor?.syncPreview(
+                    '{MARKDOWN_EDITOR_HOST_ID}', '{MARKDOWN_PREVIEW_PANE_ID}'
+                );
                 const render = async () => {{
-                    // `dangerous_inner_html` and this effect can be committed in
-                    // the same render pass. Wait until the new preview DOM exists
-                    // before replacing Markdown's temporary math code nodes.
-                    await nextFrame();
-                    window.InfiniteDocumentRenderer?.hydrateResources(
-                        document.getElementById('{MARKDOWN_PREVIEW_ID}'),
-                        {resources}
+                    // Dioxus may run the effect before the preview host from the
+                    // same render pass is committed. The live host itself stays
+                    // stable; only the already-rendered staging tree is swapped.
+                    await new Promise(requestAnimationFrame);
+                    const root = document.getElementById('{MARKDOWN_PREVIEW_ID}');
+                    const staging = document.getElementById('{MARKDOWN_PREVIEW_STAGING_ID}');
+                    if (!root || !staging) return {{ ok: false, error: '找不到 Markdown 预览节点' }};
+                    const result = window.InfiniteDocumentRenderer.updatePreview(
+                        root,
+                        staging.innerHTML,
+                        {resources},
+                        {{ documentRevision: {document_revision}, editRevision: {edit_revision} }}
                     );
-                    const result = window.InfiniteMathRenderer.render(
-                        document.getElementById('{MARKDOWN_PREVIEW_ID}')
-                    );
+                    if (result?.ok) root.closest('.markdown-preview-pane')?.classList.add('preview-ready');
                     window.InfiniteMarkdownEditor?.syncPreview(
                         '{MARKDOWN_EDITOR_HOST_ID}',
                         '{MARKDOWN_PREVIEW_PANE_ID}'
                     );
                     return result;
                 }};
-                if (window.InfiniteMathRenderer) {{
+                if (window.InfiniteMathRenderer && window.InfiniteDocumentRenderer?.updatePreview) {{
                     return JSON.stringify(await render());
                 }}
-                return await new Promise((resolve) => window.addEventListener(
-                    'infinite-math-renderer-ready',
-                    async () => resolve(JSON.stringify(await render())),
-                    {{ once: true }}
-                ));
+                return await new Promise((resolve) => {{
+                    const ready = async () => {{
+                        if (!window.InfiniteMathRenderer || !window.InfiniteDocumentRenderer?.updatePreview) return;
+                        window.removeEventListener('infinite-math-renderer-ready', ready);
+                        window.removeEventListener('infinite-document-renderer-ready', ready);
+                        resolve(JSON.stringify(await render()));
+                    }};
+                    window.addEventListener('infinite-math-renderer-ready', ready);
+                    window.addEventListener('infinite-document-renderer-ready', ready);
+                    ready();
+                }});
             "#
         );
         let _ = document::eval(&script).join::<String>().await;
@@ -139,9 +153,15 @@ fn mount_markdown_editor(
         let initial_value = serde_json::to_string(&initial_value).unwrap_or_else(|_| "\"\"".into());
         let script = format!(
             r#"
-                const mount = () => window.InfiniteMarkdownEditor.mount(
-                    '{host_id}', '{bridge_id}', {initial_value}, {document_revision}
-                );
+                const mount = () => {{
+                    // The Markdown controller owns the history for both editing
+                    // surfaces. Mounting source mode only attaches a new view to
+                    // that persistent document session.
+                    return window.InfiniteMarkdownEditor.mount(
+                        '{host_id}', '{bridge_id}', {initial_value}, {document_revision},
+                        '{MARKDOWN_PREVIEW_PANE_ID}'
+                    );
+                }};
                 if (window.InfiniteMarkdownEditor) return JSON.stringify(mount());
 
                 return await new Promise((resolve) => {{
@@ -188,34 +208,30 @@ pub fn EditorSurface(
     on_right_margin_change: EventHandler<f32>,
 ) -> Element {
     let editor_error = use_signal(|| None::<String>);
-    let mut source_session = use_signal(|| None::<u64>);
-
-    use_effect(move || {
-        let revision = document_revision();
-        if editor_mode == EditorMode::MarkdownSource && source_session() != Some(revision) {
-            source_session.set(Some(revision));
-            mount_markdown_editor(document.read().markdown.clone(), revision, editor_error);
-        }
-    });
 
     let source = document.read().markdown.clone();
-
-    let paper_size =
-        resolved_paper_size(paper_mode, custom_width_mm, custom_height_mm, orientation);
-    let should_render_html = editor_mode == EditorMode::MarkdownSource && markdown_preview_open;
-    let rendered_html = if should_render_html {
-        render_html_with_page_breaks(&source)
-            .unwrap_or_else(|_| "<p>渲染失败</p>".to_string())
+    let rendered_html = if editor_mode == EditorMode::MarkdownSource && markdown_preview_open {
+        if source.trim().is_empty() {
+            r#"<p class="markdown-preview-placeholder">预览区</p>"#.to_string()
+        } else {
+            render_html_with_page_breaks(&source).unwrap_or_else(|_| "<p>渲染失败</p>".to_string())
+        }
     } else {
         String::new()
     };
 
-    use_effect(move || {
-        let _ = document.read().markdown.clone();
+    let paper_size =
+        resolved_paper_size(paper_mode, custom_width_mm, custom_height_mm, orientation);
+
+    use_effect(use_reactive!(|(editor_mode, markdown_preview_open)| {
         if editor_mode == EditorMode::MarkdownSource && markdown_preview_open {
-            render_markdown_preview(resources.read().clone());
+            render_markdown_preview(
+                resources.read().clone(),
+                document_revision(),
+                editor_revision(),
+            );
         }
-    });
+    }));
 
     if editor_mode == EditorMode::MarkdownSource {
         let markdown_layout_class = if markdown_preview_open {
@@ -244,6 +260,7 @@ pub fn EditorSurface(
                         div { class: "markdown-editor-stack",
                             div {
                                 id: MARKDOWN_EDITOR_HOST_ID,
+                                key: document_revision().to_string(),
                                 class: "markdown-code-editor",
                                 onmounted: move |_| {
                                     mount_markdown_editor(
@@ -280,15 +297,15 @@ pub fn EditorSurface(
                         section {
                             id: MARKDOWN_PREVIEW_PANE_ID,
                             class: "markdown-preview-pane",
-                            if source.trim().is_empty() {
-                                p { class: "markdown-preview-placeholder", "预览区" }
-                            } else {
-                                div {
-                                    id: MARKDOWN_PREVIEW_ID,
-                                    class: "markdown-rendered-html",
-                                    dangerous_inner_html: "{rendered_html.clone()}",
-                                    onmounted: move |_| render_markdown_preview(resources.read().clone()),
-                                }
+                            div {
+                                id: MARKDOWN_PREVIEW_ID,
+                                class: "markdown-rendered-html",
+                            }
+                            div {
+                                id: MARKDOWN_PREVIEW_STAGING_ID,
+                                class: "markdown-rendered-html markdown-preview-staging",
+                                aria_hidden: "true",
+                                dangerous_inner_html: "{rendered_html.clone()}",
                             }
                         }
                     }
@@ -405,7 +422,7 @@ pub fn EditorSurface(
                 }
             }
 
-            DocumentRenderer {
+            ProseMirrorSurface {
                 document,
                 resources,
                 document_revision,

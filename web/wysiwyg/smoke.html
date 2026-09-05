@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Minimal ProseMirror WYSIWYG Smoke</title>
+  <style>
+    body { font: 16px/1.6 system-ui, sans-serif; margin: 24px auto; max-width: 920px; }
+    .toolbar { align-items: center; display: flex; gap: 8px; margin-bottom: 12px; }
+    #composition-state[data-active="true"] { color: #b45309; font-weight: 600; }
+    #editor { border: 1px solid #aaa; border-radius: 6px; min-height: 280px; padding: 12px 28px; }
+    #editor .ProseMirror { min-height: 280px; outline: none; }
+    textarea { box-sizing: border-box; margin-top: 16px; min-height: 220px; width: 100%; }
+  </style>
+</head>
+<body>
+  <h1>阶段 1：独立 ProseMirror 内核</h1>
+  <div class="toolbar">
+    <button id="undo" type="button">Undo</button>
+    <button id="redo" type="button">Redo</button>
+    <span id="core-state">Core loading</span>
+    <span id="composition-state" data-active="false">IME idle</span>
+  </div>
+  <div id="editor"></div>
+  <textarea id="markdown-output" readonly aria-label="Serialized Markdown"></textarea>
+  <script src="/target/wysiwyg/smoke.bundle.js"></script>
+</body>
+</html>

@@ -1,0 +1,509 @@
+.infinite-pm-surface {
+    min-width: 0;
+    padding-top: 8px;
+    font-family: var(--document-font-family, "Segoe UI", "Microsoft YaHei", sans-serif);
+    font-size: var(--document-font-size, 11pt);
+    line-height: var(--document-line-height, 1.8);
+}
+
+.infinite-pm-page {
+    height: auto;
+    overflow: visible;
+}
+
+.infinite-pm-surface.seamless .infinite-pm-page {
+    min-height: auto;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.infinite-pm-host {
+    min-height: calc(var(--page-height, 600px) - var(--page-padding-top, 72px) - var(--page-padding-bottom, 72px));
+    height: auto;
+    overflow: visible;
+}
+
+.infinite-pm-host > .ProseMirror {
+    min-height: inherit;
+    outline: none;
+    caret-color: #174f7e;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.infinite-pm-host .ProseMirror-selectednode {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+.infinite-pm-host p {
+    margin: 0 0 12px;
+    color: #1f2937;
+}
+
+.infinite-pm-host h1,
+.infinite-pm-host h2,
+.infinite-pm-host h3,
+.infinite-pm-host h4,
+.infinite-pm-host h5,
+.infinite-pm-host h6 {
+    color: #111827;
+}
+
+.infinite-pm-host h1 { margin: 0 0 16px; font-size: 28px; line-height: 1.25; }
+.infinite-pm-host h2 { margin: 24px 0 12px; font-size: 22px; line-height: 1.3; }
+.infinite-pm-host h3 { margin: 18px 0 10px; font-size: 18px; line-height: 1.35; }
+
+.infinite-pm-host blockquote {
+    margin: 0 0 12px;
+    padding: 4px 0 4px 12px;
+    border-left: 3px solid #93c5fd;
+    color: #334155;
+}
+
+.infinite-pm-host pre {
+    width: 100%;
+    max-width: 100%;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    overflow: auto;
+    border-radius: 6px;
+    background: #f1f5f9;
+    font-family: Consolas, "Cascadia Mono", "JetBrains Mono", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre;
+}
+
+.infinite-pm-host code {
+    font-family: Consolas, "Cascadia Mono", "JetBrains Mono", monospace;
+}
+
+.infinite-pm-host hr {
+    margin: 14px 0;
+    border: none;
+    border-top: 1px solid #cbd5e1;
+}
+
+.infinite-pm-host table {
+    width: 100%;
+    margin: 12px 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.infinite-pm-host th,
+.infinite-pm-host td {
+    min-width: 1em;
+    padding: 6px 9px;
+    border: 1px solid #94a3b8;
+    vertical-align: top;
+}
+
+.infinite-pm-host th {
+    background: #f1f5f9;
+    font-weight: 600;
+}
+
+.infinite-pm-host ul,
+.infinite-pm-host ol {
+    margin: 0 0 12px 24px;
+    padding: 0;
+}
+
+.infinite-pm-host li {
+    margin: 4px 0;
+}
+
+.infinite-pm-host li[data-task-checked] {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    list-style: none;
+}
+
+.infinite-task-checkbox {
+    flex: 0 0 auto;
+    margin-top: 0.48em;
+}
+
+.infinite-task-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.infinite-pm-image {
+    max-width: 100%;
+    height: auto;
+    vertical-align: middle;
+}
+
+.infinite-pm-host .infinite-math {
+    max-width: 100%;
+    color: inherit;
+    cursor: default;
+    user-select: all;
+}
+
+.infinite-pm-host .infinite-math.math-inline {
+    display: inline-block;
+    vertical-align: baseline;
+}
+
+.infinite-pm-host .infinite-math.math-display {
+    display: block;
+    margin: 12px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: center;
+}
+
+.infinite-pm-host [data-page-break] {
+    position: relative;
+    height: 28px;
+    margin: 24px calc(-1 * var(--page-padding-right, 88px));
+    border-top: 2px dashed #94a3b8;
+    color: transparent;
+    user-select: none;
+}
+
+.infinite-pm-host [data-page-break]::after {
+    content: "分页符";
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    padding: 1px 8px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: #eef2f7;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.infinite-pm-page-gap {
+    position: relative;
+    z-index: 1;
+    display: block;
+    box-sizing: border-box;
+    width: calc(100% + var(--page-padding-left, 88px) + var(--page-padding-right, 88px) + 2px);
+    height: calc(var(--page-padding-bottom, 72px) + var(--page-padding-top, 72px) + 20px);
+    margin: 0 calc(-1 * var(--page-padding-right, 88px) - 1px) 0 calc(-1 * var(--page-padding-left, 88px) - 1px);
+    background: linear-gradient(
+        to bottom,
+        #ffffff 0 calc(100% - var(--page-padding-top, 72px) - 20px),
+        #eef2f7 calc(100% - var(--page-padding-top, 72px) - 20px) calc(100% - var(--page-padding-top, 72px)),
+        #ffffff calc(100% - var(--page-padding-top, 72px)) 100%
+    );
+    pointer-events: none;
+    user-select: none;
+}
+
+.infinite-pm-page-gap::before,
+.infinite-pm-page-gap::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    left: 0;
+}
+
+.infinite-pm-page-gap::before {
+    top: 0;
+    bottom: calc(var(--page-padding-top, 72px) + 20px);
+    border-right: 1px solid #d1d5db;
+    border-bottom: 1px solid #d1d5db;
+    border-left: 1px solid #d1d5db;
+    box-shadow: 0 8px 20px -16px rgba(15, 23, 42, 0.5);
+}
+
+.infinite-pm-page-gap::after {
+    bottom: 0;
+    height: var(--page-padding-top, 72px);
+    border-top: 1px solid #d1d5db;
+    border-right: 1px solid #d1d5db;
+    border-left: 1px solid #d1d5db;
+    box-shadow: 0 -8px 20px -16px rgba(15, 23, 42, 0.5);
+}
+
+.infinite-pm-host [data-opaque-source] {
+    border-style: dashed;
+    color: #475569;
+}
+
+.infinite-pm-error {
+    margin-top: 16px;
+    padding: 10px 12px;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.infinite-math-editor-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.48);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
+
+.infinite-math-editor {
+    width: min(680px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    border: 1px solid rgba(148, 163, 184, 0.55);
+    border-radius: 16px;
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 28px 72px rgba(15, 23, 42, 0.3), 0 3px 12px rgba(15, 23, 42, 0.12);
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.infinite-math-editor-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 20px 22px 17px;
+    border-bottom: 1px solid #e2e8f0;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.infinite-math-editor-title-row,
+.infinite-math-editor-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.infinite-math-editor-title {
+    margin: 0;
+    color: #0f172a;
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+}
+
+.infinite-math-editor-type {
+    padding: 3px 8px;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.infinite-math-editor-subtitle {
+    margin: 5px 0 0;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.infinite-math-editor-close {
+    display: grid;
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    padding: 0 0 2px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #64748b;
+    font: 24px/1 sans-serif;
+    cursor: pointer;
+}
+
+.infinite-math-editor-close:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+.infinite-math-editor-body {
+    display: grid;
+    gap: 10px;
+    padding: 20px 22px 18px;
+}
+
+.infinite-math-editor-label {
+    color: #334155;
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.infinite-math-editor-input {
+    width: 100%;
+    min-height: 86px;
+    resize: vertical;
+    padding: 12px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    outline: none;
+    background: #fbfdff;
+    color: #0f172a;
+    caret-color: #2563eb;
+    font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    font-size: 14px;
+    line-height: 1.65;
+    tab-size: 2;
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.infinite-math-editor-input:focus {
+    border-color: #3b82f6;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.13);
+}
+
+.infinite-math-editor-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.infinite-math-editor-snippet {
+    padding: 5px 9px;
+    border: 1px solid #dbe3ee;
+    border-radius: 7px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.infinite-math-editor-snippet:hover {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.infinite-math-editor-preview-state {
+    color: #94a3b8;
+    font-size: 11px;
+}
+
+.infinite-math-editor-preview {
+    display: grid;
+    min-height: 116px;
+    place-items: center;
+    overflow: auto;
+    padding: 20px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background-color: #ffffff;
+    background-image: linear-gradient(#f1f5f9 1px, transparent 1px),
+        linear-gradient(90deg, #f1f5f9 1px, transparent 1px);
+    background-size: 20px 20px;
+    color: #0f172a;
+}
+
+.infinite-math-editor-preview.invalid {
+    border-color: #fecaca;
+    background-color: #fffafa;
+}
+
+.infinite-math-editor-preview-content {
+    max-width: 100%;
+    font-size: 17px;
+}
+
+.infinite-math-editor-preview-content .katex-display {
+    margin: 0;
+}
+
+.infinite-math-editor-empty {
+    color: #94a3b8;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 13px;
+}
+
+.infinite-math-editor-error {
+    min-height: 17px;
+    color: #b91c1c;
+    font-size: 12px;
+    line-height: 1.4;
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.infinite-math-editor-hint {
+    color: #94a3b8;
+    font-size: 11px;
+}
+
+.infinite-math-editor-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+    padding: 13px 22px;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+
+.infinite-math-editor-button {
+    min-width: 78px;
+    padding: 8px 15px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.infinite-math-editor-button:hover {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+}
+
+.infinite-math-editor-button.primary {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.infinite-math-editor-button.primary:hover {
+    border-color: #1d4ed8;
+    background: #1d4ed8;
+}
+
+.infinite-math-editor-button:disabled {
+    border-color: #cbd5e1;
+    background: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+}
+
+@media (max-width: 560px) {
+    .infinite-math-editor-overlay {
+        padding: 10px;
+    }
+
+    .infinite-math-editor {
+        width: calc(100vw - 20px);
+        max-height: calc(100vh - 20px);
+        border-radius: 12px;
+    }
+
+    .infinite-math-editor-header,
+    .infinite-math-editor-body,
+    .infinite-math-editor-footer {
+        padding-right: 15px;
+        padding-left: 15px;
+    }
+
+    .infinite-math-editor-subtitle,
+    .infinite-math-editor-hint {
+        display: none;
+    }
+}

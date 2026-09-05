@@ -1,4 +1,4 @@
-import { EditorSelection, EditorState } from "@codemirror/state";
+import { EditorSelection, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -13,6 +13,7 @@ import {
   historyKeymap,
   indentWithTab,
   isolateHistory,
+  invertedEffects,
   redo,
   undo
 } from "@codemirror/commands";
@@ -29,6 +30,19 @@ const views = new Map();
 const scrollSyncs = new Map();
 const pendingScrollSyncs = new Map();
 let controller = null;
+// One history owns both surfaces. Rich snapshots are inverted with the same
+// CodeMirror event as its text, so grouping can never diverge between engines.
+const richSnapshotEffect = StateEffect.define();
+const richSnapshotField = StateField.define({
+  create: () => null,
+  update(value, transaction) {
+    if (transaction.docChanged || transaction.selection) value = null;
+    for (const effect of transaction.effects) {
+      if (effect.is(richSnapshotEffect)) value = effect.value;
+    }
+    return value;
+  },
+});
 const pendingClipboardImagePastes = new Map();
 let clipboardPasteRequest = 0;
 
@@ -104,7 +118,7 @@ function connectScrollSync(hostId, previewId) {
 
   const existing = scrollSyncs.get(hostId);
   if (existing?.preview === preview && existing.source === view.scrollDOM) {
-    existing.points = null;
+    existing.refresh();
     return { ok: true, reused: true };
   }
   disconnectScrollSync(hostId);
@@ -113,7 +127,7 @@ function connectScrollSync(hostId, previewId) {
     source: view.scrollDOM,
     preview,
     view,
-    points: null,
+    side: "source",
     frame: 0,
     ignoreSource: null,
     ignorePreview: null,
@@ -123,38 +137,54 @@ function connectScrollSync(hostId, previewId) {
     const sourceMax = Math.max(0, sync.source.scrollHeight - sync.source.clientHeight);
     const previewMax = Math.max(0, preview.scrollHeight - preview.clientHeight);
     const previewRect = preview.getBoundingClientRect();
+    const sourceRect = sync.source.getBoundingClientRect();
+    const sourceOrigin = view.documentTop - sourceRect.top
+      - sync.source.clientTop + sync.source.scrollTop;
+    const previewOrigin = preview.scrollTop - previewRect.top - preview.clientTop;
     const points = [{ source: 0, preview: 0 }];
+    const addPoint = (source, target) => {
+      const previous = points.at(-1);
+      if (source > previous.source && target > previous.preview
+        && source < sourceMax && target < previewMax) {
+        points.push({ source, preview: target });
+      }
+    };
 
-    for (const node of preview.querySelectorAll("[data-markdown-from]")) {
+    const rendered = preview.classList.contains("preview-ready")
+      ? preview.querySelector("#markdown-math-preview")
+      : preview.querySelector(".markdown-preview-staging")
+        ?? preview.querySelector(".markdown-rendered-html");
+    for (const node of rendered?.querySelectorAll("[data-markdown-from]") ?? []) {
       const position = Number(node.dataset.markdownFrom);
       if (!Number.isFinite(position)) continue;
-      const source = clamp(view.lineBlockAt(clamp(position, 0, view.state.doc.length)).top, 0, sourceMax);
+      const source = view.lineBlockAt(clamp(position, 0, view.state.doc.length)).top + sourceOrigin;
       const targetRect = node.getBoundingClientRect();
-      const target = clamp(targetRect.top - previewRect.top + preview.scrollTop, 0, previewMax);
-      const previous = points.at(-1);
-      if (
-        source <= previous.source
-        || target <= previous.preview
-        || source >= sourceMax
-        || target >= previewMax
-      ) continue;
-      points.push({ source, preview: target });
+      addPoint(source, targetRect.top + previewOrigin);
+      // Text and the blank lines/margins after it occupy different proportions
+      // in the two panes. Map block ends too, instead of stretching both as one.
+      const end = Number(node.dataset.markdownTo);
+      if (Number.isFinite(end) && end > position) {
+        const lastLine = view.lineBlockAt(clamp(end - 1, 0, view.state.doc.length));
+        addPoint(lastLine.bottom + sourceOrigin, targetRect.bottom + previewOrigin);
+      }
     }
 
     const previous = points.at(-1);
     if (sourceMax > previous.source || previewMax > previous.preview) {
       points.push({ source: sourceMax, preview: previewMax });
     }
-    sync.points = points;
     return points;
   };
 
   const schedule = (side) => {
+    sync.side = side;
     if (sync.frame) return;
     sync.frame = requestAnimationFrame(() => {
       sync.frame = 0;
-      const points = sync.points ?? buildPoints();
-      if (side === "source") {
+      // Wrapping, virtualized line measurements and images can all change
+      // independently of the outer pane's dimensions.
+      const points = buildPoints();
+      if (sync.side === "source") {
         const target = interpolate(points, sync.source.scrollTop, "source", "preview");
         sync.ignorePreview = target;
         preview.scrollTop = target;
@@ -165,12 +195,19 @@ function connectScrollSync(hostId, previewId) {
       }
     });
   };
+  sync.refresh = () => {
+    // Publishing a preview may clamp its scroll offset. That browser-generated
+    // scroll is not a request to move the source editor.
+    sync.ignorePreview = preview.scrollTop;
+    schedule(sync.side);
+  };
 
   sync.onSourceScroll = () => {
     if (sync.ignoreSource !== null && Math.abs(sync.source.scrollTop - sync.ignoreSource) < 2) {
       sync.ignoreSource = null;
       return;
     }
+    sync.ignoreSource = null;
     schedule("source");
   };
   sync.onPreviewScroll = () => {
@@ -178,18 +215,21 @@ function connectScrollSync(hostId, previewId) {
       sync.ignorePreview = null;
       return;
     }
+    sync.ignorePreview = null;
     schedule("preview");
   };
   sync.observer = typeof ResizeObserver === "undefined"
     ? { observe() {}, disconnect() {} }
-    : new ResizeObserver(() => { sync.points = null; });
+    : new ResizeObserver(() => schedule(sync.side));
   sync.observer.observe(preview);
   const rendered = preview.querySelector(".markdown-rendered-html");
   if (rendered) sync.observer.observe(rendered);
+  sync.observer.observe(sync.source);
+  sync.observer.observe(view.contentDOM);
   sync.source.addEventListener("scroll", sync.onSourceScroll, { passive: true });
   preview.addEventListener("scroll", sync.onPreviewScroll, { passive: true });
   scrollSyncs.set(hostId, sync);
-  buildPoints();
+  schedule("source");
   return { ok: true };
 }
 
@@ -200,11 +240,13 @@ function activeBridge() {
 function emitChange(origin) {
   if (!controller) return;
   const markdown = controller.state.doc.toString();
+  const selection = controller.state.selection.main;
   const envelope = {
     document_revision: controller.documentRevision,
     edit_revision: controller.editRevision,
     origin,
-    markdown
+    markdown,
+    selection: { anchor: selection.anchor, head: selection.head },
   };
   const payload = JSON.stringify(envelope);
   const bridge = activeBridge();
@@ -222,6 +264,10 @@ function extensions() {
     lineNumbers(),
     highlightActiveLineGutter(),
     history(),
+    richSnapshotField,
+    invertedEffects.of((transaction) => transaction.docChanged
+      ? [richSnapshotEffect.of(transaction.startState.field(richSnapshotField))]
+      : []),
     drawSelection(),
     indentOnInput(),
     bracketMatching(),
@@ -320,6 +366,7 @@ function initialize(value, documentRevision, bridgeId, editRevision = 0) {
   }
 
   if (!controller || controller.documentRevision < documentRevision) {
+    for (const hostId of scrollSyncs.keys()) disconnectScrollSync(hostId);
     for (const entry of views.values()) entry.view.destroy();
     views.clear();
     controller = {
@@ -541,7 +588,7 @@ window.InfiniteMarkdownEditor = {
   requestClipboardImage,
   completeClipboardImagePaste,
 
-  mount(hostId, bridgeId, initialValue, documentRevision) {
+  mount(hostId, bridgeId, initialValue, documentRevision, previewId = null) {
     const host = document.getElementById(hostId);
     const bridge = document.getElementById(bridgeId);
     if (!host || !bridge) {
@@ -549,6 +596,7 @@ window.InfiniteMarkdownEditor = {
     }
 
     try {
+      if (previewId) pendingScrollSyncs.set(hostId, previewId);
       const initialized = initialize(initialValue, documentRevision, bridgeId);
       if (initialized.staleDocument) return initialized;
       const existing = views.get(hostId);
@@ -571,8 +619,9 @@ window.InfiniteMarkdownEditor = {
         }
       });
       views.set(hostId, { view });
-      const previewId = pendingScrollSyncs.get(hostId);
-      if (previewId) connectScrollSync(hostId, previewId);
+      view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: "nearest" }) });
+      const pendingPreviewId = pendingScrollSyncs.get(hostId);
+      if (pendingPreviewId) connectScrollSync(hostId, pendingPreviewId);
       return { ok: true };
     } catch (error) {
       return { ok: false, error: String(error) };
@@ -587,16 +636,33 @@ window.InfiniteMarkdownEditor = {
     }
   },
 
-  replaceAll(value, origin = "wysiwyg-input", userEvent = "input.type", isolate = false) {
+  replaceAll(
+    value,
+    origin = "wysiwyg-input",
+    userEvent = "input.type",
+    isolate = false,
+    selection = null,
+    richSnapshot = null,
+  ) {
     if (!controller) return { ok: false, error: "Markdown 文档控制器尚未初始化" };
     if (controller.state.doc.toString() === value) {
       return { ok: true, changed: false, revision: controller.editRevision };
     }
-    const transaction = controller.state.update(transactionSpec(
-      { from: 0, to: controller.state.doc.length, insert: value },
-      userEvent,
-      isolate || origin === "wysiwyg-command"
-    ));
+    const boundedSelection = selection
+      ? {
+          anchor: clamp(selection.anchor, 0, value.length),
+          head: clamp(selection.head ?? selection.anchor, 0, value.length),
+        }
+      : null;
+    const transaction = controller.state.update({
+      ...transactionSpec(
+        { from: 0, to: controller.state.doc.length, insert: value },
+        userEvent,
+        isolate || origin === "wysiwyg-command",
+      ),
+      ...(boundedSelection ? { selection: boundedSelection } : {}),
+      effects: richSnapshotEffect.of(richSnapshot),
+    });
     return { ok: true, ...applyTransactions([transaction], origin) };
   },
 
@@ -687,6 +753,21 @@ window.InfiniteMarkdownEditor = {
     return { ok: true };
   },
 
+  setDocumentSelection(anchor, head = anchor, richSnapshot = null) {
+    if (!controller) return { ok: false, error: "Markdown 文档控制器尚未初始化" };
+    const length = controller.state.doc.length;
+    const transaction = controller.state.update({
+      selection: EditorSelection.range(
+        clamp(anchor, 0, length),
+        clamp(head, 0, length),
+      ),
+      effects: richSnapshotEffect.of(richSnapshot),
+      annotations: Transaction.addToHistory.of(false),
+    });
+    applyTransactions([transaction], "selection");
+    return { ok: true };
+  },
+
   syncPreview(hostId, previewId) {
     pendingScrollSyncs.set(hostId, previewId);
     return connectScrollSync(hostId, previewId);
@@ -702,20 +783,28 @@ window.InfiniteMarkdownEditor = {
 
   getSnapshot() {
     if (!controller) return null;
+    const selection = controller.state.selection.main;
     return {
       documentRevision: controller.documentRevision,
       editRevision: controller.editRevision,
       origin: controller.lastOrigin,
-      markdown: controller.state.doc.toString()
+      markdown: controller.state.doc.toString(),
+      selection: { anchor: selection.anchor, head: selection.head },
+      richSnapshot: controller.state.field(richSnapshotField),
     };
   },
 
-  destroy(hostId) {
+  detach(hostId) {
     disconnectScrollSync(hostId);
     const entry = views.get(hostId);
     if (entry) entry.view.destroy();
     views.delete(hostId);
     pendingScrollSyncs.delete(hostId);
+    return { ok: true };
+  },
+
+  destroy(hostId) {
+    this.detach(hostId);
     controller = null;
     return { ok: true };
   }
