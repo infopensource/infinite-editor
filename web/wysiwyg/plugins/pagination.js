@@ -30,6 +30,7 @@ function normalizedBoundary(boundary) {
       kind: boundary.kind ?? "automatic",
       placement: boundary.placement ?? "block",
       columns: boundary.columns ?? null,
+      peers: boundary.peers ?? [],
     };
 }
 
@@ -38,6 +39,7 @@ function sameBoundary(left, right) {
     && left.kind === right.kind
     && left.placement === right.placement
     && left.columns === right.columns
+    && JSON.stringify(left.peers) === JSON.stringify(right.peers)
     && (
       left.height === right.height
       || (Number.isFinite(left.height)
@@ -52,6 +54,7 @@ function pageGap(boundary) {
   gap.contentEditable = "false";
   gap.setAttribute("aria-hidden", "true");
   gap.dataset.position = String(boundary.position);
+  if (boundary.secondary) gap.dataset.secondary = "true";
   gap.dataset.paginationKind = boundary.kind;
   if (Number.isFinite(boundary.height)) gap.style.height = `${boundary.height}px`;
   if (boundary.placement === "row") {
@@ -68,7 +71,7 @@ function pageGap(boundary) {
 }
 
 function decorationSet(documentNode, boundaries) {
-  return DecorationSet.create(documentNode, boundaries.map((boundary) => (
+  return DecorationSet.create(documentNode, boundaries.flatMap((boundary) => [boundary, ...(boundary.peers ?? []).map(peer => ({ ...boundary, ...peer, peers: [], secondary: true }))]).map((boundary) => (
     Decoration.widget(boundary.position, () => pageGap(boundary), {
       key: `page-gap-${boundary.kind}-${boundary.position}-${boundary.height ?? "auto"}-${boundary.placement}-${boundary.columns}`,
       side: -1,
@@ -109,6 +112,7 @@ export function calculatePaginationLayout(blocks, contentHeight, pageChromeHeigh
         height: Math.max(0, contentHeight - usedHeight) + pageChromeHeight,
         kind: "automatic",
         ...(block.placement ? { placement: block.placement, columns: block.columns } : {}),
+        ...(block.resolvePeers ? { peers: block.resolvePeers(Math.max(0, contentHeight - usedHeight) + pageChromeHeight) } : {}),
       });
       pageTop = block.top;
     }
@@ -252,7 +256,46 @@ async function measuredLayout(liveView, measurementCache, signal, workspace, met
         bottom: bounds.bottom - viewTop,
         forcePageBreakAfter: node.type.name === "page_break",
       };
-      if (node.type.name === "table_row") {
+      if (node.type.name === "table_row" && block.bottom - block.top > contentHeight) {
+        // Measure each cell independently, then paginate shared horizontal bands.
+        // Every continuing cell receives a spacer at the same physical break.
+        const cells = [];
+        let cellOffset = offset + 1;
+        for (let i = 0; i < node.childCount; i++) {
+          const start = blocks.length;
+          await visit(node.child(i), cellOffset);
+          cells.push(blocks.splice(start));
+          cellOffset += node.child(i).nodeSize;
+        }
+        const lines = cells.flat().sort((a, b) => a.top - b.top);
+        const bands = [];
+        for (const line of lines) {
+          const last = bands.at(-1);
+          if (last && line.top < last.bottom - 1) last.bottom = Math.max(last.bottom, line.bottom);
+          else bands.push({ ...line });
+        }
+        const cursors = cells.map(() => 0);
+        for (const band of bands) {
+          await checkpoint();
+          const continuing = cells.map((lines, index) => {
+            while (cursors[index] < lines.length && lines[cursors[index]].top < band.top - 1) cursors[index]++;
+            return lines[cursors[index]];
+          }).filter(Boolean);
+          const first = continuing[0];
+          if (!first) continue;
+          band.position = first.position;
+          band.resolvePosition = first.resolvePosition;
+          band.resolvePeers = height => continuing.slice(1).map(line => ({
+            position: line.resolvePosition ? line.resolvePosition() : line.position,
+            height,
+          }));
+        }
+        if (bands.length) {
+          bands[0].top = block.top;
+          bands.at(-1).bottom = Math.max(bands.at(-1).bottom, block.bottom);
+          blocks.push(...bands);
+        }
+      } else if (node.type.name === "table_row") {
         blocks.push({ ...block, placement: "row", columns: node.childCount });
       } else if (node.isTextblock && node.content.size > 0) {
         const textStyle = getComputedStyle(dom);
@@ -283,7 +326,7 @@ async function measuredLayout(liveView, measurementCache, signal, workspace, met
           lines[0].resolvePosition = null;
           lines[0].position = offset;
           lines[0].top = block.top;
-          lines.at(-1).bottom = Math.max(lines.at(-1).bottom, block.bottom);
+          if (!dom.matches("td, th")) lines.at(-1).bottom = Math.max(lines.at(-1).bottom, block.bottom);
           blocks.push(...lines);
         } else blocks.push(block);
       } else if (!node.isLeaf && node.type.name !== "page_break") {
@@ -350,7 +393,7 @@ function paintPageGaps(view, layer) {
   const scale = bounds.width / (Number.parseFloat(style.width) + extraWidth) || 1;
   const viewport = window.innerHeight || 1000;
   const glyphCache = new Map();
-  const fragments = [...view.dom.querySelectorAll(".infinite-pm-page-gap")].map((gap) => {
+  const fragments = [...view.dom.querySelectorAll(".infinite-pm-page-gap:not([data-secondary])")].map((gap) => {
     const rect = gap.getBoundingClientRect();
     if (rect.bottom < -viewport || rect.top > viewport * 2) return null;
     const paint = document.createElement("div");
@@ -407,6 +450,7 @@ export function paginationPlugin(options = {}) {
             positions: previous.positions.map((boundary) => ({
               ...boundary,
               position: transaction.mapping.map(boundary.position),
+              peers: (boundary.peers ?? []).map(peer => ({ ...peer, position: transaction.mapping.map(peer.position) })),
             })),
             decorations: previous.decorations.map(transaction.mapping, transaction.doc),
             document: transaction.doc,

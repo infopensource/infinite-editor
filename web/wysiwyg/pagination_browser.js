@@ -3,7 +3,11 @@ import { paginationKey } from './plugins/pagination.js';
 
 const paragraph = '中文分页测试 English **粗体** *斜体* 👩🏽‍💻，连续文字保持原段落。'.repeat(120);
 const scenario = new URL(location.href).searchParams.get('case');
-const markdown = scenario === 'math-input' ? '' : scenario === 'table'
+const markdown = scenario === 'table-long-header'
+  ? '| ' + '超长单元格NoSpaces'.repeat(800) + ' | 短表头 |\n| --- | --- |\n| 末行 | 完整保留 |'
+  : scenario === 'table-long-cell'
+  ? '| 长文本 | 同行文本 |\n| --- | --- |\n| ' + paragraph + ' | ' + paragraph.repeat(2) + ' |\n| 末行 | 完整保留 |'
+  : scenario === 'math-input' ? '' : scenario === 'table'
   ? '| 编号 | 项目 | 说明 |\n| --- | --- | --- |\n'
     + Array.from({ length: 80 }, (_, i) => `| ${i + 1} | 表格测试 | **第 ${i + 1} 行**保留三列宽度和连续行号。 |`).join('\n')
   : scenario === 'mixed'
@@ -35,6 +39,18 @@ function verify() {
   assert(paginationKey.getState(editor.state).positions.length > 2, 'Expected multiple physical pages');
   assert(paints.length > 0, 'Viewport has no page chrome');
   const pageRect = page.getBoundingClientRect();
+  if (scenario.startsWith('table-long-')) {
+    const style = getComputedStyle(page);
+    const contentHeight = (parseFloat(style.getPropertyValue('--page-height'))
+      - parseFloat(style.getPropertyValue('--page-padding-top'))
+      - parseFloat(style.getPropertyValue('--page-padding-bottom'))) * 96 / 25.4;
+    let start = editor.view.dom.getBoundingClientRect().top;
+    for (const gap of [...editor.view.dom.querySelectorAll('.infinite-pm-page-gap:not([data-secondary])')].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)) {
+      const rect = gap.getBoundingClientRect();
+      assert(rect.top - start <= contentHeight + 1, `Table exceeded paper content height: ${rect.top - start} > ${contentHeight}`);
+      start = rect.bottom;
+    }
+  }
   for (const paint of paints) {
     const rect = paint.getBoundingClientRect();
     assert(Math.abs(rect.left - pageRect.left) < 1, 'Page gap left edge follows an indented ancestor');
@@ -48,6 +64,9 @@ function verify() {
       range.selectNodeContents(text);
       for (const line of range.getClientRects()) {
         if (line.width === 0 || line.height === 0) continue;
+        if (scenario.startsWith('table-long-')) {
+          assert(line.left >= pageRect.left && line.right <= pageRect.right, 'Cell text exceeded paper width');
+        }
         assert(line.bottom <= rect.top + 1 || line.top >= rect.bottom - 1,
           `Page chrome covers text: ${text.textContent.slice(0, 30)} (line ${line.top}–${line.bottom}, gap ${rect.top}–${rect.bottom})`);
       }
