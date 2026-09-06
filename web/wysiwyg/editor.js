@@ -17,6 +17,7 @@ import { wysiwygSchema } from "./schema.js";
 import { createNodeViews } from "./node_views.js";
 import { markdownInputRules } from "./plugins/input_rules.js";
 import { paginationPlugin } from "./plugins/pagination.js";
+import { selectionPlugin } from "./plugins/selection.js";
 
 function editorPlugins(options = {}) {
   const sharedHistory = options.sharedHistory;
@@ -24,6 +25,7 @@ function editorPlugins(options = {}) {
     ...(sharedHistory ? [] : [history()]),
     markdownInputRules(wysiwygSchema),
     paginationPlugin({ onPageChange: options.onPageChange }),
+    selectionPlugin(),
     keymap({ Backspace: undoInputRule }),
     keymap(listKeyBindings(wysiwygSchema)),
     keymap(sharedHistory

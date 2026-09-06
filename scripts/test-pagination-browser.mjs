@@ -14,7 +14,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const output = mkdtempSync(join(tmpdir(), 'infinite-pagination-'));
 const scenarios = process.argv.length > 2 ? process.argv.slice(2) : ['nested', 'table', 'mixed', 'math-input'];
 const bundle = await build({
-  entryPoints: [resolve(root, scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
+  entryPoints: [resolve(root, scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
   loader: { '.md': 'text', '.png': 'dataurl' }, bundle: true, write: false, format: 'iife',
 });
 const css = readFileSync(resolve(root, 'assets/styling/wysiwyg_core.css'), 'utf8')

@@ -19,6 +19,8 @@
 }
 
 .infinite-pm-host {
+    position: relative;
+    isolation: isolate;
     min-height: calc(var(--page-height, 600px) - var(--page-padding-top, 72px) - var(--page-padding-bottom, 72px));
     height: auto;
     overflow: visible;
@@ -40,6 +42,28 @@
 .infinite-pm-host p {
     margin: 0 0 12px;
     color: #1f2937;
+}
+
+.infinite-pm-host p:empty {
+    min-height: 1.8em;
+}
+
+.infinite-painted-selection::selection,
+.infinite-painted-selection *::selection {
+    background: transparent;
+}
+
+.infinite-selection-layer {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    pointer-events: none;
+    user-select: none;
+}
+
+.infinite-selection-layer > div {
+    position: absolute;
+    background: rgba(80, 180, 220, 0.32);
 }
 
 .infinite-pm-host h1,
