@@ -32,6 +32,12 @@ struct MarkdownSelection {
     head: usize,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct PageStatus {
+    current: usize,
+    total: usize,
+}
+
 #[cfg(feature = "desktop")]
 #[derive(Debug, serde::Deserialize)]
 struct ClipboardPasteRequest {
@@ -89,6 +95,10 @@ pub fn WordWorkspace() -> Element {
     let current_document = document();
     let count_source = use_memo(move || document.read().markdown.clone());
     let mut character_count = use_signal(|| 0usize);
+    let mut page_status = use_signal(|| PageStatus {
+        current: 1,
+        total: 1,
+    });
     use_resource(move || {
         let source = count_source();
         async move {
@@ -234,6 +244,18 @@ pub fn WordWorkspace() -> Element {
                         #[cfg(not(feature = "desktop"))]
                         let _ = payload;
                     },
+                    on_page_status_change: move |payload: String| {
+                        let Ok(next) = serde_json::from_str::<PageStatus>(&payload) else {
+                            return;
+                        };
+                        let current = next.current.max(1).min(next.total.max(1));
+                        let total = next.total.max(1);
+                        let previous = page_status.read();
+                        if previous.current != current || previous.total != total {
+                            drop(previous);
+                            page_status.set(PageStatus { current, total });
+                        }
+                    },
                     paper_mode: paper.mode,
                     custom_width_mm: paper.width_mm,
                     custom_height_mm: paper.height_mm,
@@ -309,6 +331,8 @@ pub fn WordWorkspace() -> Element {
                 status_hint: status_hint(),
                 current_file: current_location().map(|location| file_name_or(location.path(), "未命名文档")),
                 character_count: character_count(),
+                current_page: page_status.read().current,
+                total_pages: page_status.read().total,
                 on_markdown_click: move |_| {
                     if editor_mode() == EditorMode::MarkdownSource {
                         markdown_preview_open.set(!markdown_preview_open());

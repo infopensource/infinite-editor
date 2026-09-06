@@ -20,6 +20,7 @@ observer.observe({ type: 'longtask', buffered: true });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const mark = name => { phase = name; phases.push({ name, start: performance.now() }); };
 let session;
+let pageStatus = { current: 1, total: 1 };
 async function settle() {
   await mathRenderingSettled();
   await document.fonts.ready;
@@ -40,6 +41,7 @@ function mount(source, ast) {
   const start = performance.now();
   session = new WysiwygBridgeSession({ host: document.getElementById('host'), ast, markdown: source,
     documentRevision: 1, editRevision: window.InfiniteMarkdownEditor.getSnapshot()?.editRevision ?? 0,
+    onPageChange: status => { pageStatus = status; },
     resources: { 'document.assets/sample-image.png': sampleImage } });
   return performance.now() - start;
 }
@@ -53,6 +55,7 @@ function mount(source, ast) {
   await delay(0);
   mark('initial-layout');
   await settle();
+  if (pageStatus.total <= 10) throw new Error(`Status bar page total was not updated: ${JSON.stringify(pageStatus)}`);
   const mountMetrics = session.editor.mountMetrics;
   const initialReads = rangeReads;
   await delay(200);
@@ -114,6 +117,11 @@ function mount(source, ast) {
   const modeSwitchMs = performance.now() - switchStarted;
   const sourceMatches = window.InfiniteMarkdownEditor.getValue() === saved;
   const pages = paginationKey.getState(session.editor.state).positions.length + 1;
+  if (pageStatus.total !== pages) throw new Error(`Page status ${pageStatus.total} != pagination ${pages}`);
+  session.editor.view.dispatch(session.editor.state.tr.setSelection(
+    TextSelection.create(session.editor.state.doc, session.editor.state.doc.content.size),
+  ));
+  if (pageStatus.current !== pages) throw new Error(`Last-page selection reported ${JSON.stringify(pageStatus)}`);
   session.destroy();
   await delay(0);
   mark('source-mode');

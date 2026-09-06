@@ -12,12 +12,19 @@ export function installWysiwygBridge(target = window) {
     mount(config) {
       const host = document.getElementById(config.host_id);
       const bridge = document.getElementById(config.bridge_id);
+      const pageStatusBridge = document.getElementById(config.page_status_bridge_id);
       if (!host || !bridge) return { ok: false, error: "找不到 WYSIWYG 挂载点或消息桥" };
       sessions.get(config.host_id)?.destroy();
       try {
         sessions.set(config.host_id, new WysiwygBridgeSession({
           host,
           bridge,
+          onPageChange: pageStatusBridge ? (status) => {
+            const value = JSON.stringify(status);
+            if (pageStatusBridge.value === value) return;
+            pageStatusBridge.value = value;
+            pageStatusBridge.dispatchEvent(new Event("input", { bubbles: true }));
+          } : null,
           ast: config.ast,
           markdown: config.markdown,
           documentRevision: config.document_revision,

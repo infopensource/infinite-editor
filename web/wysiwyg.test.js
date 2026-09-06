@@ -14,6 +14,7 @@ import {
   calculatePaginationBoundaries,
   calculatePaginationLayout,
   paginationKey,
+  pageStatusAtPosition,
   setPaginationBoundaries,
 } from "./wysiwyg/plugins/pagination.js";
 import {
@@ -663,6 +664,15 @@ test("visual pagination uses decorations without changing content or history", (
   assert.equal(editor.state.doc.eq(before), true);
   assert.equal(paginationKey.getState(editor.state).decorations.find().length, 1);
   assert.equal(undo(editor.state, editor.view.dispatch), false);
+});
+
+test("page status is derived from cached boundaries without layout reads", () => {
+  const boundaries = [{ position: 10 }, { position: 25 }, { position: 40 }];
+  assert.deepEqual(pageStatusAtPosition(boundaries, 0), { current: 1, total: 4 });
+  assert.deepEqual(pageStatusAtPosition(boundaries, 10), { current: 2, total: 4 });
+  assert.deepEqual(pageStatusAtPosition(boundaries, 39), { current: 3, total: 4 });
+  assert.deepEqual(pageStatusAtPosition(boundaries, 100), { current: 4, total: 4 });
+  assert.deepEqual(pageStatusAtPosition([], 0), { current: 1, total: 1 });
 });
 
 test("pagination gaps fill the unused page area before the next block", () => {

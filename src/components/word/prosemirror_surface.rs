@@ -4,7 +4,7 @@ use crate::engine::ParserGateway;
 use dioxus::prelude::*;
 
 use super::document_renderer::{embedded_font_css, escape_css_string};
-use super::MARKDOWN_DOCUMENT_BRIDGE_ID;
+use super::{MARKDOWN_DOCUMENT_BRIDGE_ID, PAGE_STATUS_BRIDGE_ID};
 
 pub(super) const PROSEMIRROR_HOST_ID: &str = "infinite-prosemirror-host";
 
@@ -59,6 +59,7 @@ fn mount_editor(
                 .map_err(|error| error.message)?;
             serde_json::to_string(&serde_json::json!({
                 "host_id": PROSEMIRROR_HOST_ID, "bridge_id": MARKDOWN_DOCUMENT_BRIDGE_ID,
+                "page_status_bridge_id": PAGE_STATUS_BRIDGE_ID,
                 "ast": ast, "markdown": markdown, "resources": resources.entries(),
                 "document_revision": document_revision, "edit_revision": edit_revision,
             }))

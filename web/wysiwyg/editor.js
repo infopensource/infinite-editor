@@ -23,7 +23,7 @@ function editorPlugins(options = {}) {
   return [
     ...(sharedHistory ? [] : [history()]),
     markdownInputRules(wysiwygSchema),
-    paginationPlugin(),
+    paginationPlugin({ onPageChange: options.onPageChange }),
     keymap({ Backspace: undoInputRule }),
     keymap(listKeyBindings(wysiwygSchema)),
     keymap(sharedHistory

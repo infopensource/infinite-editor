@@ -9,6 +9,8 @@ pub fn StatusBar(
     status_hint: String,
     current_file: Option<String>,
     character_count: usize,
+    current_page: usize,
+    total_pages: usize,
     on_markdown_click: EventHandler<()>,
     on_wysiwyg_click: EventHandler<()>,
 ) -> Element {
@@ -44,6 +46,8 @@ pub fn StatusBar(
                 span { class: "status-file", "{file_label}" }
                 span { class: "status-dot", "•" }
                 span { class: "status-count", "字数：{character_count}" }
+                span { class: "status-dot", "•" }
+                span { class: "status-count", "第 {current_page} 页 / 共 {total_pages} 页" }
                 span { class: "status-dot", "•" }
                 span { "中文(简体)" }
             }

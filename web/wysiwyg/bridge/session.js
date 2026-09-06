@@ -16,6 +16,7 @@ export class WysiwygBridgeSession {
     documentRevision,
     editRevision = 0,
     onChange = null,
+    onPageChange = null,
     changeDebounceMs = 120,
     resources = {},
     documentSession = window.InfiniteMarkdownEditor,
@@ -67,6 +68,7 @@ export class WysiwygBridgeSession {
         if (!active) this.schedulePendingDocument();
       },
       onBlur: () => this.flushChange("wysiwyg-blur"),
+      onPageChange,
     });
     const snapshot = this.documentSession?.getSnapshot?.();
     if (this.usesSharedHistory && snapshot?.selection) {

@@ -10,6 +10,17 @@ const PAGE_GAP_PX = 20;
 const metricsByView = new WeakMap();
 export const getPaginationMetrics = view => metricsByView.get(view);
 
+export function pageStatusAtPosition(boundaries, position) {
+  let low = 0;
+  let high = boundaries.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (boundaries[middle].position <= position) low = middle + 1;
+    else high = middle;
+  }
+  return { current: low + 1, total: boundaries.length + 1 };
+}
+
 function normalizedBoundary(boundary) {
   return typeof boundary === "number"
     ? { position: boundary, height: null, kind: "automatic" }
@@ -377,7 +388,7 @@ function layoutSignature(view, page) {
   ].join("|");
 }
 
-export function paginationPlugin() {
+export function paginationPlugin(options = {}) {
   return new Plugin({
     key: paginationKey,
     state: {
@@ -422,6 +433,15 @@ export function paginationPlugin() {
       let measurementCache = new WeakMap();
       let lastDocument = null;
       let lastSignature = null;
+      let lastPageStatus = null;
+      const reportPageStatus = () => {
+        if (!options.onPageChange) return;
+        const boundaries = paginationKey.getState(view.state)?.positions ?? [];
+        const next = pageStatusAtPosition(boundaries, view.state.selection.head);
+        if (lastPageStatus?.current === next.current && lastPageStatus.total === next.total) return;
+        lastPageStatus = next;
+        options.onPageChange(next);
+      };
       const page = view.dom.closest(".infinite-pm-page");
       const layer = document.createElement("div");
       layer.className = "infinite-pm-pagination-layer";
@@ -471,6 +491,7 @@ export function paginationPlugin() {
             const commitStart = performance.now();
             setFinalPageTail(view, layout.tailHeight);
             setPaginationBoundaries(view, layout.boundaries);
+            reportPageStatus();
             metrics.maxCommitMs = Math.max(metrics.maxCommitMs, performance.now() - commitStart);
             metrics.committed++;
             await yieldToInput(controller.signal);
@@ -524,6 +545,7 @@ export function paginationPlugin() {
           // Selection moves and our own decoration transactions do not change
           // content. Neither should launch another full-document layout pass.
           if (nextView.state.doc !== previousState.doc) { activeJob?.abort(); schedule(); }
+          reportPageStatus();
         },
         destroy() {
           destroyed = true;
