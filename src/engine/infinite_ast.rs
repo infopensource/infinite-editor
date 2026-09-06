@@ -218,6 +218,27 @@ fn is_page_break(source: &str) -> bool {
     body.trim() == "infinite-editor:page-break"
 }
 
+fn is_empty_line(source: &str) -> bool {
+    let trimmed = source.trim();
+    let Some(body) = trimmed
+        .strip_prefix("<!--")
+        .and_then(|value| value.strip_suffix("-->"))
+    else {
+        return false;
+    };
+    body.trim() == "infinite-editor:empty-line"
+}
+
+fn is_html_line_break(source: &str) -> bool {
+    let compact: String = source
+        .trim()
+        .chars()
+        .filter(|character| !character.is_whitespace() && *character != '/')
+        .flat_map(char::to_lowercase)
+        .collect();
+    compact == "<br>"
+}
+
 fn is_block_directive(source: &str) -> bool {
     let trimmed = source.trim_start();
     trimmed.starts_with("::")
@@ -249,9 +270,18 @@ fn block_node(node: Node, source: &str) -> InfiniteAstNode {
                     source: raw,
                 }
             } else {
-                InfiniteAstNode::Paragraph {
-                    children: inline_nodes(paragraph.children, source),
+                let mut children = inline_nodes(paragraph.children, source);
+                let placeholder = !children.is_empty()
+                    && children.iter().all(|node| {
+                        matches!(node, InfiniteAstNode::Text { value } if value.chars().all(char::is_whitespace))
+                    })
+                    && children.iter().any(|node| {
+                        matches!(node, InfiniteAstNode::Text { value } if value.contains('\u{a0}'))
+                    });
+                if placeholder {
+                    children.clear();
                 }
+                InfiniteAstNode::Paragraph { children }
             }
         }
         Node::Heading(heading) => InfiniteAstNode::Heading {
@@ -330,6 +360,8 @@ fn block_node(node: Node, source: &str) -> InfiniteAstNode {
             let raw = source_slice(&Node::Html(html), source);
             if is_page_break(&raw) {
                 InfiniteAstNode::PageBreak { source: raw }
+            } else if is_empty_line(&raw) {
+                InfiniteAstNode::Paragraph { children: vec![] }
             } else {
                 InfiniteAstNode::OpaqueBlock {
                     syntax: "html".to_string(),
@@ -345,7 +377,7 @@ fn block_node(node: Node, source: &str) -> InfiniteAstNode {
 }
 
 fn inline_nodes(nodes: Vec<Node>, source: &str) -> Vec<InfiniteAstNode> {
-    nodes
+    let mut converted: Vec<_> = nodes
         .into_iter()
         .map(|node| match node {
             Node::Text(text) => InfiniteAstNode::Text { value: text.value },
@@ -361,6 +393,18 @@ fn inline_nodes(nodes: Vec<Node>, source: &str) -> Vec<InfiniteAstNode> {
             Node::InlineCode(code) => InfiniteAstNode::CodeInline { value: code.value },
             Node::InlineMath(math) => InfiniteAstNode::MathInline { value: math.value },
             Node::Break(_) => InfiniteAstNode::HardBreak,
+            Node::Html(html) => {
+                let node = Node::Html(html);
+                let raw = source_slice(&node, source);
+                if is_html_line_break(&raw) {
+                    InfiniteAstNode::HardBreak
+                } else {
+                    InfiniteAstNode::OpaqueInline {
+                        syntax: "html".to_string(),
+                        source: raw,
+                    }
+                }
+            }
             Node::Link(link) => InfiniteAstNode::Link {
                 href: link.url,
                 title: link.title,
@@ -384,7 +428,20 @@ fn inline_nodes(nodes: Vec<Node>, source: &str) -> Vec<InfiniteAstNode> {
                 source: source_slice(&other, source),
             },
         })
-        .collect()
+        .collect();
+    for index in 1..converted.len() {
+        if matches!(converted[index - 1], InfiniteAstNode::HardBreak) {
+            if let InfiniteAstNode::Text { value } = &mut converted[index] {
+                if let Some(rest) = value
+                    .strip_prefix("\r\n")
+                    .or_else(|| value.strip_prefix('\n'))
+                {
+                    *value = rest.to_string();
+                }
+            }
+        }
+    }
+    converted
 }
 
 #[cfg(test)]
@@ -493,6 +550,52 @@ mod tests {
         assert!(matches!(
             document.children.first(),
             Some(InfiniteAstNode::PageBreak { .. })
+        ));
+    }
+
+    #[test]
+    fn typora_whitespace_keeps_sequential_spaces_and_supports_space_hard_breaks() {
+        let source = "第一行    中间  \n第二行";
+        let document =
+            InfiniteAstDocument::from_markdown_rs(source).expect("连续空格和单换行应可解析");
+        let InfiniteAstNode::Paragraph { children } = &document.children[0] else {
+            panic!("应为单个段落")
+        };
+
+        assert!(children
+            .iter()
+            .any(|node| matches!(node, InfiniteAstNode::HardBreak)));
+        let text = children
+            .iter()
+            .filter_map(|node| match node {
+                InfiniteAstNode::Text { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(text, "第一行    中间第二行");
+    }
+
+    #[test]
+    fn html_br_is_the_explicit_hard_break() {
+        let document =
+            InfiniteAstDocument::from_markdown_rs("第一行<br/>\n第二行").expect("显式 br 应可解析");
+        let InfiniteAstNode::Paragraph { children } = &document.children[0] else {
+            panic!("应为单个段落")
+        };
+
+        assert!(children
+            .iter()
+            .any(|node| matches!(node, InfiniteAstNode::HardBreak)));
+    }
+
+    #[test]
+    fn non_breaking_space_paragraph_is_a_portable_empty_paragraph() {
+        let document = InfiniteAstDocument::from_markdown_rs("第一段\n\n&nbsp;\n\n第二段")
+            .expect("通用空段落占位符应可解析");
+
+        assert!(matches!(
+            document.children.get(1),
+            Some(InfiniteAstNode::Paragraph { children }) if children.is_empty()
         ));
     }
 

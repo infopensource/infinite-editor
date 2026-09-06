@@ -806,14 +806,35 @@ test("Enter in a task item creates one new unchecked task item", () => {
   );
 });
 
-test("code fence language and hard breaks stabilize without dropping semantics", () => {
-  const initial = "```rust title=demo\nfn main() {}\n```\n\n第一行  \n第二行";
+test("code fence language and explicit hard breaks stabilize without dropping semantics", () => {
+  const initial = "```rust title=demo\nfn main() {}\n```\n\n第一行<br/>\n第二行";
   const first = serializeMarkdown(parseMarkdown(initial));
   const second = serializeMarkdown(parseMarkdown(first));
 
   assert.equal(second, first);
   assert.match(first, /^```rust title=demo/mu);
-  assert.match(first, /第一行\\\n第二行/u);
+  assert.match(first, /第一行  \n第二行/u);
+});
+
+test("Typora-style editing preserves sequential spaces and recognizes a space hard break", () => {
+  const initial = "第一行    中间  \n第二行";
+  const documentNode = parseMarkdown(initial);
+  const paragraph = documentNode.firstChild;
+
+  assert.equal(paragraph.type.name, "paragraph");
+  assert.equal(paragraph.textContent, "第一行    中间第二行");
+  assert.equal(paragraph.content.content.some((node) => node.type.name === "hard_break"), true);
+  assert.equal(serializeMarkdown(documentNode), "第一行    中间  \n第二行");
+});
+
+test("backslash and HTML hard breaks are canonicalized to trailing spaces", () => {
+  const documentNode = parseMarkdown("第一行\\\n第二行");
+
+  assert.equal(documentNode.firstChild.content.content.some(
+    (node) => node.type.name === "hard_break",
+  ), true);
+  assert.equal(serializeMarkdown(documentNode), "第一行  \n第二行");
+  assert.equal(serializeMarkdown(parseMarkdown("第一行<br/>第二行")), "第一行  \n第二行");
 });
 
 test("Shift+Tab lifts only A.1.1 and its legal subtree", () => {
@@ -936,6 +957,39 @@ test("EditorView keydown routes Enter and Backspace through structural transacti
   assert.equal(backspace.event.defaultPrevented, true);
   assert.equal(activeEditor.getMarkdown(), "* 父项\n  * 子\n\n    项\n  * 后续\n* B");
   assert.equal(activeEditor.state.selection.$from.parent.textContent, "项");
+});
+
+test("Shift+Enter inserts a hard break and Ctrl+Enter inserts a page break", () => {
+  activeEditor = new MinimalWysiwygEditor(document.getElementById("host"), "前后");
+  activeEditor.view.dispatch(activeEditor.state.tr.setSelection(TextSelection.create(
+    activeEditor.state.doc,
+    textPosition(activeEditor.state.doc, "前后", 1),
+  )));
+
+  const hardBreak = keydown(activeEditor, "Enter", { shiftKey: true });
+  assert.equal(hardBreak.event.defaultPrevented, true);
+  assert.equal(activeEditor.getMarkdown(), "前  \n后");
+
+  const pageBreak = keydown(activeEditor, "Enter", { ctrlKey: true });
+  assert.equal(pageBreak.event.defaultPrevented, true);
+  assert.equal(nodePosition(activeEditor.state.doc, "page_break") > 0, true);
+});
+
+test("empty paragraphs survive Markdown serialization and reopening", () => {
+  const paragraph = wysiwygSchema.nodes.paragraph;
+  const documentNode = wysiwygSchema.nodes.doc.create(null, [
+    paragraph.create(null, wysiwygSchema.text("第一段")),
+    paragraph.create(),
+    paragraph.create(),
+    paragraph.create(null, wysiwygSchema.text("第二段")),
+  ]);
+  const markdown = serializeMarkdown(documentNode);
+  const reopened = parseMarkdown(markdown);
+
+  assert.equal(markdown.match(/&nbsp;/gu)?.length, 2);
+  assert.equal(reopened.childCount, 4);
+  assert.equal(reopened.child(1).childCount, 0);
+  assert.equal(reopened.child(2).childCount, 0);
 });
 
 test("composition protects Chinese IME text from external document replacement", async () => {

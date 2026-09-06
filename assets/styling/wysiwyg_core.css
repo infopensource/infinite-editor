@@ -32,6 +32,8 @@
     caret-color: #174f7e;
     overflow-wrap: anywhere;
     word-break: break-word;
+    /* Typora-style editing view: show source newlines and repeated spaces. */
+    white-space: break-spaces;
 }
 
 .infinite-pm-host .ProseMirror-selectednode {
@@ -40,6 +42,7 @@
 }
 
 .infinite-pm-host p {
+    /* A visible paragraph gap distinguishes Enter from Shift+Enter/soft wraps. */
     margin: 0 0 12px;
     color: #1f2937;
 }

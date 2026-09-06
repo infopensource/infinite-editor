@@ -1,6 +1,8 @@
 import { MarkdownSerializer, defaultMarkdownSerializer } from "prosemirror-markdown";
 import { PAGE_BREAK_SOURCE } from "./dialect.js";
 
+const EMPTY_PARAGRAPH_SOURCE = "&nbsp;";
+
 function escapeTablePipes(value) {
   return value.replace(/(^|[^\\])\|/gu, "$1\\|").replaceAll("\n", "<br>");
 }
@@ -14,6 +16,25 @@ function alignmentMarker(value) {
 
 const nodes = {
   ...defaultMarkdownSerializer.nodes,
+  hard_break(state) {
+    state.write(" ".repeat(2));
+    state.write("\n");
+  },
+  paragraph(state, node, parent, index) {
+    if (node.childCount === 0) {
+      // The parser adds one caret host after a trailing page break. It is UI
+      // scaffolding, not an authored blank line.
+      if (
+        index === parent.childCount - 1
+        && index > 0
+        && parent.child(index - 1).type.name === "page_break"
+      ) return;
+      state.write(EMPTY_PARAGRAPH_SOURCE);
+      state.closeBlock(node);
+      return;
+    }
+    defaultMarkdownSerializer.nodes.paragraph(state, node);
+  },
   list_item(state, node) {
     if (node.attrs.checked !== null) state.write(node.attrs.checked ? "[x] " : "[ ] ");
     state.renderContent(node);

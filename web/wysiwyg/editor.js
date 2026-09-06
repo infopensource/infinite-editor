@@ -6,6 +6,7 @@ import { undoInputRule } from "prosemirror-inputrules";
 import { EditorState, Selection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { listKeyBindings } from "./commands/lists.js";
+import { blockKeyBindings } from "./commands/blocks.js";
 import {
   parseMarkdown,
   parseMarkdownWithMapping,
@@ -27,6 +28,7 @@ function editorPlugins(options = {}) {
     paginationPlugin({ onPageChange: options.onPageChange }),
     selectionPlugin(),
     keymap({ Backspace: undoInputRule }),
+    keymap(blockKeyBindings(wysiwygSchema)),
     keymap(listKeyBindings(wysiwygSchema)),
     keymap(sharedHistory
       ? {

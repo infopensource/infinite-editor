@@ -7,6 +7,10 @@ function rawSource(node, source) {
   return typeof node?.value === "string" ? node.value : "";
 }
 
+function isHtmlLineBreak(value) {
+  return /^<br\s*\/?\s*>$/iu.test(value.trim());
+}
+
 export function infiniteAstFromRemark(root, source) {
   const sourceMap = [];
   const collectRanges = (nodes, parentPath = []) => nodes.forEach((node, index) => {
@@ -20,7 +24,8 @@ export function infiniteAstFromRemark(root, source) {
   });
   collectRanges(root.children);
 
-  const inline = (nodes) => nodes.map((node) => {
+  const inline = (nodes) => {
+    const converted = nodes.map((node) => {
     switch (node.type) {
       case "text": return { kind: "text", value: node.value };
       case "emphasis": return { kind: "emphasis", children: inline(node.children) };
@@ -29,6 +34,12 @@ export function infiniteAstFromRemark(root, source) {
       case "inlineCode": return { kind: "code_inline", value: node.value };
       case "inlineMath": return { kind: "math_inline", value: node.value };
       case "break": return { kind: "hard_break" };
+      case "html": {
+        const raw = rawSource(node, source);
+        return isHtmlLineBreak(raw)
+          ? { kind: "hard_break" }
+          : { kind: "opaque_inline", syntax: "html", source: raw };
+      }
       case "link": return {
         kind: "link",
         href: node.url,
@@ -57,11 +68,24 @@ export function infiniteAstFromRemark(root, source) {
         source: rawSource(node, source),
       };
     }
-  });
+    });
+    for (let index = 1; index < converted.length; index += 1) {
+      if (converted[index - 1].kind === "hard_break" && converted[index].kind === "text") {
+        converted[index].value = converted[index].value.replace(/^\r?\n/u, "");
+      }
+    }
+    return converted;
+  };
 
   const blocks = (nodes) => nodes.map((node) => {
     switch (node.type) {
-      case "paragraph": return { kind: "paragraph", children: inline(node.children) };
+      case "paragraph": {
+        const children = inline(node.children);
+        const placeholder = children.length > 0
+          && children.every((child) => child.kind === "text" && /^\s*$/u.test(child.value))
+          && children.some((child) => child.value.includes("\u00a0"));
+        return { kind: "paragraph", children: placeholder ? [] : children };
+      }
       case "heading": return {
         kind: "heading",
         level: node.depth,
@@ -110,6 +134,9 @@ export function infiniteAstFromRemark(root, source) {
       };
       case "html": {
         const raw = rawSource(node, source);
+        if (/^<!--\s*infinite-editor:empty-line\s*-->$/u.test(raw.trim())) {
+          return { kind: "paragraph", children: [] };
+        }
         return /^<!--\s*infinite-editor:page-break\s*-->$/u.test(raw.trim())
           ? { kind: "page_break", source: raw }
           : { kind: "opaque_block", syntax: "html", source: raw };

@@ -31,9 +31,11 @@ impl ParserGateway {
     }
 
     pub fn render_html(&self, source: &str) -> Result<String, ParseError> {
-        markdown::to_html_with_options(source, &math_options()).map_err(|error| ParseError {
-            message: error.to_string(),
-        })
+        markdown::to_html_with_options(source, &math_options())
+            .map(|html| render_explicit_line_breaks(&html))
+            .map_err(|error| ParseError {
+                message: error.to_string(),
+            })
     }
 
     pub fn parse_infinite_ast(&self, source: &str) -> Result<InfiniteAstDocument, ParseError> {
@@ -51,6 +53,38 @@ impl ParserGateway {
                     .count()
             })
     }
+}
+
+fn render_explicit_line_breaks(html: &str) -> String {
+    let mut output = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(code_start) = rest.find("<code") {
+        let (ordinary, code_and_rest) = rest.split_at(code_start);
+        output.push_str(&replace_escaped_br(ordinary));
+        let Some(code_end) = code_and_rest.find("</code>") else {
+            output.push_str(code_and_rest);
+            return output;
+        };
+        let end = code_end + "</code>".len();
+        output.push_str(&code_and_rest[..end]);
+        rest = &code_and_rest[end..];
+    }
+    output.push_str(&replace_escaped_br(rest));
+    // markdown-rs formats a hard break as `<br>\n`. With `white-space:
+    // break-spaces`, that source-formatting newline would paint a second blank
+    // line after the actual BR. Soft line breaks remain untouched.
+    output
+        .replace("<br>\r\n", "<br>")
+        .replace("<br>\n", "<br>")
+        .replace("<br />\r\n", "<br>")
+        .replace("<br />\n", "<br>")
+}
+
+fn replace_escaped_br(value: &str) -> String {
+    value
+        .replace("&lt;br/&gt;", "<br>")
+        .replace("&lt;br /&gt;", "<br>")
+        .replace("&lt;br&gt;", "<br>")
 }
 
 pub(crate) fn math_parse_options() -> markdown::ParseOptions {
@@ -104,6 +138,37 @@ mod tests {
         assert!(html.contains("<h1>标题</h1>"));
         assert!(html.contains("<strong>粗体</strong>"));
         assert!(html.contains("<code>代码</code>"));
+    }
+
+    #[test]
+    fn typora_preview_supports_space_and_explicit_html_hard_breaks() {
+        let parser = ParserGateway::markdown_rs();
+        let spaces = parser
+            .render_html("第一行  \n第二行")
+            .expect("行尾空格应作为普通正文渲染");
+        let explicit = parser
+            .render_html("第一行<br/>第二行")
+            .expect("显式 br 应渲染为换行");
+
+        assert!(spaces.contains("<br"), "{spaces}");
+        assert!(!spaces.contains("<br>\n"), "{spaces}");
+        assert!(!spaces.contains("<br />\n"), "{spaces}");
+        assert!(explicit.contains("<br"), "{explicit}");
+    }
+
+    #[test]
+    fn typora_preview_keeps_one_visual_line_for_soft_and_hard_breaks() {
+        let parser = ParserGateway::markdown_rs();
+        let soft = parser.render_html("甲\n乙").expect("软换行应可渲染");
+        let hard = parser
+            .render_html("甲  \n乙")
+            .expect("双空格硬换行应可渲染");
+
+        assert!(soft.contains("甲\n乙"), "{soft}");
+        assert!(
+            hard.contains("甲<br>乙") || hard.contains("甲<br />乙"),
+            "{hard}"
+        );
     }
 
     #[test]

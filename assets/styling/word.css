@@ -45,6 +45,10 @@
     user-select: text;
 }
 
+.markdown-rendered-html {
+    white-space: break-spaces;
+}
+
 .resize-handle {
     position: absolute;
     z-index: 20;

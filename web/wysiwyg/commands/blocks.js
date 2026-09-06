@@ -23,9 +23,20 @@ function insertPageBreak(schema) {
   };
 }
 
+function insertHardBreak(schema) {
+  return (state, dispatch) => {
+    if (state.selection.$from.parent.type === schema.nodes.code_block) return false;
+    if (dispatch) {
+      dispatch(state.tr.replaceSelectionWith(schema.nodes.hard_break.create()).scrollIntoView());
+    }
+    return true;
+  };
+}
+
 export function blockCommands(schema) {
   return {
     horizontalRule: () => insertNode(schema.nodes.horizontal_rule.create()),
+    hardBreak: () => insertHardBreak(schema),
     pageBreak: () => insertPageBreak(schema),
     image: (attrs) => insertNode(schema.nodes.image.create(attrs)),
     inlineMath: (value) => insertNode(schema.nodes.math_inline.create({ value })),
@@ -60,5 +71,14 @@ export function blockCommands(schema) {
         return false;
       };
     },
+  };
+}
+
+export function blockKeyBindings(schema) {
+  const commands = blockCommands(schema);
+  return {
+    "Shift-Enter": commands.hardBreak(),
+    "Ctrl-Enter": commands.pageBreak(),
+    "Meta-Enter": commands.pageBreak(),
   };
 }
