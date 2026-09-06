@@ -3,7 +3,7 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 
 const dom = new JSDOM(
-  '<!doctype html><div id="host"></div><textarea id="bridge"></textarea>',
+  '<!doctype html><div id="host"></div><textarea id="bridge"></textarea><textarea id="selection-status-bridge"></textarea>',
   { pretendToBeVisual: true }
 );
 
@@ -40,7 +40,7 @@ const api = window.InfiniteMarkdownEditor;
 
 function resetDom() {
   api.destroy("host");
-  document.body.innerHTML = '<div id="host"></div><textarea id="bridge"></textarea>';
+  document.body.innerHTML = '<div id="host"></div><textarea id="bridge"></textarea><textarea id="selection-status-bridge"></textarea>';
 }
 
 test.beforeEach(resetDom);
@@ -55,6 +55,22 @@ test("mounts CodeMirror with the initial Markdown", () => {
   assert.equal(result.ok, true);
   assert.equal(api.getValue("host"), "# 标题");
   assert.ok(document.querySelector("#host .cm-editor"));
+});
+
+test("reports only the selected Markdown slice and resets after the selection collapses", async () => {
+  api.mount("host", "bridge", "前 **选中** 后", 1);
+  const bridge = document.getElementById("selection-status-bridge");
+
+  api.setSelection("host", 2, 8);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.deepEqual(JSON.parse(bridge.value), {
+    selected: true,
+    markdown: "**选中**",
+  });
+
+  api.setSelection("host", 8);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.deepEqual(JSON.parse(bridge.value), { selected: false });
 });
 
 test("scroll synchronization works in both directions after preview publication and resizing", async () => {

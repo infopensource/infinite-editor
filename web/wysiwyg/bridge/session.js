@@ -4,6 +4,7 @@ import { remarkReferenceBackend } from "../markdown/backend.js";
 import { assertInfiniteAst } from "../markdown/infinite_ast.js";
 import { resolveResource } from "../../resource_path.js";
 import { TextSelection } from "prosemirror-state";
+import { selectedCharacterCount } from "../../selection_character_count.js";
 
 export const WYSIWYG_BRIDGE_VERSION = 1;
 
@@ -17,6 +18,7 @@ export class WysiwygBridgeSession {
     editRevision = 0,
     onChange = null,
     onPageChange = null,
+    onSelectionChange = null,
     changeDebounceMs = 120,
     resources = {},
     documentSession = window.InfiniteMarkdownEditor,
@@ -26,9 +28,12 @@ export class WysiwygBridgeSession {
     this.editRevision = editRevision;
     this.bridge = bridge;
     this.onChange = onChange;
+    this.onSelectionChange = onSelectionChange;
     this.pendingDocument = null;
     this.pendingDocumentTimer = null;
     this.changeTimer = null;
+    this.selectionTimer = null;
+    this.lastSelectionCount = undefined;
     this.changeDebounceMs = changeDebounceMs;
     this.dirty = false;
     this.destroyed = false;
@@ -56,6 +61,7 @@ export class WysiwygBridgeSession {
       } : null,
       handlePaste: (view, event) => this.handlePaste(view, event),
       onTransaction: ({ transaction, previousState }) => {
+        if (transaction.selectionSet || transaction.docChanged) this.scheduleSelectionChange();
         if (!transaction.docChanged) return;
         if (this.usesSharedHistory && !this.dirty) {
           this.captureHistoryStart(previousState);
@@ -82,6 +88,20 @@ export class WysiwygBridgeSession {
         this.editor.view.dispatch(this.editor.state.tr.setSelection(selection));
       }
     }
+    this.scheduleSelectionChange();
+  }
+
+  scheduleSelectionChange() {
+    if (this.selectionTimer || this.destroyed) return;
+    this.selectionTimer = setTimeout(() => {
+      this.selectionTimer = null;
+      const count = selectedCharacterCount(this.editor.state);
+      if (count === this.lastSelectionCount) return;
+      this.lastSelectionCount = count;
+      this.onSelectionChange?.(count === null
+        ? { selected: false }
+        : { selected: true, character_count: count });
+    }, 80);
   }
 
   handlePaste(view, event) {
@@ -394,6 +414,8 @@ export class WysiwygBridgeSession {
     this.pendingDocumentTimer = null;
     if (this.changeTimer) clearTimeout(this.changeTimer);
     this.changeTimer = null;
+    if (this.selectionTimer) clearTimeout(this.selectionTimer);
+    this.selectionTimer = null;
     this.dirty = false;
     return { ok: true, destroyed: true };
   }

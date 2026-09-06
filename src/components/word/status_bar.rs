@@ -9,6 +9,8 @@ pub fn StatusBar(
     status_hint: String,
     current_file: Option<String>,
     character_count: usize,
+    selection_active: bool,
+    selected_character_count: Option<usize>,
     current_page: usize,
     total_pages: usize,
     on_markdown_click: EventHandler<()>,
@@ -45,9 +47,19 @@ pub fn StatusBar(
                 span { class: "status-dot", "•" }
                 span { class: "status-file", "{file_label}" }
                 span { class: "status-dot", "•" }
-                span { class: "status-count", "字数：{character_count}" }
-                span { class: "status-dot", "•" }
-                span { class: "status-count", "第 {current_page} 页 / 共 {total_pages} 页" }
+                if selection_active {
+                    if let Some(selected_count) = selected_character_count {
+                        span { class: "status-count", "字数：{selected_count}（已选）" }
+                    } else {
+                        span { class: "status-count", "字数：统计中（已选）" }
+                    }
+                } else {
+                    span { class: "status-count", "字数：{character_count}" }
+                }
+                if editor_mode == EditorMode::Wysiwyg {
+                    span { class: "status-dot", "•" }
+                    span { class: "status-count", "第 {current_page} 页 / 共 {total_pages} 页" }
+                }
                 span { class: "status-dot", "•" }
                 span { "中文(简体)" }
             }

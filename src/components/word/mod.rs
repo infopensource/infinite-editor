@@ -15,6 +15,7 @@ mod workspace;
 pub(super) const MARKDOWN_DOCUMENT_BRIDGE_ID: &str = "markdown-document-bridge";
 pub(super) const CLIPBOARD_PASTE_BRIDGE_ID: &str = "clipboard-paste-bridge";
 pub(super) const PAGE_STATUS_BRIDGE_ID: &str = "page-status-bridge";
+pub(super) const SELECTION_STATUS_BRIDGE_ID: &str = "selection-status-bridge";
 
 pub use crate::document::PaperMode;
 pub use editor_surface::EditorSurface;

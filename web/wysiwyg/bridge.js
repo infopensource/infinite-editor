@@ -13,6 +13,7 @@ export function installWysiwygBridge(target = window) {
       const host = document.getElementById(config.host_id);
       const bridge = document.getElementById(config.bridge_id);
       const pageStatusBridge = document.getElementById(config.page_status_bridge_id);
+      const selectionStatusBridge = document.getElementById(config.selection_status_bridge_id);
       if (!host || !bridge) return { ok: false, error: "找不到 WYSIWYG 挂载点或消息桥" };
       sessions.get(config.host_id)?.destroy();
       try {
@@ -24,6 +25,12 @@ export function installWysiwygBridge(target = window) {
             if (pageStatusBridge.value === value) return;
             pageStatusBridge.value = value;
             pageStatusBridge.dispatchEvent(new Event("input", { bubbles: true }));
+          } : null,
+          onSelectionChange: selectionStatusBridge ? (status) => {
+            const value = JSON.stringify(status);
+            if (selectionStatusBridge.value === value) return;
+            selectionStatusBridge.value = value;
+            selectionStatusBridge.dispatchEvent(new Event("input", { bubbles: true }));
           } : null,
           ast: config.ast,
           markdown: config.markdown,

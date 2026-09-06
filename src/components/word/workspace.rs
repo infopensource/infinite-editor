@@ -38,6 +38,15 @@ struct PageStatus {
     total: usize,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct SelectionStatus {
+    selected: bool,
+    #[serde(default)]
+    markdown: Option<String>,
+    #[serde(default)]
+    character_count: Option<usize>,
+}
+
 #[cfg(feature = "desktop")]
 #[derive(Debug, serde::Deserialize)]
 struct ClipboardPasteRequest {
@@ -95,6 +104,9 @@ pub fn WordWorkspace() -> Element {
     let current_document = document();
     let count_source = use_memo(move || document.read().markdown.clone());
     let mut character_count = use_signal(|| 0usize);
+    let mut selection_active = use_signal(|| false);
+    let mut selected_source = use_signal(|| None::<String>);
+    let mut selected_character_count = use_signal(|| None::<usize>);
     let mut page_status = use_signal(|| PageStatus {
         current: 1,
         total: 1,
@@ -108,6 +120,22 @@ pub fn WordWorkspace() -> Element {
             .await
             {
                 character_count.set(count);
+            }
+        }
+    });
+    use_resource(move || {
+        let source = selected_source();
+        async move {
+            let Some(source) = source else { return };
+            let requested_source = source.clone();
+            if let Ok(count) = super::background::run(move || {
+                ParserGateway::markdown_rs().character_count(&source)
+            })
+            .await
+            {
+                if selected_source.read().as_ref() == Some(&requested_source) {
+                    selected_character_count.set(Some(count));
+                }
             }
         }
     });
@@ -256,6 +284,22 @@ pub fn WordWorkspace() -> Element {
                             page_status.set(PageStatus { current, total });
                         }
                     },
+                    on_selection_status_change: move |payload: String| {
+                        let Ok(status) = serde_json::from_str::<SelectionStatus>(&payload) else {
+                            return;
+                        };
+                        selection_active.set(status.selected);
+                        if !status.selected {
+                            selected_source.set(None);
+                            selected_character_count.set(None);
+                        } else if let Some(count) = status.character_count {
+                            selected_source.set(None);
+                            selected_character_count.set(Some(count));
+                        } else if let Some(source) = status.markdown {
+                            selected_character_count.set(None);
+                            selected_source.set(Some(source));
+                        }
+                    },
                     paper_mode: paper.mode,
                     custom_width_mm: paper.width_mm,
                     custom_height_mm: paper.height_mm,
@@ -331,6 +375,8 @@ pub fn WordWorkspace() -> Element {
                 status_hint: status_hint(),
                 current_file: current_location().map(|location| file_name_or(location.path(), "未命名文档")),
                 character_count: character_count(),
+                selection_active: selection_active(),
+                selected_character_count: selected_character_count(),
                 current_page: page_status.read().current,
                 total_pages: page_status.read().total,
                 on_markdown_click: move |_| {

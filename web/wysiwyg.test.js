@@ -10,6 +10,7 @@ import { toolbarCommands } from "./wysiwyg/commands/toolbar.js";
 import { WysiwygBridgeSession } from "./wysiwyg/bridge.js";
 import { remarkReferenceBackend } from "./wysiwyg/markdown/backend.js";
 import { MarkdownPositionMapper } from "./wysiwyg/markdown/position_mapper.js";
+import { selectedCharacterCount } from "./selection_character_count.js";
 import {
   calculatePaginationBoundaries,
   calculatePaginationLayout,
@@ -128,6 +129,35 @@ function selectionListDepth(state) {
   }
   return depth;
 }
+
+test("selected character count visits only visible selected rich-text content", () => {
+  const state = createEditorState("前 **选 中** ![图 片](view.png) $x + y$ 后");
+  const from = textPosition(state.doc, "选 中");
+  const mathPosition = nodePosition(state.doc, "math_inline");
+  const selection = TextSelection.create(state.doc, from, mathPosition + 1);
+
+  assert.equal(selectedCharacterCount(state.apply(state.tr.setSelection(selection))), 7);
+  assert.equal(selectedCharacterCount(state), null);
+});
+
+test("rich-text selection status is debounced independently of document snapshots", async () => {
+  const statuses = [];
+  const session = new WysiwygBridgeSession({
+    host: document.getElementById("host"),
+    ast: remarkReferenceBackend.parse("甲 乙 丙"),
+    markdown: "甲 乙 丙",
+    documentRevision: 1,
+    onSelectionChange: (status) => statuses.push(status),
+  });
+  activeEditor = session.editor;
+  const from = textPosition(session.editor.state.doc, "甲 乙 丙");
+  session.editor.view.dispatch(session.editor.state.tr.setSelection(
+    TextSelection.create(session.editor.state.doc, from, from + 3),
+  ));
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.deepEqual(statuses, [{ selected: true, character_count: 2 }]);
+});
 
 function harness(markdown) {
   let state = createEditorState(markdown);

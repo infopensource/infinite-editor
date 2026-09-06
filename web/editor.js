@@ -47,6 +47,30 @@ const richSnapshotField = StateField.define({
 });
 const pendingClipboardImagePastes = new Map();
 let clipboardPasteRequest = 0;
+let selectionStatusTimer = null;
+
+function selectionStatusBridge() {
+  return document.getElementById("selection-status-bridge");
+}
+
+function emitSelectionStatus() {
+  selectionStatusTimer = null;
+  if (!controller) return;
+  const { from, to, empty } = controller.state.selection.main;
+  const status = empty
+    ? { selected: false }
+    : { selected: true, markdown: controller.state.doc.sliceString(from, to) };
+  const payload = JSON.stringify(status);
+  const bridge = selectionStatusBridge();
+  if (!bridge || bridge.value === payload) return;
+  bridge.value = payload;
+  bridge.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function scheduleSelectionStatus() {
+  if (selectionStatusTimer) clearTimeout(selectionStatusTimer);
+  selectionStatusTimer = setTimeout(emitSelectionStatus, 80);
+}
 
 function clipboardMayContainImage(clipboardData) {
   const bridge = document.getElementById("clipboard-paste-bridge");
@@ -358,6 +382,9 @@ function applyTransactions(transactions, origin = "transaction", sourceView = nu
     controller.lastOrigin = origin;
   }
   updateAttachedViews(transactions, sourceView);
+  if (transactions.some((transaction) => transaction.selection || transaction.docChanged)) {
+    scheduleSelectionStatus();
+  }
   if (changed) emitChange(origin);
   return { changed, revision: controller.editRevision };
 }
@@ -630,6 +657,7 @@ window.InfiniteMarkdownEditor = {
         }
       });
       views.set(hostId, { view });
+      scheduleSelectionStatus();
       const viewMs = performance.now() - viewStarted;
       const pendingPreviewId = pendingScrollSyncs.get(hostId);
       if (pendingPreviewId) connectScrollSync(hostId, pendingPreviewId);
@@ -820,6 +848,8 @@ window.InfiniteMarkdownEditor = {
 
   destroy(hostId) {
     this.detach(hostId);
+    if (selectionStatusTimer) clearTimeout(selectionStatusTimer);
+    selectionStatusTimer = null;
     controller = null;
     return { ok: true };
   }
