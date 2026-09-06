@@ -76,7 +76,7 @@ fn read_clipboard_png() -> Result<String, String> {
 #[component]
 pub fn WordWorkspace() -> Element {
     let mut active_tab = use_signal(|| RibbonTab::Home);
-    let zoom = use_signal(|| 100u16);
+    let mut zoom = use_signal(|| 100u16);
     let mut editor_mode = use_signal(|| EditorMode::Wysiwyg);
     let mut markdown_preview_open = use_signal(|| true);
     let mut document = use_signal(|| ProjectDocument::new(String::new()));
@@ -161,6 +161,7 @@ pub fn WordWorkspace() -> Element {
                     on_custom_width_change: move |width| { document.write().layout.paper.width_mm = width as f32 },
                     on_custom_height_change: move |height| { document.write().layout.paper.height_mm = height as f32 },
                     on_toggle_ruler: move |_| show_ruler.set(!show_ruler()),
+                    on_reset_zoom: move |_| zoom.set(100),
                     on_editor_command: move |command| {
                         if editor_mode() == EditorMode::Wysiwyg {
                             prosemirror_surface::run_command(command);
@@ -369,7 +370,7 @@ pub fn WordWorkspace() -> Element {
                 on_close: move |_| warning_alert.set(None),
             }
             StatusBar {
-                zoom: zoom(),
+                zoom,
                 editor_mode: editor_mode(),
                 markdown_preview_open: markdown_preview_open(),
                 status_hint: status_hint(),

@@ -1,3 +1,7 @@
+import { installDocumentZoom } from '../document_zoom.js';
+
+if (typeof window !== 'undefined') installDocumentZoom(window);
+
 import {
   WYSIWYG_BRIDGE_VERSION,
   WysiwygBridgeSession,

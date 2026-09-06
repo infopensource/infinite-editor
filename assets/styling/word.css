@@ -1783,3 +1783,20 @@ body.markdown-split-resizing * {
     text-align: right;
     font-weight: 600;
 }
+
+/* Scale the scroll viewport; compensate its size so it still fills its grid cell.
+   Keep paper geometry unchanged and avoid a document-sized compositing layer. */
+.editor-surface {
+    transform: scale(var(--editor-zoom, 1));
+    transform-origin: top left;
+    width: calc(100% / var(--editor-zoom, 1));
+    height: calc(100% / var(--editor-zoom, 1));
+    min-width: 0;
+    min-height: 0;
+    overflow-x: auto;
+}
+.zoom-slider { width: 96px; accent-color: #2563eb; }
+.zoom-text { min-width: 52px; font-variant-numeric: tabular-nums; }
+@media print {
+    .editor-surface { transform: none; width: auto; height: auto; }
+}

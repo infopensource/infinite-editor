@@ -11,14 +11,20 @@ const check = (value, message) => { if (!value) throw new Error(message); };
   await new Promise(resolve => setTimeout(resolve, 500));
   const before = editor.state.doc;
   const results = [];
-  for (const zoom of [1, 1.5]) {
-  document.querySelector('.infinite-pm-surface').style.zoom = zoom;
+  const viewport = document.querySelector('.editor-surface');
+  const originalBounds = viewport.getBoundingClientRect();
+  for (const zoom of [0.5, 0.8, 1, 1.5, 2]) {
+  viewport.style.setProperty('--editor-zoom', zoom);
+  window.dispatchEvent(new Event('infinite-editor-zoom'));
   for (const reverse of [false, true]) {
     const from = 12, to = editor.state.doc.content.size - 10;
     editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc,
       reverse ? to : from, reverse ? from : to)));
     editor.focus();
     await pause();
+    const bounds = viewport.getBoundingClientRect();
+    check(Math.abs(bounds.width - originalBounds.width) < 1 && Math.abs(bounds.height - originalBounds.height) < 1,
+      'Scaled viewport no longer fills workspace');
     const rects = [...document.querySelectorAll('.infinite-selection-layer > div')]
       .map(element => element.getBoundingClientRect()).sort((a, b) => a.top - b.top || a.left - b.left);
     check(rects.length >= 4, 'Expected cross-paragraph and wrapped selection lines');
@@ -34,7 +40,7 @@ const check = (value, message) => { if (!value) throw new Error(message); };
     results.push({ zoom, reverse, rectangles: rects.length, height });
   }
   }
-  document.querySelector('.infinite-pm-surface').style.zoom = 1;
+  viewport.style.setProperty('--editor-zoom', 1);
   editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 1)));
   await pause();
   check(!document.querySelector('.infinite-selection-layer > div'), 'Collapsed selection remains painted');

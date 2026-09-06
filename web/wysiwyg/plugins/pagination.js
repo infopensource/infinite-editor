@@ -578,6 +578,7 @@ export function paginationPlugin(options = {}) {
       const surface = page?.closest(".infinite-pm-surface");
       if (surface) attributes.observe(surface, { attributes: true, attributeFilter: ["class", "style"] });
       window.addEventListener("resize", schedule, { passive: true });
+      window.addEventListener('infinite-editor-zoom', schedulePaint);
       window.addEventListener("scroll", schedulePaint, { passive: true, capture: true });
       window.addEventListener("infinite-math-renderer-ready", invalidate);
       document.fonts?.addEventListener("loadingdone", invalidate);
@@ -605,6 +606,7 @@ export function paginationPlugin(options = {}) {
           layer.remove();
           workspace.destroy();
           window.removeEventListener("resize", schedule);
+          window.removeEventListener('infinite-editor-zoom', schedulePaint);
           window.removeEventListener("scroll", schedulePaint, true);
           window.removeEventListener("infinite-math-renderer-ready", invalidate);
           document.fonts?.removeEventListener("loadingdone", invalidate);

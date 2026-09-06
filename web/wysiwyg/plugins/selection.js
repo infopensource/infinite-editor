@@ -68,6 +68,7 @@ export function selectionPlugin() {
       function schedule() { if (!frame) frame = requestAnimationFrame(paint); }
       window.addEventListener('scroll', schedule, true);
       window.addEventListener('resize', schedule);
+      window.addEventListener('infinite-editor-zoom', schedule);
       document.fonts?.addEventListener('loadingdone', schedule);
       const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
       observer?.observe(view.dom);
@@ -79,6 +80,7 @@ export function selectionPlugin() {
           observer?.disconnect();
           window.removeEventListener('scroll', schedule, true);
           window.removeEventListener('resize', schedule);
+          window.removeEventListener('infinite-editor-zoom', schedule);
           document.fonts?.removeEventListener('loadingdone', schedule);
           view.dom.classList.remove('infinite-painted-selection');
           layer.remove();

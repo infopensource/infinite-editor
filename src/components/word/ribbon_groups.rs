@@ -14,6 +14,7 @@ pub fn RibbonPanel(
     on_custom_width_change: EventHandler<u16>,
     on_custom_height_change: EventHandler<u16>,
     on_toggle_ruler: EventHandler<()>,
+    on_reset_zoom: EventHandler<()>,
     on_editor_command: EventHandler<String>,
 ) -> Element {
     let mut width_draft = use_signal(|| custom_width_mm.to_string());
@@ -97,10 +98,13 @@ pub fn RibbonPanel(
                         }
                         div { class: "group-title", "显示" }
                     }
-                    Group {
-                        title: "缩放",
-                        large_action: "100%",
-                        actions: vec!["单页", "多页", "页宽"],
+                    div { class: "ribbon-group",
+                        button {
+                            class: "ribbon-large", r#type: "button",
+                            onclick: move |_| on_reset_zoom.call(()),
+                            "100%"
+                        }
+                        div { class: "group-title", "缩放" }
                     }
                 },
                 RibbonTab::Layout => rsx! {

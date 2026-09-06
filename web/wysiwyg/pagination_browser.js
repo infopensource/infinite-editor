@@ -1,5 +1,5 @@
 import { MinimalWysiwygEditor } from './editor.js';
-import { paginationKey } from './plugins/pagination.js';
+import { paginationKey, getPaginationMetrics } from './plugins/pagination.js';
 
 const paragraph = '中文分页测试 English **粗体** *斜体* 👩🏽‍💻，连续文字保持原段落。'.repeat(120);
 const scenario = new URL(location.href).searchParams.get('case');
@@ -35,6 +35,7 @@ const delay = async () => {
 const page = document.querySelector('.infinite-pm-page');
 const surface = document.querySelector('.infinite-pm-surface');
 function verify() {
+  const scale = Number(surface.dataset.zoom) || 1;
   const paints = [...page.querySelectorAll('.infinite-pm-page-chrome')];
   assert(paginationKey.getState(editor.state).positions.length > 2, 'Expected multiple physical pages');
   assert(paints.length > 0, 'Viewport has no page chrome');
@@ -47,7 +48,7 @@ function verify() {
     let start = editor.view.dom.getBoundingClientRect().top;
     for (const gap of [...editor.view.dom.querySelectorAll('.infinite-pm-page-gap:not([data-secondary])')].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)) {
       const rect = gap.getBoundingClientRect();
-      assert(rect.top - start <= contentHeight + 1, `Table exceeded paper content height: ${rect.top - start} > ${contentHeight}`);
+      assert(rect.top - start <= contentHeight * scale + 1, `Table exceeded paper content height: ${rect.top - start} > ${contentHeight}`);
       start = rect.bottom;
     }
   }
@@ -73,7 +74,7 @@ function verify() {
     }
   }
   const widths = [...editor.view.dom.querySelectorAll('th')].map(cell => cell.getBoundingClientRect().width);
-  widths.forEach((width, i) => assert(Math.abs(width - initialWidths[i]) < 1, 'Pagination changed table column widths'));
+  widths.forEach((width, i) => assert(Math.abs(width / scale - initialWidths[i]) < 1, 'Pagination changed table column widths'));
   assert(editor.state.doc.eq(before), 'Pagination changed document structure');
   return paginationKey.getState(editor.state).positions.length;
 }
@@ -106,6 +107,20 @@ function verify() {
     await delay();
     const pages = verify();
     const stableUpdates = updates;
+    const layouts = getPaginationMetrics(editor.view).started;
+    const originalWidth = page.getBoundingClientRect().width;
+    for (const zoom of [0.5, 0.8, 1.5, 2, 1]) {
+      surface.dataset.zoom = zoom;
+      surface.style.transform = `scale(${zoom})`;
+      surface.style.transformOrigin = 'top left';
+      window.dispatchEvent(new Event('infinite-editor-zoom'));
+      await pause(120);
+      assert(Math.abs(page.getBoundingClientRect().width - originalWidth * zoom) < 1,
+        'Paper magnification does not match zoom');
+      assert(verify() === pages, 'Zoom changed page boundaries');
+      assert(getPaginationMetrics(editor.view).started === layouts, 'Zoom triggered full pagination');
+      assert(updates === stableUpdates, 'Zoom dispatched an editor transaction');
+    }
     window.dispatchEvent(new Event('resize'));
     await delay();
     verify();

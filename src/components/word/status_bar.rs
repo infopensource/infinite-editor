@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 
 #[component]
 pub fn StatusBar(
-    zoom: u16,
+    mut zoom: Signal<u16>,
     editor_mode: EditorMode,
     markdown_preview_open: bool,
     status_hint: String,
@@ -16,6 +16,22 @@ pub fn StatusBar(
     on_markdown_click: EventHandler<()>,
     on_wysiwyg_click: EventHandler<()>,
 ) -> Element {
+    // Keep zoom subscriptions here: changing magnification must not rerender
+    // the workspace and clone the document or rebuild preview content.
+    use_effect(move || {
+        let scale = f64::from(zoom()) / 100.0;
+        let _ = document::eval(&format!(
+            r#"
+            const shell = document.querySelector('.word-shell');
+            if (shell) shell.style.setProperty('--editor-zoom', '{scale}');
+            // Coalesce rapid slider input and refresh viewport-only overlays.
+            cancelAnimationFrame(window.__infiniteZoomFrame);
+            window.__infiniteZoomFrame = requestAnimationFrame(() => {{
+                window.dispatchEvent(new Event('infinite-editor-zoom'));
+            }});
+        "#
+        ));
+    });
     let markdown_btn_class = if editor_mode == EditorMode::MarkdownSource {
         "status-view active"
     } else {
@@ -74,7 +90,37 @@ pub fn StatusBar(
                     onclick: move |_| on_wysiwyg_click.call(()),
                     "{EditorMode::Wysiwyg.label()}"
                 }
-                span { class: "zoom-text", "{zoom}%" }
+                button {
+                    class: "status-view", r#type: "button",
+                    aria_label: "缩小", disabled: zoom() <= 50,
+                    onmousedown: move |event| event.prevent_default(),
+                    onclick: move |_| zoom.with_mut(|value| *value = value.saturating_sub(10).max(50)),
+                    "−"
+                }
+                input {
+                    class: "zoom-slider", r#type: "range",
+                    aria_label: "文档缩放比例", min: 50, max: 200, step: 10,
+                    value: zoom(),
+                    oninput: move |event| {
+                        if let Ok(value) = event.value().parse::<u16>() {
+                            zoom.set(value.clamp(50, 200));
+                        }
+                    },
+                }
+                button {
+                    class: "status-view", r#type: "button",
+                    aria_label: "放大", disabled: zoom() >= 200,
+                    onmousedown: move |event| event.prevent_default(),
+                    onclick: move |_| zoom.with_mut(|value| *value = (*value + 10).min(200)),
+                    "+"
+                }
+                button {
+                    class: "status-view zoom-text", r#type: "button",
+                    title: "恢复 100%", aria_label: "恢复百分之百缩放",
+                    onmousedown: move |event| event.prevent_default(),
+                    onclick: move |_| zoom.set(100),
+                    "{zoom}%"
+                }
             }
         }
     }

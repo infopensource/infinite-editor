@@ -32,6 +32,9 @@
     caret-color: #174f7e;
     overflow-wrap: anywhere;
     word-break: break-word;
+    /* Avoid leaving a single trailing word/character on a page. Chromium's
+       pretty wrapping keeps short final lines with the following content. */
+    text-wrap: pretty;
     /* Typora-style editing view: show source newlines and repeated spaces. */
     white-space: break-spaces;
 }

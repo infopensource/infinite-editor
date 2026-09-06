@@ -17,13 +17,15 @@ const bundle = await build({
   entryPoints: [resolve(root, scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
   loader: { '.md': 'text', '.png': 'dataurl' }, bundle: true, write: false, format: 'iife',
 });
+const zoomCss = scenarios.includes('selection') ? readFileSync(resolve(root, 'assets/styling/word.css'), 'utf8') : '';
 const css = readFileSync(resolve(root, 'assets/styling/wysiwyg_core.css'), 'utf8')
   + readFileSync(resolve(root, 'assets/math.bundle.css'), 'utf8');
 const math = readFileSync(resolve(root, 'assets/math.bundle.js'), 'utf8');
 const html = `<!doctype html><meta charset="utf-8"><style>
 * { box-sizing: border-box; } body { margin: 0; background: #eef2f7; }
 .document-page { width: var(--page-width); min-height: var(--page-height); padding: var(--page-padding-top) var(--page-padding-right) var(--page-padding-bottom) var(--page-padding-left); margin: 20px auto; border: 1px solid #d1d5db; background: white; }
-${css}</style><div class="infinite-pm-surface paged"><article class="document-page infinite-pm-page" style="--page-width:210mm;--page-height:120mm;--page-padding-top:15mm;--page-padding-bottom:15mm;--page-padding-left:22mm;--page-padding-right:22mm"><div id="host" class="infinite-pm-host"></div></article></div><pre id="result"></pre><script>${math}</script><script>${bundle.outputFiles[0].text}</script>`;
+${zoomCss}
+${css}</style>${scenarios.includes('selection') ? '<div class="word-shell" style="grid-template-rows:minmax(0,1fr)"><main class="editor-surface">' : ''}<div class="infinite-pm-surface paged"><article class="document-page infinite-pm-page" style="--page-width:210mm;--page-height:120mm;--page-padding-top:15mm;--page-padding-bottom:15mm;--page-padding-left:22mm;--page-padding-right:22mm"><div id="host" class="infinite-pm-host"></div></article></div>${scenarios.includes('selection') ? '</main></div>' : ''}<pre id="result"></pre><script>${math}</script><script>${bundle.outputFiles[0].text}</script>`;
 const path = join(output, 'test.html');
 writeFileSync(path, html);
 
