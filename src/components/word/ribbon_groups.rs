@@ -176,18 +176,23 @@ fn CommandGroup(
                     for (label, command) in actions {
                         button {
                             class: "ribbon-small",
+                            r#type: "button",
                             onmousedown: move |event| {
+                                // Keep the document selection without executing a command
+                                // (and refocusing the editor) during a mouse press.
                                 event.prevent_default();
-                                on_action.call(command.to_string());
                             },
-                            onkeydown: move |event| {
-                                let activates = match event.key() {
-                                    Key::Enter => true,
-                                    Key::Character(value) => value == " ",
-                                    _ => false,
-                                };
-                                if activates {
+                            onmouseup: move |event| {
+                                if event.trigger_button() == Some(dioxus::html::input_data::MouseButton::Auxiliary) {
                                     event.prevent_default();
+                                }
+                            },
+                            // Suppress auxiliary-click defaults on the command button,
+                            // including native selection paste. Normal editor paste is unchanged.
+                            onauxclick: move |event| event.prevent_default(),
+                            onclick: move |event| {
+                                // Native keyboard activation also generates a primary click.
+                                if event.trigger_button() == Some(dioxus::html::input_data::MouseButton::Primary) {
                                     on_action.call(command.to_string());
                                 }
                             },
