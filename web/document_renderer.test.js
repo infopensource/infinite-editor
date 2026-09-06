@@ -169,3 +169,35 @@ test("mount hydrates resources and schedules pagination", async () => {
   assert.equal(root.querySelector(".document-pagination-source img").src, "data:image/png;base64,AQID");
   assert.equal(root.querySelector(".document-page-content img").src, "data:image/png;base64,AQID");
 });
+
+test("long tables split between rows and repeat the header without losing body rows", () => {
+  pageCapacity = 180;
+  const root = document.getElementById("renderer");
+  root.querySelector(".document-pagination-source").innerHTML =
+    '<table><thead><tr><th>H</th></tr></thead><tbody>'
+    + Array.from({ length: 60 }, (_, i) => `<tr><td>${i.toString().padStart(2, '0')}</td></tr>`).join('')
+    + '</tbody></table>';
+  const result = api.paginate(root, false);
+  const pages = root.querySelector("[data-document-pages]");
+  assert.ok(result.pages > 1);
+  assert.equal(result.oversized, 0);
+  assert.equal(pages.querySelectorAll("thead").length, result.pages);
+  assert.deepEqual([...pages.querySelectorAll("tbody tr")].map(row => row.textContent),
+    Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0')));
+});
+
+test("paragraph page boundaries preserve complete Unicode graphemes", () => {
+  pageCapacity = 120;
+  const root = document.getElementById("renderer");
+  const grapheme = '👩🏽‍💻';
+  const text = grapheme.repeat(30);
+  root.querySelector(".document-pagination-source").innerHTML = `<p><strong>${text}</strong></p>`;
+  const result = api.paginate(root, false);
+  assert.ok(result.pages > 1);
+  const paragraphs = [...root.querySelectorAll('[data-document-pages] p')];
+  assert.equal(paragraphs.map(p => p.textContent).join(''), text);
+  for (const paragraph of paragraphs) {
+    assert.equal(paragraph.textContent.length % grapheme.length, 0);
+    assert.ok(paragraph.querySelector('strong'));
+  }
+});

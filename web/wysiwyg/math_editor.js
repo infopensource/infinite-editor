@@ -1,3 +1,5 @@
+import { queueMathRender } from "./math_render_queue.js";
+
 const mathSnippets = [
   { label: "分数", template: "\\frac{}{}", selection: [6, 6], title: "插入分数" },
   { label: "上标", template: "^{}", selection: [2, 2], title: "插入上标" },
@@ -25,7 +27,7 @@ function element(tag, className, text) {
 
 export function renderMath(dom, value, displayMode) {
   dom.textContent = displayMode ? `$$\n${value}\n$$` : `$${value}$`;
-  const render = () => window.InfiniteMathRenderer?.renderInto?.(dom, value, displayMode);
+  const render = () => queueMathRender(dom, value, displayMode);
   if (window.InfiniteMathRenderer?.renderInto) render();
   else window.addEventListener("infinite-math-renderer-ready", render, { once: true });
 }

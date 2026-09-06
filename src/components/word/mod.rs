@@ -1,3 +1,4 @@
+mod background;
 mod document_layout;
 pub(crate) mod document_renderer;
 mod editor_surface;

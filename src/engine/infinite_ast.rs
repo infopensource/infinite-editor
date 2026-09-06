@@ -139,39 +139,50 @@ impl InfiniteAstDocument {
     }
 }
 
-fn utf16_offset(source: &str, byte_offset: usize) -> usize {
-    source
-        .get(..byte_offset)
-        .unwrap_or(source)
-        .encode_utf16()
-        .count()
-}
-
 fn source_ranges(nodes: &[Node], source: &str) -> Vec<InfiniteAstSourceRange> {
-    fn visit(
-        nodes: &[Node],
-        source: &str,
-        parent_path: &[u32],
-        output: &mut Vec<InfiniteAstSourceRange>,
-    ) {
+    fn visit(nodes: &[Node], parent_path: &[u32], output: &mut Vec<InfiniteAstSourceRange>) {
         for (index, node) in nodes.iter().enumerate() {
             let mut path = parent_path.to_vec();
             path.push(index as u32);
             if let Some(position) = node.position() {
                 output.push(InfiniteAstSourceRange {
                     path: path.clone(),
-                    from: utf16_offset(source, position.start.offset),
-                    to: utf16_offset(source, position.end.offset),
+                    from: position.start.offset,
+                    to: position.end.offset,
                 });
             }
             if let Some(children) = node.children() {
-                visit(children, source, &path, output);
+                visit(children, &path, output);
             }
         }
     }
 
     let mut output = Vec::new();
-    visit(nodes, source, &[], &mut output);
+    visit(nodes, &[], &mut output);
+    // Convert all requested boundaries in one scan. Rescanning source[..offset]
+    // for every AST node makes long, formatted documents quadratic.
+    let mut boundaries: Vec<usize> = output
+        .iter()
+        .flat_map(|range| [range.from, range.to])
+        .collect();
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    let mut positions = std::collections::HashMap::with_capacity(boundaries.len());
+    let mut characters = source.char_indices().peekable();
+    let mut utf16 = 0;
+    for boundary in boundaries {
+        while characters
+            .peek()
+            .is_some_and(|(offset, _)| *offset < boundary)
+        {
+            utf16 += characters.next().unwrap().1.len_utf16();
+        }
+        positions.insert(boundary, utf16);
+    }
+    for range in &mut output {
+        range.from = positions[&range.from];
+        range.to = positions[&range.to];
+    }
     output
 }
 
@@ -381,6 +392,75 @@ mod tests {
     use super::*;
 
     #[test]
+    fn source_map_unicode_boundaries_match_reference() {
+        let source = "# 中文 👩🏽‍💻\n\n**粗体** 与 $x^2$\n\n- 项目 😀\n  - 子项目\n\n| 表 | 格 |\n|---|---|\n|中|文|";
+        let Node::Root(root) = markdown::to_mdast(source, &math_parse_options()).unwrap() else {
+            panic!("root")
+        };
+        fn collect(nodes: &[Node], offsets: &mut Vec<(usize, usize)>) {
+            for node in nodes {
+                if let Some(position) = node.position() {
+                    offsets.push((position.start.offset, position.end.offset));
+                }
+                if let Some(children) = node.children() {
+                    collect(children, offsets);
+                }
+            }
+        }
+        let mut offsets = Vec::new();
+        collect(&root.children, &mut offsets);
+        let ranges = source_ranges(&root.children, source);
+        for (range, (from, to)) in ranges.iter().zip(offsets) {
+            assert_eq!(range.from, source[..from].encode_utf16().count());
+            assert_eq!(range.to, source[..to].encode_utf16().count());
+        }
+    }
+
+    #[test]
+    #[ignore = "manual desktop parsing benchmark"]
+    fn benchmark_long_document_mapping() {
+        let source = include_str!("../../examples/long-paragraph-test/document.md");
+        let started = std::time::Instant::now();
+        let ast = InfiniteAstDocument::from_markdown_rs(source).unwrap();
+        let elapsed = started.elapsed();
+        eprintln!(
+            "Native debug AST: {} bytes, {} nodes, {:?}",
+            source.len(),
+            ast.source_map.len(),
+            elapsed
+        );
+        let Node::Root(root) = markdown::to_mdast(source, &math_parse_options()).unwrap() else {
+            panic!("root")
+        };
+        fn previous_mapping(nodes: &[Node], source: &str, checksum: &mut usize) {
+            for node in nodes {
+                if let Some(position) = node.position() {
+                    *checksum += source[..position.start.offset].encode_utf16().count();
+                    *checksum += source[..position.end.offset].encode_utf16().count();
+                }
+                if let Some(children) = node.children() {
+                    previous_mapping(children, source, checksum);
+                }
+            }
+        }
+        let before = std::time::Instant::now();
+        let mut checksum = 0;
+        previous_mapping(&root.children, source, &mut checksum);
+        eprintln!(
+            "Previous mapping alone: {:?}; checksum {}",
+            before.elapsed(),
+            checksum
+        );
+        assert_eq!(
+            checksum,
+            ast.source_map
+                .iter()
+                .map(|range| range.from + range.to)
+                .sum::<usize>()
+        );
+    }
+
+    #[test]
     fn versioned_document_serializes_with_the_public_contract() {
         let document = InfiniteAstDocument::from_markdown_rs("中文 **粗体**")
             .expect("markdown-rs 应生成 Infinite AST");
@@ -447,6 +527,30 @@ mod tests {
             .remove("source_map");
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn math_input_serialization_preserves_tex_and_literal_dollars() {
+        let source = r"相邻素数 $H_1=\liminf_{n\to\infty}(p_{n+1}-p_n)\le 186$，原样 \$x\$，$$\text{price: \$5}$$";
+        let document = InfiniteAstDocument::from_markdown_rs(source)
+            .expect("公式输入规则生成的 Markdown 应可解析");
+        let value = serde_json::to_value(document).expect("AST 应可序列化");
+        let children = value["children"][0]["children"].as_array().unwrap();
+        let formulas: Vec<_> = children
+            .iter()
+            .filter(|node| node["kind"] == "math_inline")
+            .map(|node| node["value"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            formulas,
+            vec![
+                r"H_1=\liminf_{n\to\infty}(p_{n+1}-p_n)\le 186",
+                r"\text{price: \$5}",
+            ]
+        );
+        assert!(children
+            .iter()
+            .any(|node| node["kind"] == "text" && node["value"].as_str().unwrap().contains("$x$")));
     }
 
     #[test]

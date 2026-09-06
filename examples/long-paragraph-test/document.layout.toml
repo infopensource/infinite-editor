@@ -3,7 +3,7 @@ version = 1
 
 [document]
 source = "document.md"
-source_hash = "sha256:1e7e442db7062b5ef16d3f90413c092f263497573b06d64b09e6f3c7172e720b"
+source_hash = "sha256:4293da22027252a6fe503e0030d025772d2f082920ed778dff636852865c5012"
 
 [paper]
 mode = "a4"

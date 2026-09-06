@@ -1,6 +1,8 @@
+import { MarkdownProjection } from "./markdown/projection.js";
 import { baseKeymap } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
+import { undoInputRule } from "prosemirror-inputrules";
 import { EditorState, Selection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { listKeyBindings } from "./commands/lists.js";
@@ -22,6 +24,7 @@ function editorPlugins(options = {}) {
     ...(sharedHistory ? [] : [history()]),
     markdownInputRules(wysiwygSchema),
     paginationPlugin(),
+    keymap({ Backspace: undoInputRule }),
     keymap(listKeyBindings(wysiwygSchema)),
     keymap(sharedHistory
       ? {
@@ -55,8 +58,12 @@ export class MinimalWysiwygEditor {
     this.host = host;
     this.options = options;
     this.compositionActive = false;
+    const mountStarted = performance.now();
     const parsed = parseMarkdownWithMapping(markdown, options.backend);
+    const parsedAt = performance.now();
     this.positionMapper = parsed.mapper;
+    this.projection ??= new MarkdownProjection();
+    this.projection.remember(parsed.document, markdown, parsed.mapper);
     this.view = new EditorView(host, {
       state: EditorState.create({
         schema: wysiwygSchema,
@@ -76,7 +83,7 @@ export class MinimalWysiwygEditor {
           transaction,
           previousState,
           state: nextState,
-          getMarkdown: () => serializeMarkdown(nextState.doc),
+          getMarkdown: () => this.projection.snapshot(nextState.doc).markdown,
         });
       },
       handleDOMEvents: {
@@ -108,6 +115,7 @@ export class MinimalWysiwygEditor {
         },
       },
     });
+    this.mountMetrics = { modelMs: parsedAt - mountStarted, viewMs: performance.now() - parsedAt };
   }
 
   get state() {
@@ -115,11 +123,12 @@ export class MinimalWysiwygEditor {
   }
 
   getMarkdown() {
-    return serializeMarkdown(this.view.state.doc);
+    return this.projection.snapshot(this.view.state.doc).markdown;
   }
 
   refreshPositionMapper(markdown, ast) {
     this.positionMapper = new MarkdownPositionMapper(ast, this.view.state.doc, markdown);
+    this.projection.remember(this.view.state.doc, markdown, this.positionMapper);
     return this.positionMapper;
   }
 
@@ -127,6 +136,8 @@ export class MinimalWysiwygEditor {
     if (this.compositionActive || this.view.composing) return false;
     const parsed = parseMarkdownWithMapping(markdown, this.options.backend);
     this.positionMapper = parsed.mapper;
+    this.projection ??= new MarkdownProjection();
+    this.projection.remember(parsed.document, markdown, parsed.mapper);
     this.view.updateState(EditorState.create({
       schema: wysiwygSchema,
       doc: parsed.document,

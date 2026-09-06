@@ -2,7 +2,6 @@ import { toolbarCommands } from "../commands/toolbar.js";
 import { MinimalWysiwygEditor, wysiwygSchema } from "../editor.js";
 import { remarkReferenceBackend } from "../markdown/backend.js";
 import { assertInfiniteAst } from "../markdown/infinite_ast.js";
-import { MarkdownPositionMapper } from "../markdown/position_mapper.js";
 import { resolveResource } from "../../resource_path.js";
 import { TextSelection } from "prosemirror-state";
 
@@ -74,9 +73,12 @@ export class WysiwygBridgeSession {
       const mapper = this.editor.positionMapper;
       const anchor = mapper.sourceToProseMirror(snapshot.selection.anchor);
       const head = mapper.sourceToProseMirror(snapshot.selection.head);
-      this.editor.view.dispatch(this.editor.state.tr.setSelection(TextSelection.between(
+      const selection = TextSelection.between(
         this.editor.state.doc.resolve(anchor), this.editor.state.doc.resolve(head),
-      )).scrollIntoView());
+      );
+      if (!selection.eq(this.editor.state.selection)) {
+        this.editor.view.dispatch(this.editor.state.tr.setSelection(selection));
+      }
     }
   }
 
@@ -114,8 +116,8 @@ export class WysiwygBridgeSession {
   }
 
   currentSourceSelection(markdown) {
-    const ast = remarkReferenceBackend.parse(markdown);
-    const mapper = this.editor.refreshPositionMapper(markdown, ast);
+    const mapper = this.editor.projection.sourceMapper(this.editor.state.doc, markdown);
+    this.editor.positionMapper = mapper;
     return this.mapSourceSelection(mapper, this.editor.state.selection);
   }
 
@@ -130,8 +132,7 @@ export class WysiwygBridgeSession {
   captureHistoryStart(previousState) {
     const markdown = this.documentSession?.getValue?.();
     if (typeof markdown !== "string") return;
-    const ast = remarkReferenceBackend.parse(markdown);
-    const mapper = new MarkdownPositionMapper(ast, previousState.doc, markdown);
+    const mapper = this.editor.projection.sourceMapper(previousState.doc, markdown);
     const selection = this.mapSourceSelection(mapper, previousState.selection);
     this.documentSession.setDocumentSelection?.(
       selection.anchor, selection.head, this.richSnapshot(previousState),

@@ -1,3 +1,4 @@
+mod ui;
 mod word;
 #[cfg(feature = "desktop")]
 pub(crate) use word::document_renderer::{

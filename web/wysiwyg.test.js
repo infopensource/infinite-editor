@@ -1005,3 +1005,189 @@ test("copying an atomic image exposes Markdown instead of rendered DOM text", ()
   assert.equal(copy.defaultPrevented, true);
   assert.equal(copied["text/plain"], '![图片](document.assets/a.png "标题")');
 });
+
+test("line boundaries paginate one paragraph over several pages", () => {
+  const lines = Array.from({ length: 125 }, (_, index) => ({
+    position: index === 0 ? 0 : index * 10 + 1,
+    top: index * 20,
+    bottom: (index + 1) * 20,
+  }));
+  assert.deepEqual(calculatePaginationLayout(lines, 900, 200), {
+    boundaries: [
+      { position: 451, height: 200, kind: "automatic" },
+      { position: 901, height: 200, kind: "automatic" },
+    ],
+    tailHeight: 200,
+  });
+});
+
+test("paragraph and table pagination preserve document, selection, and undo history", () => {
+  const editor = new MinimalWysiwygEditor(document.getElementById("host"), "**长段落测试**\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |");
+  activeEditor = editor;
+  const before = editor.state.doc;
+  const selection = editor.state.selection;
+  const row = nodePosition(before, "table_row");
+  setPaginationBoundaries(editor.view, [
+    { position: 3, height: 200 },
+    { position: row, height: 250, placement: "row", columns: 2 },
+  ]);
+  assert.equal(editor.state.doc.eq(before), true);
+  assert.equal(editor.state.selection.eq(selection), true);
+  assert.equal(editor.view.dom.querySelectorAll("tr.infinite-pm-table-gap > td").length, 1);
+  assert.equal(editor.view.dom.querySelector("tr.infinite-pm-table-gap > td").colSpan, 2);
+  assert.equal(undo(editor.state, editor.view.dispatch), false);
+  setPaginationBoundaries(editor.view, []);
+  assert.equal(editor.view.dom.querySelectorAll(".infinite-pm-page-gap").length, 0);
+});
+
+function typeMarkdown(editor, text) {
+  for (const character of text) {
+    const { from, to } = editor.state.selection;
+    let handled = false;
+    editor.view.someProp("handleTextInput", handler => {
+      handled = handler(editor.view, from, to, character);
+      return handled;
+    });
+    if (!handled) editor.view.dispatch(editor.state.tr.insertText(character, from, to));
+  }
+}
+
+test("typing Markdown delimiters creates inline formatting and ends the mark", () => {
+  for (const [source, expected] of [
+    ['**中文粗体**', ['strong']], ['__中文粗体__', ['strong']],
+    ['*斜体*', ['em']], ['_斜体_', ['em']],
+    ['***组合***', ['em', 'strong']], ['___组合___', ['em', 'strong']],
+    ['~~删除~~', ['strike']], ['`代码`', ['code']],
+  ]) {
+    activeEditor?.destroy();
+    const editor = new MinimalWysiwygEditor(document.getElementById('host'), '');
+    activeEditor = editor;
+    typeMarkdown(editor, source);
+    const node = editor.state.doc.firstChild.firstChild;
+    assert.deepEqual(node.marks.map(mark => mark.type.name).sort(), expected.slice().sort(), source);
+    assert.equal(node.text, source.replace(/[*_~`]/gu, ''), source);
+    typeMarkdown(editor, '后');
+    assert.equal(editor.state.doc.firstChild.lastChild.text, '后');
+    assert.equal(editor.state.doc.firstChild.lastChild.marks.length, 0);
+  }
+});
+
+test("Markdown inline input respects escapes, incomplete markers, and code", () => {
+  for (const source of ['\\**原样**', '**未完成*', 'snake_case_name', '** 空格 **']) {
+    activeEditor?.destroy();
+    const editor = new MinimalWysiwygEditor(document.getElementById('host'), '');
+    activeEditor = editor;
+    typeMarkdown(editor, source);
+    assert.equal(editor.state.doc.textContent, source);
+    assert.equal(editor.state.doc.firstChild.firstChild.marks.length, 0);
+  }
+  activeEditor?.destroy();
+  const editor = new MinimalWysiwygEditor(document.getElementById('host'), '```\n\n```');
+  activeEditor = editor;
+  typeMarkdown(editor, '**原样**');
+  assert.equal(editor.state.doc.firstChild.type.name, 'code_block');
+  assert.equal(editor.state.doc.textContent, '**原样**');
+});
+
+test("Backspace restores the literal Markdown after automatic formatting", () => {
+  const editor = new MinimalWysiwygEditor(document.getElementById('host'), '');
+  activeEditor = editor;
+  typeMarkdown(editor, '**恢复**');
+  editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+  assert.equal(editor.state.doc.textContent, '**恢复**');
+  assert.equal(editor.state.doc.firstChild.firstChild.marks.length, 0);
+});
+
+test("inline input preserves existing marks and literal Markdown inside code spans", () => {
+  const editor = new MinimalWysiwygEditor(document.getElementById('host'), '');
+  activeEditor = editor;
+  typeMarkdown(editor, '**粗体 *斜体* 继续**');
+  const paragraph = editor.state.doc.firstChild;
+  assert.equal(paragraph.textContent, '粗体 斜体 继续');
+  assert.deepEqual(paragraph.child(1).marks.map(mark => mark.type.name).sort(), ['em', 'strong']);
+  typeMarkdown(editor, ' `**原样星号**`');
+  assert.equal(editor.state.doc.firstChild.lastChild.text, '**原样星号**');
+  assert.equal(editor.state.doc.firstChild.lastChild.marks[0].type.name, 'code');
+});
+
+test("a committed Chinese input chunk can complete Markdown formatting", () => {
+  const editor = new MinimalWysiwygEditor(document.getElementById('host'), '');
+  activeEditor = editor;
+  let handled = false;
+  editor.view.someProp('handleTextInput', handler => {
+    handled = handler(editor.view, 1, 1, '**中文输入**');
+    return handled;
+  });
+  assert.equal(handled, true);
+  assert.equal(editor.state.doc.textContent, '中文输入');
+  assert.equal(editor.state.doc.firstChild.firstChild.marks[0].type.name, 'strong');
+});
+
+test("typing paired dollars creates a formula and preserves raw TeX through source mode", () => {
+  const editor = new MinimalWysiwygEditor(document.getElementById('host'), '');
+  activeEditor = editor;
+  const tex = String.raw`H_1=\liminf_{n\to\infty}(p_{n+1}-p_n)\le 186`;
+  typeMarkdown(editor, '相邻素数 ' + '$' + tex);
+  assert.equal(editor.state.doc.firstChild.firstChild.marks.length, 0);
+  typeMarkdown(editor, '$');
+  const formula = editor.state.doc.firstChild.lastChild;
+  assert.equal(formula.type.name, 'math_inline');
+  assert.equal(formula.attrs.value, tex);
+  typeMarkdown(editor, '，后续正文');
+  const before = editor.state.doc;
+  for (let i = 0; i < 3; i++) {
+    const source = editor.getMarkdown();
+    assert.equal(source, '相邻素数 $' + tex + '$，后续正文');
+    editor.setMarkdown(source);
+    assert.equal(editor.state.doc.eq(before), true);
+  }
+});
+
+test("math input handles display formulas, escapes, code, and TeX mark characters", () => {
+  for (const [source, type, value] of [
+    [String.raw`$a_i*b_j*+c_k$`, 'math_inline', 'a_i*b_j*+c_k'],
+    [String.raw`$\text{price: \$5}$`, 'math_inline', String.raw`\text{price: \$5}`],
+    [String.raw`$$\frac{a_1}{b_2}$$`, 'math_block', String.raw`\frac{a_1}{b_2}`],
+  ]) {
+    activeEditor?.destroy();
+    const editor = new MinimalWysiwygEditor(document.getElementById('host'), '');
+    activeEditor = editor;
+    typeMarkdown(editor, source);
+    const formula = type === 'math_block' ? editor.state.doc.firstChild : editor.state.doc.firstChild.firstChild;
+    assert.equal(formula.type.name, type, source);
+    assert.equal(formula.attrs.value, value, source);
+    const saved = editor.getMarkdown();
+    editor.setMarkdown(saved);
+    assert.equal(editor.getMarkdown(), saved);
+    const restored = type === 'math_block' ? editor.state.doc.firstChild : editor.state.doc.firstChild.firstChild;
+    assert.equal(restored.type.name, type);
+    assert.equal(restored.attrs.value, value);
+  }
+  for (const source of [String.raw`\$x$`, '$未闭合', '`$x$`']) {
+    activeEditor?.destroy();
+    const editor = new MinimalWysiwygEditor(document.getElementById('host'), '');
+    activeEditor = editor;
+    typeMarkdown(editor, source);
+    assert.equal(editor.view.dom.querySelector('.math-inline'), null);
+  }
+});
+
+test("literal dollar signs and backslashes survive serialization without becoming formulas", () => {
+  const text = String.raw`原样 $H_1=\liminf_{n\to\infty}(p_{n+1}-p_n)\le 186$，价格 $5`;
+  const doc = wysiwygSchema.nodes.doc.create(null, [
+    wysiwygSchema.nodes.paragraph.create(null, wysiwygSchema.text(text)),
+  ]);
+  const source = serializeMarkdown(doc);
+  assert.ok(source.includes('\\$H'));
+  assert.equal(parseMarkdown(source).eq(doc), true);
+});
+
+test("Backspace undoes automatic math conversion without losing TeX", () => {
+  const editor = new MinimalWysiwygEditor(document.getElementById('host'), '');
+  activeEditor = editor;
+  const source = String.raw`$\frac{x_1}{y_2}$`;
+  typeMarkdown(editor, source);
+  editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+  assert.equal(editor.state.doc.textContent, source);
+  assert.equal(editor.view.dom.querySelector('.math-inline'), null);
+});

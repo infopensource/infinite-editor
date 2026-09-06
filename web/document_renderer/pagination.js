@@ -25,18 +25,51 @@ function textPosition(root, offset) {
 }
 
 function cloneTextRange(element, start, end) {
-  const startPosition = textPosition(element, start);
-  const endPosition = textPosition(element, end);
+  const clone = element.cloneNode(true);
+  const startPosition = textPosition(clone, start);
+  const endPosition = textPosition(clone, end);
   if (!startPosition || !endPosition) return null;
+  // Trim a deep clone so formatting ancestors survive even when both
+  // endpoints belong to the same text node (Range.cloneContents drops them).
   const range = document.createRange();
-  range.setStart(startPosition.node, startPosition.offset);
-  range.setEnd(endPosition.node, endPosition.offset);
-  const clone = element.cloneNode(false);
-  clone.appendChild(range.cloneContents());
+  range.setStart(endPosition.node, endPosition.offset);
+  range.setEnd(clone, clone.childNodes.length);
+  range.deleteContents();
+  range.setStart(clone, 0);
+  range.setEnd(startPosition.node, startPosition.offset);
+  range.deleteContents();
   return clone;
 }
 
+function splitTableToFit(table, content) {
+  const rows = [...table.rows].filter((row) => row.parentElement.tagName !== "THEAD");
+  if (rows.length < 2) return null;
+  const fragment = (start, end) => {
+    const clone = table.cloneNode(true);
+    const clonedRows = [...clone.rows].filter((row) => row.parentElement.tagName !== "THEAD");
+    clonedRows.forEach((row, index) => {
+      if (index < start || index >= end) row.remove();
+    });
+    if (end < rows.length) clone.querySelectorAll("tfoot").forEach((foot) => foot.remove());
+    if (start > 0) clone.querySelectorAll("caption").forEach((caption) => caption.remove());
+    return clone;
+  };
+  let low = 1;
+  let high = rows.length - 1;
+  let best = 0;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = fragment(0, middle);
+    content.appendChild(candidate);
+    if (isOverflowing(content)) high = middle - 1;
+    else { best = middle; low = middle + 1; }
+    candidate.remove();
+  }
+  return best ? { head: fragment(0, best), tail: fragment(best, rows.length) } : null;
+}
+
 function splitToFit(node, content) {
+  if (node.matches("table")) return splitTableToFit(node, content);
   const length = node.textContent?.length ?? 0;
   if (
     length < 2
@@ -44,17 +77,20 @@ function splitToFit(node, content) {
     || node.querySelector("img, video, iframe, svg, table, .infinite-math")
   ) return null;
 
-  let low = 1;
-  let high = length - 1;
+  // Split only at grapheme boundaries, including emoji and combining marks.
+  const offsets = [...new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    .segment(node.textContent)].map((segment) => segment.index).filter((offset) => offset > 0);
+  let low = 0;
+  let high = offsets.length - 1;
   let best = 0;
   while (low <= high) {
     const middle = Math.floor((low + high) / 2);
-    const candidate = cloneTextRange(node, 0, middle);
+    const candidate = cloneTextRange(node, 0, offsets[middle]);
     if (!candidate) return null;
     content.appendChild(candidate);
     if (isOverflowing(content)) high = middle - 1;
     else {
-      best = middle;
+      best = offsets[middle];
       low = middle + 1;
     }
     candidate.remove();
@@ -107,7 +143,10 @@ export function paginate(root, seamless) {
   const queue = [...nodes];
   while (queue.length > 0) {
     const node = queue.shift();
-    if (node.dataset.explicitPageBreak === "true") current = createPage(pages, false);
+    if (node.dataset.explicitPageBreak === "true") {
+      if (current.content.childElementCount) current = createPage(pages, false);
+      delete node.dataset.explicitPageBreak;
+    }
     current.content.appendChild(node);
     if (!isOverflowing(current.content)) continue;
 

@@ -353,3 +353,18 @@ test("returns a useful error when mount nodes are missing", () => {
   assert.equal(result.ok, false);
   assert.match(result.error, /挂载节点/);
 });
+
+test("source syntax lifecycle retains shared edits and undo across detach/remount", () => {
+  api.initialize("原文", 1);
+  api.replaceAll("原文加粗", "wysiwyg-input", "input", true);
+  assert.equal(api.mount("host", "bridge", "原文加粗", 1).ok, true);
+  api.detach("host");
+  api.replaceAll("原文加粗继续", "wysiwyg-input", "input", true);
+  assert.equal(api.mount("host", "bridge", "原文加粗继续", 1).ok, true);
+  assert.equal(api.undo(), true);
+  assert.equal(api.getValue(), "原文加粗");
+  assert.equal(api.undo(), true);
+  assert.equal(api.getValue(), "原文");
+  assert.equal(api.redo(), true);
+  assert.equal(api.getValue(), "原文加粗");
+});

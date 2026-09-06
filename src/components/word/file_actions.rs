@@ -149,6 +149,8 @@ pub(super) struct OpenDocumentState {
     pub(super) current_location: Signal<Option<DocumentLocation>>,
     pub(super) status_hint: Signal<String>,
     pub(super) open_dialog_visible: Signal<bool>,
+    pub(super) open_pending: Signal<bool>,
+    pub(super) open_generation: Signal<u64>,
     pub(super) warning_alert: Signal<Option<String>>,
 }
 
@@ -167,52 +169,71 @@ pub(super) fn handle_open_document_from_path(
         }
 
         let path = PathBuf::from(trimmed);
-        match storage::open_document(&path) {
-            Ok(loaded) => {
-                let mut warnings = loaded.warnings.clone();
-                if warnings
-                    .iter()
-                    .any(|warning| warning == storage::STALE_LAYOUT_WARNING)
-                {
-                    state
-                        .warning_alert
-                        .set(Some(storage::STALE_LAYOUT_WARNING.to_string()));
-                    warnings.retain(|warning| warning != storage::STALE_LAYOUT_WARNING);
-                }
-                state.document.set(loaded.document);
-                state.resources.set(loaded.resources);
-                state
-                    .document_revision
-                    .with_mut(|revision| *revision = revision.wrapping_add(1));
-                state.editor_revision.set(0);
-                state.current_location.set(Some(loaded.location));
-                let mode = if read_only_mode {
-                    "只读"
-                } else {
-                    "可编辑"
-                };
-                let encoding = if auto_detect_encoding {
-                    "自动编码"
-                } else {
-                    "UTF-8"
-                };
-                let warning_suffix = if warnings.is_empty() {
-                    String::new()
-                } else {
-                    format!("；{}", warnings.join("；"))
-                };
-                state.status_hint.set(format!(
-                    "已打开 {}（{}，{}）{}",
-                    file_name_or(&path, "文档"),
-                    mode,
-                    encoding,
-                    warning_suffix,
-                ));
-                state.open_dialog_visible.set(false);
-                state.active_tab.set(RibbonTab::Home);
-            }
-            Err(err) => state.status_hint.set(err),
+        if (state.open_pending)() {
+            return;
         }
+        state.open_pending.set(true);
+        state.status_hint.set("正在读取文档…".to_string());
+        state
+            .open_generation
+            .with_mut(|value| *value = value.wrapping_add(1));
+        let generation = (state.open_generation)();
+        spawn(async move {
+            let load_path = path.clone();
+            let loaded = super::background::run(move || storage::open_document(&load_path))
+                .await
+                .and_then(|result| result);
+            if (state.open_generation)() != generation {
+                return;
+            }
+            state.open_pending.set(false);
+            match loaded {
+                Ok(loaded) => {
+                    let mut warnings = loaded.warnings.clone();
+                    if warnings
+                        .iter()
+                        .any(|warning| warning == storage::STALE_LAYOUT_WARNING)
+                    {
+                        state
+                            .warning_alert
+                            .set(Some(storage::STALE_LAYOUT_WARNING.to_string()));
+                        warnings.retain(|warning| warning != storage::STALE_LAYOUT_WARNING);
+                    }
+                    state.document.set(loaded.document);
+                    state.resources.set(loaded.resources);
+                    state
+                        .document_revision
+                        .with_mut(|revision| *revision = revision.wrapping_add(1));
+                    state.editor_revision.set(0);
+                    state.current_location.set(Some(loaded.location));
+                    let mode = if read_only_mode {
+                        "只读"
+                    } else {
+                        "可编辑"
+                    };
+                    let encoding = if auto_detect_encoding {
+                        "自动编码"
+                    } else {
+                        "UTF-8"
+                    };
+                    let warning_suffix = if warnings.is_empty() {
+                        String::new()
+                    } else {
+                        format!("；{}", warnings.join("；"))
+                    };
+                    state.status_hint.set(format!(
+                        "已打开 {}（{}，{}）{}",
+                        file_name_or(&path, "文档"),
+                        mode,
+                        encoding,
+                        warning_suffix,
+                    ));
+                    state.open_dialog_visible.set(false);
+                    state.active_tab.set(RibbonTab::Home);
+                }
+                Err(err) => state.status_hint.set(err),
+            }
+        });
     }
 
     #[cfg(not(feature = "desktop"))]

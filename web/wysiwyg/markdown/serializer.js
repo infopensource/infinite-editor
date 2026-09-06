@@ -19,7 +19,9 @@ const nodes = {
     state.renderContent(node);
   },
   math_inline(state, node) {
-    state.write(`$${node.attrs.value}$`);
+    const runs = node.attrs.value.match(/\$+/gu) ?? [];
+    const delimiter = "$".repeat(Math.max(0, ...runs.map((run) => run.length)) + 1);
+    state.write(`${delimiter}${node.attrs.value}${delimiter}`);
   },
   math_block(state, node) {
     const meta = node.attrs.meta ? ` ${node.attrs.meta}` : "";
@@ -90,6 +92,9 @@ const marks = {
 
 export const markdownSerializer = new MarkdownSerializer(nodes, marks, {
   tightLists: true,
+  // Literal text must not become math after a source-mode round trip. Math
+  // nodes write their own delimiters and raw TeX above, bypassing this escape.
+  escapeExtraCharacters: /\$/gu,
 });
 
 export function markdownFromDocument(documentNode) {

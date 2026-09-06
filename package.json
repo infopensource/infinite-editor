@@ -8,7 +8,10 @@
     "build:math": "esbuild web/math.js --bundle --minify --format=iife --outfile=assets/math.bundle.js && esbuild node_modules/katex/dist/katex.min.css --bundle --minify --loader:.woff2=dataurl --loader:.woff=dataurl --loader:.ttf=dataurl --outfile=assets/math.bundle.css",
     "build": "npm run build:editor && npm run build:wysiwyg && npm run build:document-renderer && npm run build:math",
     "test:editor": "node --test web/*.test.js",
-    "test": "npm run test:editor && cargo test"
+    "test": "npm run test:editor && cargo test",
+    "test:pagination-browser": "node scripts/test-pagination-browser.mjs",
+    "test:pagination-performance": "node scripts/test-pagination-browser.mjs performance",
+    "test:loading-dialog-browser": "dx build --web --example loading_dialog_harness --no-default-features --features web --offline && node scripts/test-pagination-browser.mjs dialog"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",

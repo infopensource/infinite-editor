@@ -7,6 +7,7 @@
 }
 
 .infinite-pm-page {
+    position: relative;
     height: auto;
     overflow: visible;
 }
@@ -181,13 +182,28 @@
 }
 
 .infinite-pm-page-gap {
-    position: relative;
-    z-index: 1;
     display: block;
     box-sizing: border-box;
-    width: calc(100% + var(--page-padding-left, 88px) + var(--page-padding-right, 88px) + 2px);
     height: calc(var(--page-padding-bottom, 72px) + var(--page-padding-top, 72px) + 20px);
-    margin: 0 calc(-1 * var(--page-padding-right, 88px) - 1px) 0 calc(-1 * var(--page-padding-left, 88px) - 1px);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    pointer-events: none;
+    user-select: none;
+}
+
+.infinite-pm-pagination-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    user-select: none;
+}
+
+.infinite-pm-page-chrome {
+    position: absolute;
+    left: -1px;
+    right: -1px;
     background: linear-gradient(
         to bottom,
         #ffffff 0 calc(100% - var(--page-padding-top, 72px) - 20px),
@@ -198,15 +214,15 @@
     user-select: none;
 }
 
-.infinite-pm-page-gap::before,
-.infinite-pm-page-gap::after {
+.infinite-pm-page-chrome::before,
+.infinite-pm-page-chrome::after {
     content: "";
     position: absolute;
     right: 0;
     left: 0;
 }
 
-.infinite-pm-page-gap::before {
+.infinite-pm-page-chrome::before {
     top: 0;
     bottom: calc(var(--page-padding-top, 72px) + 20px);
     border-right: 1px solid #d1d5db;
@@ -215,7 +231,7 @@
     box-shadow: 0 8px 20px -16px rgba(15, 23, 42, 0.5);
 }
 
-.infinite-pm-page-gap::after {
+.infinite-pm-page-chrome::after {
     bottom: 0;
     height: var(--page-padding-top, 72px);
     border-top: 1px solid #d1d5db;
@@ -507,3 +523,80 @@
         display: none;
     }
 }
+
+/* A row widget must retain table layout; the cell supplies the page spacer. */
+.infinite-pm-host tr.infinite-pm-table-gap {
+    display: table-row;
+    width: auto;
+    margin: 0;
+}
+.infinite-pm-host .infinite-pm-table-gap > td {
+    padding: 0;
+    border: 0;
+    height: inherit;
+    background: transparent;
+}
+.infinite-pm-table-gap::before,
+.infinite-pm-table-gap::after {
+    display: none;
+}
+
+/* Styling for the official dioxus-primitives Dialog components. */
+.editor-progress-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(15 23 42 / 30%);
+}
+.editor-progress-backdrop[data-state="closed"] { display: none; }
+.editor-progress-dialog {
+  width: min(440px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 40px #0f172a30;
+  color: #0f172a;
+  font: 15px/1.6 system-ui, sans-serif;
+}
+.editor-progress-dialog h2 { margin: 0 0 8px; font-size: 21px; }
+.editor-progress-dialog p { margin: 0 0 16px; color: #475569; }
+.editor-progress-dialog .editor-progress-note { font-size: 13px; }
+.editor-progress-dialog button { display: block; margin-left: auto; }
+.editor-preview-status { padding: 12px; color: #475569; font: 14px/1.5 system-ui, sans-serif; }
+.editor-layout-status {
+  position: fixed;
+  right: 24px;
+  bottom: 48px;
+  z-index: 30;
+  padding: 10px 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  box-shadow: 0 2px 10px #0f172a14;
+  font: 14px/1.5 sans-serif;
+  pointer-events: none;
+}
+.editor-layout-status[hidden] { display: none; }
+.editor-progress-spinner {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin-bottom: 10px;
+  border: 2px solid #dbeafe;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: editor-loading-spin 1s linear infinite;
+}
+@keyframes editor-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .editor-progress-spinner { animation: none; }
+}
+.open-document-title { margin: 0; font-size: 22px; line-height: 1.4; }

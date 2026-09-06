@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ExportTarget {
@@ -259,6 +260,7 @@ pub fn OpenConfigDialog(
     read_only_mode: bool,
     auto_detect_encoding: bool,
     browse_pending: bool,
+    open_pending: bool,
     on_close: EventHandler<()>,
     on_path_input: EventHandler<String>,
     on_toggle_read_only: EventHandler<()>,
@@ -266,20 +268,16 @@ pub fn OpenConfigDialog(
     on_browse: EventHandler<()>,
     on_confirm: EventHandler<()>,
 ) -> Element {
-    if !visible {
-        return rsx! {};
-    }
-
     rsx! {
-        div {
-            class: "dialog-overlay",
-            onclick: move |_| on_close.call(()),
-            div {
+        DialogRoot {
+            open: visible,
+            on_open_change: move |open: bool| { if !open { on_close.call(()); } },
+            class: "editor-progress-backdrop",
+            DialogContent {
                 class: "dialog-card",
-                onclick: move |evt| evt.stop_propagation(),
                 header { class: "dialog-header",
-                    h3 { "打开文档" }
-                    p { "先配置打开参数，再加载文件。" }
+                    DialogTitle { class: "open-document-title", "打开文档" }
+                    p { role: "status", if open_pending { "正在读取文档，请稍候…" } else { "先配置打开参数，再加载文件。" } }
                 }
                 div { class: "dialog-body",
                     label { class: "dialog-label", "文件路径" }
@@ -293,7 +291,7 @@ pub fn OpenConfigDialog(
                         }
                         button {
                             class: "dialog-browse-btn",
-                            disabled: browse_pending,
+                            disabled: browse_pending || open_pending,
                             onclick: move |_| on_browse.call(()),
                             if browse_pending { "浏览中" } else { "..." }
                         }
@@ -328,8 +326,9 @@ pub fn OpenConfigDialog(
                     }
                     button {
                         class: "dialog-btn primary",
+                        disabled: open_pending,
                         onclick: move |_| on_confirm.call(()),
-                        "打开"
+                        if open_pending { "正在打开…" } else { "打开" }
                     }
                 }
             }

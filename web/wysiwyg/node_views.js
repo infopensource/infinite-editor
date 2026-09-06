@@ -1,3 +1,4 @@
+import { cancelMathRender } from "./math_render_queue.js";
 import { openMathEditor, renderMath } from "./math_editor.js";
 import { resolveResource } from "../resource_path.js";
 
@@ -69,10 +70,15 @@ class MathNodeView {
 
   update(node) {
     if (node.type !== this.node.type) return false;
+    if (node.attrs.value === this.node.attrs.value) return true;
     this.node = node;
     this.dom.dataset.mathSource = node.attrs.value;
     renderMath(this.dom, node.attrs.value, this.displayMode);
     return true;
+  }
+
+  destroy() {
+    cancelMathRender(this.dom);
   }
 
   ignoreMutation() {
@@ -107,14 +113,16 @@ class TaskListItemNodeView {
   update(node) {
     if (node.type !== this.node.type) return false;
     this.node = node;
-    this.dom.replaceChildren();
+    // Keep the editable subtree attached across list-item transactions.
+    // Removing it on every keystroke invalidates nested layout and selection.
+    if (this.contentDOM.parentNode !== this.dom) this.dom.append(this.contentDOM);
     if (node.attrs.checked !== null) {
       this.checkbox.checked = node.attrs.checked;
       this.dom.dataset.taskChecked = String(node.attrs.checked);
-      this.dom.append(this.checkbox, this.contentDOM);
+      if (this.checkbox.parentNode !== this.dom) this.dom.prepend(this.checkbox);
     } else {
       delete this.dom.dataset.taskChecked;
-      this.dom.append(this.contentDOM);
+      this.checkbox.remove();
     }
     return true;
   }

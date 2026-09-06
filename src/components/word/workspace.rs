@@ -73,6 +73,8 @@ pub fn WordWorkspace() -> Element {
     let current_location = use_signal(|| None::<DocumentLocation>);
     #[allow(unused_mut)]
     let mut status_hint = use_signal(|| "就绪".to_string());
+    let mut open_pending = use_signal(|| false);
+    let mut open_generation = use_signal(|| 0u64);
     let mut open_dialog_visible = use_signal(|| false);
     let mut warning_alert = use_signal(|| None::<String>);
     let mut open_path_input = use_signal(String::new);
@@ -85,7 +87,20 @@ pub fn WordWorkspace() -> Element {
         .map(|location| file_name_or(location.path(), "未命名文档"))
         .unwrap_or_else(|| "未命名文档".to_string());
     let current_document = document();
-    let character_count = ParserGateway::markdown_rs().character_count(&current_document.markdown);
+    let count_source = use_memo(move || document.read().markdown.clone());
+    let mut character_count = use_signal(|| 0usize);
+    use_resource(move || {
+        let source = count_source();
+        async move {
+            if let Ok(count) = super::background::run(move || {
+                ParserGateway::markdown_rs().character_count(&source)
+            })
+            .await
+            {
+                character_count.set(count);
+            }
+        }
+    });
     let paper = current_document.layout.paper.clone();
     let margins = current_document.layout.margins.clone();
 
@@ -235,7 +250,12 @@ pub fn WordWorkspace() -> Element {
                 read_only_mode: open_read_only_mode(),
                 auto_detect_encoding: open_auto_detect_encoding(),
                 browse_pending: browse_pending(),
-                on_close: move |_| open_dialog_visible.set(false),
+                open_pending: open_pending(),
+                on_close: move |_| {
+                    open_generation.with_mut(|value| *value = value.wrapping_add(1));
+                    open_pending.set(false);
+                    open_dialog_visible.set(false);
+                },
                 on_path_input: move |value| open_path_input.set(value),
                 on_toggle_read_only: move |_| open_read_only_mode.set(!open_read_only_mode()),
                 on_toggle_auto_detect: move |_| { open_auto_detect_encoding.set(!open_auto_detect_encoding()) },
@@ -271,6 +291,8 @@ pub fn WordWorkspace() -> Element {
                             current_location,
                             status_hint,
                             open_dialog_visible,
+                            open_pending,
+                            open_generation,
                             warning_alert,
                         },
                     );
@@ -286,7 +308,7 @@ pub fn WordWorkspace() -> Element {
                 markdown_preview_open: markdown_preview_open(),
                 status_hint: status_hint(),
                 current_file: current_location().map(|location| file_name_or(location.path(), "未命名文档")),
-                character_count,
+                character_count: character_count(),
                 on_markdown_click: move |_| {
                     if editor_mode() == EditorMode::MarkdownSource {
                         markdown_preview_open.set(!markdown_preview_open());

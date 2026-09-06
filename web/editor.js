@@ -1,4 +1,5 @@
-import { EditorSelection, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
+import { minimalTextChange } from "./text_change.js";
+import { Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -30,6 +31,7 @@ const views = new Map();
 const scrollSyncs = new Map();
 const pendingScrollSyncs = new Map();
 let controller = null;
+const sourceLanguage = new Compartment();
 // One history owns both surfaces. Rich snapshots are inverted with the same
 // CodeMirror event as its text, so grouping can never diverge between engines.
 const richSnapshotEffect = StateEffect.define();
@@ -273,7 +275,7 @@ function extensions() {
     bracketMatching(),
     highlightActiveLine(),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-    markdown({ extensions: GFM }),
+    sourceLanguage.of([]),
     EditorView.domEventHandlers({
       mousedown(event) {
         if (event.button !== 0 || !event.ctrlKey || event.metaKey) return false;
@@ -610,19 +612,28 @@ window.InfiniteMarkdownEditor = {
         views.delete(hostId);
       }
 
+      const languageStarted = performance.now();
+      // The shared history exists in rich mode too; parsing a second Markdown
+      // syntax tree there wastes CPU and blocks opening long single lines.
+      if (!sourceLanguage.get(controller.state)?.length) {
+        applyTransactions([controller.state.update({ effects: sourceLanguage.reconfigure([markdown({ extensions: GFM })]) })], "source-language");
+      }
+      const languageMs = performance.now() - languageStarted;
+      const viewStarted = performance.now();
       const view = new EditorView({
         state: controller.state,
         parent: host,
+        scrollTo: EditorView.scrollIntoView(controller.state.selection.main.head, { y: "nearest" }),
         dispatchTransactions(transactions, sourceView) {
           applyTransactions(transactions, "source", sourceView);
           sourceView.update(transactions);
         }
       });
       views.set(hostId, { view });
-      view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: "nearest" }) });
+      const viewMs = performance.now() - viewStarted;
       const pendingPreviewId = pendingScrollSyncs.get(hostId);
       if (pendingPreviewId) connectScrollSync(hostId, pendingPreviewId);
-      return { ok: true };
+      return { ok: true, mountMetrics: { languageMs, viewMs } };
     } catch (error) {
       return { ok: false, error: String(error) };
     }
@@ -645,7 +656,8 @@ window.InfiniteMarkdownEditor = {
     richSnapshot = null,
   ) {
     if (!controller) return { ok: false, error: "Markdown 文档控制器尚未初始化" };
-    if (controller.state.doc.toString() === value) {
+    const change = minimalTextChange(controller.state.doc.toString(), value);
+    if (!change) {
       return { ok: true, changed: false, revision: controller.editRevision };
     }
     const boundedSelection = selection
@@ -656,7 +668,7 @@ window.InfiniteMarkdownEditor = {
       : null;
     const transaction = controller.state.update({
       ...transactionSpec(
-        { from: 0, to: controller.state.doc.length, insert: value },
+        change,
         userEvent,
         isolate || origin === "wysiwyg-command",
       ),
@@ -800,6 +812,9 @@ window.InfiniteMarkdownEditor = {
     if (entry) entry.view.destroy();
     views.delete(hostId);
     pendingScrollSyncs.delete(hostId);
+    if (controller && views.size === 0) {
+      applyTransactions([controller.state.update({ effects: sourceLanguage.reconfigure([]) })], "source-language");
+    }
     return { ok: true };
   },
 

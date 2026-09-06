@@ -1,3 +1,4 @@
+use crate::components::ui::loading_dialog::LoadingDialog;
 use crate::document::{ProjectDocument, ResourceBundle};
 use crate::engine::ParserGateway;
 use dioxus::prelude::*;
@@ -20,22 +21,26 @@ pub(super) fn set_document(
     edit_revision: u64,
     selection: Option<(usize, usize)>,
 ) {
-    let Ok(ast) = ParserGateway::markdown_rs().parse_infinite_ast(&markdown) else {
-        return;
-    };
-    let selection =
-        selection.map(|(anchor, head)| serde_json::json!({ "anchor": anchor, "head": head }));
-    let update = serde_json::json!({
-        "ast": ast,
-        "markdown": markdown,
-        "documentRevision": document_revision,
-        "editRevision": edit_revision,
-        "selection": selection,
+    spawn(async move {
+        let update = super::background::run(move || {
+            let ast = ParserGateway::markdown_rs()
+                .parse_infinite_ast(&markdown)
+                .map_err(|error| error.message)?;
+            let selection = selection
+                .map(|(anchor, head)| serde_json::json!({ "anchor": anchor, "head": head }));
+            serde_json::to_string(&serde_json::json!({
+                "ast": ast, "markdown": markdown, "documentRevision": document_revision,
+                "editRevision": edit_revision, "selection": selection,
+            }))
+            .map_err(|error| error.to_string())
+        })
+        .await;
+        if let Ok(Ok(update)) = update {
+            let _ = document::eval(&format!(
+                "window.InfiniteWysiwygEditor?.setDocument('{PROSEMIRROR_HOST_ID}', {update});"
+            ));
+        }
     });
-    let update = serde_json::to_string(&update).unwrap_or_else(|_| "{}".to_string());
-    let script =
-        format!("window.InfiniteWysiwygEditor?.setDocument('{PROSEMIRROR_HOST_ID}', {update});");
-    let _ = document::eval(&script);
 }
 
 fn mount_editor(
@@ -44,27 +49,35 @@ fn mount_editor(
     document_revision: u64,
     edit_revision: u64,
     mut error: Signal<Option<String>>,
+    mut loading: Signal<bool>,
 ) {
     spawn(async move {
-        let ast = match ParserGateway::markdown_rs().parse_infinite_ast(&markdown) {
-            Ok(ast) => ast,
-            Err(parse_error) => {
-                error.set(Some(format!("Markdown 解析失败：{}", parse_error.message)));
+        loading.set(true);
+        let prepared = super::background::run(move || {
+            let ast = ParserGateway::markdown_rs()
+                .parse_infinite_ast(&markdown)
+                .map_err(|error| error.message)?;
+            serde_json::to_string(&serde_json::json!({
+                "host_id": PROSEMIRROR_HOST_ID, "bridge_id": MARKDOWN_DOCUMENT_BRIDGE_ID,
+                "ast": ast, "markdown": markdown, "resources": resources.entries(),
+                "document_revision": document_revision, "edit_revision": edit_revision,
+            }))
+            .map_err(|error| error.to_string())
+        })
+        .await
+        .and_then(|result| result);
+        let config = match prepared {
+            Ok(config) => config,
+            Err(message) => {
+                loading.set(false);
+                error.set(Some(message));
                 return;
             }
         };
-        let config = serde_json::json!({
-            "host_id": PROSEMIRROR_HOST_ID,
-            "bridge_id": MARKDOWN_DOCUMENT_BRIDGE_ID,
-            "ast": ast,
-            "markdown": markdown,
-            "resources": resources.entries(),
-            "document_revision": document_revision,
-            "edit_revision": edit_revision,
-        });
-        let config = serde_json::to_string(&config).unwrap_or_else(|_| "{}".to_string());
         let script = format!(
             r#"
+                // Allow the loading state to paint before mounting the editable DOM.
+                await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
                 const mount = () => {{
                     return window.InfiniteWysiwygEditor.mount({config});
                 }};
@@ -83,6 +96,7 @@ fn mount_editor(
             "#,
         );
         let result = document::eval(&script).join::<String>().await;
+        loading.set(false);
         match result
             .map_err(|eval_error| eval_error.to_string())
             .and_then(|json| {
@@ -113,7 +127,8 @@ pub(super) fn ProseMirrorSurface(
     seamless: bool,
 ) -> Element {
     let error = use_signal(|| None::<String>);
-    let mut synchronized_document = use_signal(|| None::<u64>);
+    let loading = use_signal(|| true);
+    let mut synchronized_document = use_signal(|| Some(document_revision()));
     let current = document.read();
     let markdown = current.markdown.clone();
     let typography = current.layout.typography.clone();
@@ -163,6 +178,11 @@ pub(super) fn ProseMirrorSurface(
             if !font_css.is_empty() {
                 style { "{font_css}" }
             }
+            LoadingDialog {
+                active: loading,
+                title: "正在准备文档",
+                description: "正在解析内容并准备编辑视图…",
+            }
             article {
                 class: if seamless { "document-page seamless-page infinite-pm-page" } else { "document-page infinite-pm-page" },
                 div {
@@ -174,6 +194,7 @@ pub(super) fn ProseMirrorSurface(
                         document_revision(),
                         editor_revision(),
                         error,
+                        loading,
                     ),
                 }
                 if let Some(message) = error() {

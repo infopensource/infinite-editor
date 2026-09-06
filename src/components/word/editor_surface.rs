@@ -1,3 +1,4 @@
+use crate::components::ui::loading_dialog::LoadingDialog;
 use crate::config::{
     MIN_PAGE_CONTENT_WIDTH_MM, RULER_MAJOR_STEP_MM, RULER_MID_STEP_MM, RULER_MINOR_STEP_MM,
 };
@@ -148,11 +149,14 @@ fn mount_markdown_editor(
     initial_value: String,
     document_revision: u64,
     editor_error: Signal<Option<String>>,
+    mut loading: Signal<bool>,
 ) {
+    loading.set(true);
     spawn(async move {
         let initial_value = serde_json::to_string(&initial_value).unwrap_or_else(|_| "\"\"".into());
         let script = format!(
             r#"
+                await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
                 const mount = () => {{
                     // The Markdown controller owns the history for both editing
                     // surfaces. Mounting source mode only attaches a new view to
@@ -184,6 +188,7 @@ fn mount_markdown_editor(
         );
 
         let result = document::eval(&script).join::<String>().await;
+        loading.set(false);
         report_editor_result("初始化", result, editor_error);
     });
 }
@@ -208,23 +213,35 @@ pub fn EditorSurface(
     on_right_margin_change: EventHandler<f32>,
 ) -> Element {
     let editor_error = use_signal(|| None::<String>);
+    let source_loading = use_signal(|| true);
 
-    let source = document.read().markdown.clone();
-    let rendered_html = if editor_mode == EditorMode::MarkdownSource && markdown_preview_open {
-        if source.trim().is_empty() {
-            r#"<p class="markdown-preview-placeholder">预览区</p>"#.to_string()
-        } else {
-            render_html_with_page_breaks(&source).unwrap_or_else(|_| "<p>渲染失败</p>".to_string())
+    let preview_source = use_memo(move || document.read().markdown.clone());
+    let preview_html = use_resource(use_reactive!(|(editor_mode, markdown_preview_open)| {
+        let source = preview_source();
+        async move {
+            if editor_mode != EditorMode::MarkdownSource || !markdown_preview_open {
+                return String::new();
+            }
+            if source.trim().is_empty() {
+                return r#"<p class="markdown-preview-placeholder">预览区</p>"#.to_string();
+            }
+            super::background::run(move || render_html_with_page_breaks(&source))
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or_else(|| "<p>渲染失败</p>".to_string())
         }
-    } else {
-        String::new()
-    };
+    }));
+    let rendered_html = preview_html.read().as_ref().cloned().unwrap_or_default();
 
     let paper_size =
         resolved_paper_size(paper_mode, custom_width_mm, custom_height_mm, orientation);
 
     use_effect(use_reactive!(|(editor_mode, markdown_preview_open)| {
-        if editor_mode == EditorMode::MarkdownSource && markdown_preview_open {
+        if editor_mode == EditorMode::MarkdownSource
+            && markdown_preview_open
+            && preview_html().is_some()
+        {
             render_markdown_preview(
                 resources.read().clone(),
                 document_revision(),
@@ -258,6 +275,11 @@ pub fn EditorSurface(
                     class: markdown_layout_class,
                     section { class: "markdown-editor-pane",
                         div { class: "markdown-editor-stack",
+                            LoadingDialog {
+                                active: source_loading,
+                                title: "正在准备源码编辑器",
+                                description: "正在恢复文档内容和编辑位置…",
+                            }
                             div {
                                 id: MARKDOWN_EDITOR_HOST_ID,
                                 key: document_revision().to_string(),
@@ -267,6 +289,7 @@ pub fn EditorSurface(
                                         document.read().markdown.clone(),
                                         document_revision(),
                                         editor_error,
+                                        source_loading,
                                     )
                                 },
                             }
@@ -297,6 +320,9 @@ pub fn EditorSurface(
                         section {
                             id: MARKDOWN_PREVIEW_PANE_ID,
                             class: "markdown-preview-pane",
+                            if preview_html.read().is_none() {
+                                div { class: "editor-preview-status", role: "status", "正在生成预览…" }
+                            }
                             div {
                                 id: MARKDOWN_PREVIEW_ID,
                                 class: "markdown-rendered-html",
