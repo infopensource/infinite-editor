@@ -7,6 +7,8 @@ export function installDocumentZoom(target = window) {
   let lastWheel = 0;
   let gestureStart = null;
   const slider = () => target.document.querySelector('.word-shell .zoom-slider');
+  const enabled = input => input && !input.disabled
+    && !target.document.querySelector('.editor-surface.markdown-mode');
   const current = input => pending ?? Number(input.value);
   const setZoom = (input, value) => {
     pending = Math.max(50, Math.min(200, value));
@@ -15,7 +17,7 @@ export function installDocumentZoom(target = window) {
       frame = 0;
       const value = pending;
       pending = null;
-      if (!input.isConnected || Number(input.value) === value) return;
+      if (!enabled(input) || !input.isConnected || Number(input.value) === value) return;
       input.value = String(value);
       input.dispatchEvent(new target.Event('input', { bubbles: true }));
     });
@@ -27,6 +29,7 @@ export function installDocumentZoom(target = window) {
     if (!['+', '=', '-', '_', '0'].includes(key)) return;
     event.preventDefault();
     event.stopPropagation();
+    if (!enabled(input)) return;
     setZoom(input, key === '0' ? 100 : current(input) + (key === '-' || key === '_' ? -10 : 10));
   };
   const wheel = event => {
@@ -34,6 +37,7 @@ export function installDocumentZoom(target = window) {
     if (!input || !event.ctrlKey) return;
     event.preventDefault();
     event.stopPropagation();
+    if (!enabled(input)) { wheelDelta = 0; return; }
     // A WebKit gesture can also emit wheel events; do not apply it twice.
     if (gestureStart !== null) return;
     if (event.timeStamp - lastWheel > 200) wheelDelta = 0;
@@ -49,6 +53,7 @@ export function installDocumentZoom(target = window) {
     if (!input) return;
     event.preventDefault();
     event.stopPropagation();
+    if (!enabled(input)) { gestureStart = null; return; }
     if (event.type === 'gesturestart') gestureStart = current(input);
     else if (event.type === 'gestureend') gestureStart = null;
     else if (gestureStart !== null && Number.isFinite(event.scale)) {

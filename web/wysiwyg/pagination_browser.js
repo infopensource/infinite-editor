@@ -1,6 +1,10 @@
 import { MinimalWysiwygEditor } from './editor.js';
 import { paginationKey, getPaginationMetrics } from './plugins/pagination.js';
 
+if (new URL(location.href).searchParams.get('case') === 'page-furniture') {
+  import('./page_furniture_browser.js');
+} else {
+
 const paragraph = '中文分页测试 English **粗体** *斜体* 👩🏽‍💻，连续文字保持原段落。'.repeat(120);
 const scenario = new URL(location.href).searchParams.get('case');
 const markdown = scenario === 'table-long-header'
@@ -151,3 +155,5 @@ function verify() {
     document.getElementById('result').textContent = JSON.stringify({ ok: false, error: error.message });
   }
 })();
+
+}

@@ -674,6 +674,15 @@ mod tests {
         document.layout.paper.mode = crate::document::PaperMode::Custom;
         document.layout.paper.width_mm = 180.0;
         document.layout.margins.left_mm = 16.0;
+        document.layout.page_furniture.header.enabled = true;
+        document.layout.page_furniture.header.style.color = "#123456".into();
+        document.layout.page_furniture.footer.style.font_size_pt = 12.0;
+        document.layout.page_furniture.header.style.margin_left_mm = 4.0;
+        document.layout.page_furniture.header.style.padding_left_mm = 1.0;
+        document.layout.page_furniture.header.left = serde_json::from_value(serde_json::json!([
+            { "kind": "image", "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQiO0DAAGsAQzvOxmOAAAAAElFTkSuQmCC", "alt": "标识", "width_mm": 4.0, "height_mm": 4.0 }
+        ])).unwrap();
+        document.layout.page_furniture.footer.style.margin_bottom_mm = 2.0;
 
         save_loose(&path, &document).expect("应保存松散文档");
         let loaded = open_document(&path).expect("应打开松散文档");
@@ -685,6 +694,7 @@ mod tests {
             .resources
             .entries()
             .contains_key("proposal.assets/cover.png"));
+        assert_eq!(loaded.document.layout.page_furniture, document.layout.page_furniture);
         assert!(sidecar_path(&path).exists());
         std::fs::remove_dir_all(directory).expect("应清理测试目录");
     }
@@ -753,6 +763,11 @@ mod tests {
         std::fs::write(assets_path.join("cover.png"), b"fake-png").expect("应创建测试资源");
         let mut document = ProjectDocument::new("# 可移植文档".to_string());
         document.layout.paper.mode = crate::document::PaperMode::A5;
+        document.layout.page_furniture.footer.enabled = true;
+        document.layout.page_furniture.footer.style.separator = true;
+        document.layout.page_furniture.footer.right = serde_json::from_value(serde_json::json!([
+            { "kind": "image", "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQiO0DAAGsAQzvOxmOAAAAAElFTkSuQmCC", "alt": "标识", "width_mm": 4.0, "height_mm": 4.0 }
+        ])).unwrap();
 
         save_package(&package_path, &document, None, Some(&loose_path), None)
             .expect("应创建 INFDoc");
@@ -760,6 +775,7 @@ mod tests {
 
         assert_eq!(loaded.document.markdown, document.markdown);
         assert_eq!(loaded.document.layout.paper, document.layout.paper);
+        assert_eq!(loaded.document.layout.page_furniture, document.layout.page_furniture);
         assert!(loaded
             .resources
             .entries()

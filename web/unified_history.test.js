@@ -158,3 +158,43 @@ test("grouped edits restore matching rich selections through rapid history and r
   assert.equal(session.editor.getMarkdown(), finalText);
   session.destroy();
 });
+
+test("header and footer styles undo independently between body edits and survive remount", () => {
+  document.body.innerHTML = '<main data-page-furniture="" class="editor-surface"><div id="wysiwyg"></div></main><textarea id="bridge"></textarea>';
+  const session = new WysiwygBridgeSession({
+    host: document.getElementById('wysiwyg'), bridge: document.getElementById('bridge'),
+    ast: remarkReferenceBackend.parse('Body'), markdown: 'Body', documentRevision: 10, documentSession,
+  });
+  const original = documentSession.getPageFurniture();
+  const settings = structuredClone(original);
+  settings.header.enabled = true;
+  settings.header.left = [{ kind: 'text', value: 'Header' }];
+  settings.header.style.color = '#ff0000';
+  settings.footer.enabled = true;
+  settings.footer.center = [{ kind: 'page' }, { kind: 'text', value: '/' }, { kind: 'pages' }];
+  settings.footer.style.font_size_pt = 12;
+  assert.equal(documentSession.setPageFurniture(settings).changed, true);
+  const liveState = session.editor.state;
+  assert.equal(session.command('undo').changed, true);
+  assert.equal(session.editor.state, liveState, 'Metadata undo must not replace the editor state');
+  assert.deepEqual(documentSession.getPageFurniture(), original);
+  session.command('redo');
+  assert.deepEqual(documentSession.getPageFurniture(), settings);
+  session.editor.view.dispatch(session.editor.state.tr.insertText('Edited'));
+  session.flushChange();
+  session.command('undo');
+  assert.equal(session.editor.getMarkdown(), 'Body');
+  assert.deepEqual(documentSession.getPageFurniture(), settings);
+  session.command('undo');
+  assert.deepEqual(documentSession.getPageFurniture(), original);
+  session.command('redo');
+  assert.deepEqual(documentSession.getPageFurniture(), settings);
+  const message = JSON.parse(document.getElementById('bridge').value);
+  assert.deepEqual(message.page_furniture, settings);
+  session.destroy();
+  documentSession.initialize('Body', 10, 'bridge');
+  assert.deepEqual(documentSession.getPageFurniture(), settings);
+  const returned = documentSession.getPageFurniture();
+  returned.header.style.font_size_pt = 36;
+  assert.equal(documentSession.getPageFurniture().header.style.font_size_pt, 9);
+});

@@ -92,13 +92,14 @@ pub fn StatusBar(
                 }
                 button {
                     class: "status-view", r#type: "button",
-                    aria_label: "缩小", disabled: zoom() <= 50,
+                    aria_label: "缩小", disabled: editor_mode != EditorMode::Wysiwyg || zoom() <= 50,
                     onmousedown: move |event| event.prevent_default(),
                     onclick: move |_| zoom.with_mut(|value| *value = value.saturating_sub(10).max(50)),
                     "−"
                 }
                 input {
                     class: "zoom-slider", r#type: "range",
+                    disabled: editor_mode != EditorMode::Wysiwyg,
                     aria_label: "文档缩放比例", min: 50, max: 200, step: 10,
                     value: zoom(),
                     oninput: move |event| {
@@ -109,17 +110,18 @@ pub fn StatusBar(
                 }
                 button {
                     class: "status-view", r#type: "button",
-                    aria_label: "放大", disabled: zoom() >= 200,
+                    aria_label: "放大", disabled: editor_mode != EditorMode::Wysiwyg || zoom() >= 200,
                     onmousedown: move |event| event.prevent_default(),
                     onclick: move |_| zoom.with_mut(|value| *value = (*value + 10).min(200)),
                     "+"
                 }
                 button {
                     class: "status-view zoom-text", r#type: "button",
+                    disabled: editor_mode != EditorMode::Wysiwyg,
                     title: "恢复 100%", aria_label: "恢复百分之百缩放",
                     onmousedown: move |event| event.prevent_default(),
                     onclick: move |_| zoom.set(100),
-                    "{zoom}%"
+                    if editor_mode == EditorMode::Wysiwyg { "{zoom}%" } else { "100%" }
                 }
             }
         }

@@ -64,7 +64,7 @@ pub fn RibbonPanel(
                 RibbonTab::Insert => rsx! {
                     CommandGroup {
                         title: "页面",
-                        actions: vec![("分页符", "page_break"), ("分隔线", "horizontal_rule")],
+                        actions: vec![("分页符", "page_break"), ("页眉页脚", "page_furniture"), ("分隔线", "horizontal_rule")],
                         on_action: on_editor_command,
                     }
                     Group {

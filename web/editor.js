@@ -1,3 +1,5 @@
+import { readPageFurniture, publishPageFurniture } from "./page_furniture.js";
+import { openPageFurnitureDialog } from "./page_furniture_dialog.js";
 import { minimalTextChange } from "./text_change.js";
 import { Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import {
@@ -42,6 +44,14 @@ const richSnapshotField = StateField.define({
     for (const effect of transaction.effects) {
       if (effect.is(richSnapshotEffect)) value = effect.value;
     }
+    return value;
+  },
+});
+const pageFurnitureEffect = StateEffect.define();
+const pageFurnitureField = StateField.define({
+  create: () => readPageFurniture(),
+  update(value, transaction) {
+    for (const effect of transaction.effects) if (effect.is(pageFurnitureEffect)) value = effect.value;
     return value;
   },
 });
@@ -263,7 +273,7 @@ function activeBridge() {
   return controller?.bridgeId ? document.getElementById(controller.bridgeId) : null;
 }
 
-function emitChange(origin) {
+function emitChange(origin, furnitureChanged = false) {
   if (!controller) return;
   const markdown = controller.state.doc.toString();
   const selection = controller.state.selection.main;
@@ -271,6 +281,7 @@ function emitChange(origin) {
     document_revision: controller.documentRevision,
     edit_revision: controller.editRevision,
     origin,
+    ...(furnitureChanged ? { page_furniture: controller.state.field(pageFurnitureField) } : {}),
     markdown,
     selection: { anchor: selection.anchor, head: selection.head },
   };
@@ -291,6 +302,9 @@ function extensions() {
     highlightActiveLineGutter(),
     history(),
     richSnapshotField,
+    pageFurnitureField,
+    invertedEffects.of(transaction => transaction.effects.some(effect => effect.is(pageFurnitureEffect))
+      ? [pageFurnitureEffect.of(transaction.startState.field(pageFurnitureField))] : []),
     invertedEffects.of((transaction) => transaction.docChanged
       ? [richSnapshotEffect.of(transaction.startState.field(richSnapshotField))]
       : []),
@@ -375,7 +389,8 @@ function applyTransactions(transactions, origin = "transaction", sourceView = nu
     expected = transaction.state;
   }
 
-  const changed = transactions.some((transaction) => transaction.docChanged);
+  const furnitureChanged = transactions.some(transaction => transaction.effects.some(effect => effect.is(pageFurnitureEffect)));
+  const changed = furnitureChanged || transactions.some((transaction) => transaction.docChanged);
   controller.state = expected;
   if (changed) {
     controller.editRevision += 1;
@@ -385,7 +400,8 @@ function applyTransactions(transactions, origin = "transaction", sourceView = nu
   if (transactions.some((transaction) => transaction.selection || transaction.docChanged)) {
     scheduleSelectionStatus();
   }
-  if (changed) emitChange(origin);
+  if (furnitureChanged) publishPageFurniture(controller.state.field(pageFurnitureField));
+  if (changed) emitChange(origin, furnitureChanged);
   return { changed, revision: controller.editRevision };
 }
 
@@ -811,6 +827,27 @@ window.InfiniteMarkdownEditor = {
   syncPreview(hostId, previewId) {
     pendingScrollSyncs.set(hostId, previewId);
     return connectScrollSync(hostId, previewId);
+  },
+
+  openPageFurniture() {
+    return openPageFurnitureDialog(this);
+  },
+
+  getPageFurniture() {
+    return controller ? structuredClone(controller.state.field(pageFurnitureField)) : null;
+  },
+
+  setPageFurniture(value) {
+    if (!controller) return { ok: false, error: "文档尚未准备好" };
+    const next = structuredClone(value);
+    if (JSON.stringify(next) === JSON.stringify(controller.state.field(pageFurnitureField))) {
+      publishPageFurniture(next);
+      return { ok: true, changed: false };
+    }
+    const transaction = controller.state.update({
+      effects: pageFurnitureEffect.of(next), annotations: isolateHistory.of("full"),
+    });
+    return { ok: true, ...applyTransactions([transaction], "page-furniture") };
   },
 
   getValue() {

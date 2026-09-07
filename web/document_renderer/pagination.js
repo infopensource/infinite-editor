@@ -1,3 +1,4 @@
+import { pageMetrics, pageGeometry, readPageFurniture, renderPageFurniture } from "../page_furniture.js";
 function createPage(pages, seamless) {
   const page = document.createElement("article");
   page.className = seamless ? "document-page seamless-page" : "document-page paged-page";
@@ -186,6 +187,14 @@ export function paginate(root, seamless) {
 
   [...pages.children].forEach((page, index) => {
     page.dataset.pageNumber = String(index + 1);
+    page.style.position = "relative";
+    const layer = document.createElement("div");
+    layer.className = "document-page-furniture";
+    Object.assign(layer.style, { position: "absolute", inset: "0", pointerEvents: "none" });
+    page.appendChild(layer);
+    const metrics = pageMetrics(page);
+    const error = renderPageFurniture(layer, readPageFurniture(root), [pageGeometry(metrics, index, 0)], metrics, pages.childElementCount);
+    if (error) throw new Error(error);
   });
   root.dataset.pageCount = String(pages.childElementCount);
   root.dataset.oversizedBlocks = String(oversized);

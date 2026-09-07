@@ -24,6 +24,8 @@ struct MarkdownChangeEnvelope {
     #[serde(default)]
     selection: Option<MarkdownSelection>,
     markdown: String,
+    #[serde(default)]
+    page_furniture: Option<crate::document::PageFurnitureSettings>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -144,6 +146,8 @@ pub fn WordWorkspace() -> Element {
 
     rsx! {
         div { class: if active_tab() == RibbonTab::File { "word-shell file-mode" } else { "word-shell" },
+            "data-page-furniture": serde_json::to_string(&current_document.layout.page_furniture).unwrap_or_default(),
+            "data-page-layout": serde_json::to_string(&current_document.layout).unwrap_or_default(),
             ResizeHandles {}
             TitleBar { document_title: title_name }
             TabsRow {
@@ -163,7 +167,9 @@ pub fn WordWorkspace() -> Element {
                     on_toggle_ruler: move |_| show_ruler.set(!show_ruler()),
                     on_reset_zoom: move |_| zoom.set(100),
                     on_editor_command: move |command| {
-                        if editor_mode() == EditorMode::Wysiwyg {
+                        if command == "page_furniture" {
+                            let _ = document::eval("const prepared = window.InfiniteWysiwygEditor?.prepareModeSwitch('infinite-prosemirror-host'); if (!prepared?.deferred) window.InfiniteMarkdownEditor?.openPageFurniture();");
+                        } else if editor_mode() == EditorMode::Wysiwyg {
                             prosemirror_surface::run_command(command);
                         } else {
                             document_renderer::run_markdown_command(command);
@@ -216,7 +222,12 @@ pub fn WordWorkspace() -> Element {
                         {
                             return;
                         }
-                        let should_refresh_wysiwyg = editor_mode() == EditorMode::Wysiwyg
+                        if let Some(settings) = change.page_furniture {
+                            if settings.validate(&document.read().layout.margins).is_ok() {
+                                document.write().layout.page_furniture = settings;
+                            }
+                        }
+                        let should_refresh_wysiwyg = document.read().markdown != change.markdown && editor_mode() == EditorMode::Wysiwyg
                             && matches!(change.origin.as_deref(), Some("undo" | "redo"));
                         let markdown = change.markdown;
                         document.write().markdown = markdown.clone();

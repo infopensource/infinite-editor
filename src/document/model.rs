@@ -32,6 +32,7 @@ pub struct LayoutDocument {
     pub paper: PaperSettings,
     pub margins: PageMargins,
     pub pagination: PaginationSettings,
+    pub page_furniture: PageFurnitureSettings,
     pub typography: TypographySettings,
     pub resources: ResourceSettings,
     pub export: ExportSettings,
@@ -46,6 +47,7 @@ impl Default for LayoutDocument {
             paper: PaperSettings::default(),
             margins: PageMargins::default(),
             pagination: PaginationSettings::default(),
+            page_furniture: PageFurnitureSettings::default(),
             typography: TypographySettings::default(),
             resources: ResourceSettings::default(),
             export: ExportSettings::default(),
@@ -118,6 +120,7 @@ impl LayoutDocument {
         self.typography.body_font_size_pt = self.typography.body_font_size_pt.clamp(1.0, 512.0);
         self.typography.line_height = self.typography.line_height.clamp(0.5, 10.0);
         self.typography.paragraph_spacing_pt = self.typography.paragraph_spacing_pt.max(0.0);
+        self.page_furniture.validate(&self.margins)?;
         if !self.export.pdf.scale.is_finite() {
             return Err("PDF 缩放比例必须是有限数值".to_string());
         }
@@ -251,6 +254,179 @@ impl Default for PaginationSettings {
     }
 }
 
+/// Templates are document metadata; each region owns its style independently.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PageFurnitureSettings {
+    pub header: PageRegion,
+    pub footer: PageRegion,
+}
+
+impl PageFurnitureSettings {
+    pub fn validate(&self, margins: &PageMargins) -> Result<(), String> {
+        for (name, region, available) in [
+            ("页眉", &self.header, margins.top_mm),
+            ("页脚", &self.footer, margins.bottom_mm),
+        ] {
+            let size = region.style.font_size_pt;
+            if !size.is_finite() || !(6.0..=36.0).contains(&size) {
+                return Err(format!("{name}字号必须在 6–36 pt 之间"));
+            }
+            let style = &region.style;
+            if [
+                style.margin_top_mm,
+                style.margin_bottom_mm,
+                style.margin_left_mm,
+                style.margin_right_mm,
+                style.column_gap_mm,
+                style.padding_top_mm,
+                style.padding_bottom_mm,
+                style.padding_left_mm,
+                style.padding_right_mm,
+            ]
+            .into_iter()
+            .any(|value| !value.is_finite() || !(0.0..=100.0).contains(&value))
+            {
+                return Err(format!("{name}留白和栏间距必须在 0–100 mm 之间"));
+            }
+            let mut content_height = size * 25.4 / 72.0 * 1.3;
+            for field in region
+                .left
+                .iter()
+                .chain(&region.center)
+                .chain(&region.right)
+            {
+                if let PageField::Image {
+                    src,
+                    width_mm,
+                    height_mm,
+                    ..
+                } = field
+                {
+                    if !width_mm.is_finite()
+                        || !height_mm.is_finite()
+                        || !(0.1..=100.0).contains(width_mm)
+                        || !(0.1..=100.0).contains(height_mm)
+                    {
+                        return Err(format!("{name}图片尺寸必须在 0.1–100 mm 之间"));
+                    }
+                    let Some((prefix, encoded)) = src.split_once(',') else {
+                        return Err(format!("{name}图片数据无效"));
+                    };
+                    if ![
+                        "data:image/png;base64",
+                        "data:image/jpeg;base64",
+                        "data:image/webp;base64",
+                        "data:image/gif;base64",
+                    ]
+                    .contains(&prefix)
+                        || encoded.len() > 12 * 1024 * 1024
+                    {
+                        return Err(format!("{name}图片格式或大小无效"));
+                    }
+                    use base64::Engine as _;
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(encoded)
+                        .map_err(|_| format!("{name}图片编码无效"))?;
+                    if bytes.is_empty() || bytes.len() > 8 * 1024 * 1024 {
+                        return Err(format!("{name}图片不能超过 8 MiB"));
+                    }
+                    content_height = content_height.max(*height_mm);
+                }
+            }
+            let required = content_height
+                + if style.separator { 25.4 / 144.0 } else { 0.0 }
+                + style.margin_top_mm
+                + style.margin_bottom_mm
+                + style.padding_top_mm
+                + style.padding_bottom_mm;
+            if region.enabled && required > available {
+                return Err(format!(
+                    "{name}放不下，请减少上下留白、增大页边距或减小字号"
+                ));
+            }
+            let color = &region.style.color;
+            if color.len() != 7
+                || !color.starts_with('#')
+                || !color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                return Err(format!("{name}颜色必须为 #RRGGBB"));
+            }
+            for slot in [&region.left, &region.center, &region.right] {
+                if slot.iter().any(|part| matches!(part, PageField::Text { value } if value.chars().any(char::is_control))) {
+                    return Err(format!("{name}仅支持单行文本"));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PageRegion {
+    pub enabled: bool,
+    pub hide_first_page: bool,
+    pub left: Vec<PageField>,
+    pub center: Vec<PageField>,
+    pub right: Vec<PageField>,
+    pub style: PageRegionStyle,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PageField {
+    Text {
+        value: String,
+    },
+    Page,
+    Pages,
+    Image {
+        src: String,
+        alt: String,
+        width_mm: f32,
+        height_mm: f32,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PageRegionStyle {
+    pub font_family: String,
+    pub font_size_pt: f32,
+    pub color: String,
+    pub separator: bool,
+    pub margin_top_mm: f32,
+    pub margin_bottom_mm: f32,
+    pub margin_left_mm: f32,
+    pub margin_right_mm: f32,
+    pub column_gap_mm: f32,
+    pub padding_top_mm: f32,
+    pub padding_bottom_mm: f32,
+    pub padding_left_mm: f32,
+    pub padding_right_mm: f32,
+}
+
+impl Default for PageRegionStyle {
+    fn default() -> Self {
+        Self {
+            font_family: "system-ui".into(),
+            font_size_pt: 9.0,
+            color: "#64748b".into(),
+            separator: false,
+            margin_top_mm: 3.0,
+            margin_bottom_mm: 3.0,
+            margin_left_mm: 0.0,
+            margin_right_mm: 0.0,
+            column_gap_mm: 2.0,
+            padding_top_mm: 0.0,
+            padding_bottom_mm: 0.0,
+            padding_left_mm: 0.0,
+            padding_right_mm: 0.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TypographySettings {
@@ -334,6 +510,55 @@ mod tests {
         let encoded = toml::to_string_pretty(&layout).expect("布局应可编码");
         let decoded: LayoutDocument = toml::from_str(&encoded).expect("布局应可解码");
         assert_eq!(decoded, layout);
+    }
+
+    #[test]
+    fn page_furniture_round_trips_and_old_layouts_default_to_disabled() {
+        let old: LayoutDocument = toml::from_str("version = 1").unwrap();
+        assert!(!old.page_furniture.header.enabled);
+        let mut layout = old;
+        layout.page_furniture.header.enabled = true;
+        layout.page_furniture.header.left = vec![PageField::Text {
+            value: "标题".into(),
+        }];
+        layout.page_furniture.header.style.color = "#ff0000".into();
+        layout.page_furniture.header.style.margin_top_mm = 1.5;
+        layout.page_furniture.header.style.margin_left_mm = 4.0;
+        layout.page_furniture.footer.style.column_gap_mm = 5.0;
+        layout.page_furniture.footer.center = vec![
+            PageField::Page,
+            PageField::Text { value: "/".into() },
+            PageField::Pages,
+        ];
+        layout.page_furniture.footer.style.font_size_pt = 12.0;
+        let encoded = toml::to_string_pretty(&layout).unwrap();
+        let decoded: LayoutDocument = toml::from_str(&encoded).unwrap();
+        assert_eq!(decoded, layout);
+        assert_eq!(decoded.page_furniture.header.style.font_size_pt, 9.0);
+        layout.margins.top_mm = 2.0;
+        assert!(layout
+            .validate_and_normalize()
+            .unwrap_err()
+            .contains("页眉"));
+    }
+
+    #[test]
+    fn image_templates_and_inner_padding_round_trip_and_validate() {
+        let mut layout = LayoutDocument::default();
+        layout.page_furniture.header.enabled = true;
+        layout.page_furniture.header.style.padding_bottom_mm = 1.5;
+        layout.page_furniture.header.style.padding_left_mm = 2.0;
+        layout.page_furniture.header.left.push(PageField::Image {
+            src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQiO0DAAGsAQzvOxmOAAAAAElFTkSuQmCC".into(),
+            alt: "标识".into(), width_mm: 4.0, height_mm: 4.0,
+        });
+        layout.validate_and_normalize().unwrap();
+        let encoded = toml::to_string_pretty(&layout).unwrap();
+        let decoded: LayoutDocument = toml::from_str(&encoded).unwrap();
+        assert_eq!(decoded, layout);
+        assert_eq!(decoded.page_furniture.footer.style.padding_bottom_mm, 0.0);
+        layout.page_furniture.header.style.padding_bottom_mm = 100.0;
+        assert!(layout.validate_and_normalize().is_err());
     }
 
     #[test]

@@ -55,6 +55,8 @@ fn build_print_html(
 ) -> Result<String, String> {
     let content = render_html_with_page_breaks(&document.markdown)?;
     let layout = &document.layout;
+    layout.page_furniture.validate(&layout.margins)?;
+    let furniture = json_for_inline_script(&layout.page_furniture)?;
     let font_css = embedded_font_css(layout, resources);
     let resources = json_for_inline_script(resources.entries())?;
     let typography = &layout.typography;
@@ -98,6 +100,7 @@ html, body {{ margin: 0; padding: 0; background: #fff; }}
 const resources = {resources};
 window.addEventListener('load', async () => {{
   const root = document.getElementById('infinite-document-renderer');
+  root.dataset.pageFurniture = JSON.stringify({furniture});
   window.InfiniteDocumentRenderer.mount('infinite-document-renderer', false, resources);
   const images = [...root.querySelectorAll('.document-pagination-source img')];
   await Promise.all(images.map(image => image.complete
@@ -105,6 +108,7 @@ window.addEventListener('load', async () => {{
     : new Promise(resolve => {{ image.addEventListener('load', resolve, {{ once: true }}); image.addEventListener('error', resolve, {{ once: true }}); }})));
   if (document.fonts?.ready) await document.fonts.ready;
   window.InfiniteDocumentRenderer.paginate(root, false);
+  await Promise.all([...root.querySelectorAll('.document-page-furniture img')].map(image => image.decode()));
   document.documentElement.dataset.infiniteEditorReady = 'true';
 }});
 </script>
@@ -161,6 +165,7 @@ fn print_with_chromium(html_path: &Path, target: &Path) -> Result<(), String> {
             .args([
                 "--headless=new",
                 "--disable-gpu",
+                "--dump-dom",
                 "--no-pdf-header-footer",
                 "--print-to-pdf-no-header",
                 "--run-all-compositor-stages-before-draw",
@@ -171,7 +176,17 @@ fn print_with_chromium(html_path: &Path, target: &Path) -> Result<(), String> {
             .output();
 
         match output {
-            Ok(output) if output.status.success() => return Ok(()),
+            Ok(output) if output.status.success() => {
+                // The renderer may reject a template after fonts load (for
+                // example after a narrower paper size was selected). Never
+                // publish a PDF with silently missing page regions.
+                if String::from_utf8_lossy(&output.stdout)
+                    .contains("data-infinite-editor-ready=\"true\"")
+                {
+                    return Ok(());
+                }
+                return Err("打印排版未完成，请检查页眉页脚是否超出页边距或三栏宽度".into());
+            }
             Ok(output) => last_failure = Some(browser_failure(candidate, &output)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => last_failure = Some(format!("启动 {candidate} 失败: {error}")),
@@ -200,6 +215,9 @@ mod tests {
         document.layout.paper.width_mm = 180.0;
         document.layout.paper.height_mm = 260.0;
         document.layout.paper.mode = crate::document::PaperMode::Custom;
+        document.layout.page_furniture.header.enabled = true;
+        document.layout.page_furniture.header.style.color = "#123456".into();
+        document.layout.page_furniture.footer.style.font_size_pt = 12.0;
         let mut resources = ResourceBundle::default();
         resources.insert(
             "document.assets/cover.png".into(),
@@ -211,6 +229,8 @@ mod tests {
         assert!(html.contains("@page { size: 180.000mm 260.000mm"));
         assert!(html.contains("data:image/png;base64,AA=="));
         assert!(html.contains("InfiniteDocumentRenderer.paginate"));
+        assert!(html.contains("root.dataset.pageFurniture"));
+        assert!(html.contains("#123456"));
         assert!(html.contains("InfiniteMathRenderer"));
         assert!(html.contains("font-family:KaTeX_Main"));
         assert!(html.contains("data:font/woff2;base64,"));
@@ -228,7 +248,26 @@ mod tests {
     #[test]
     #[ignore = "requires a locally installed Chromium-compatible browser"]
     fn chromium_export_creates_a_real_pdf() {
-        let document = ProjectDocument::new("# PDF 验证\n\n这是导出测试。".into());
+        let mut document = ProjectDocument::new("# PDF 验证\n\n这是导出测试。".into());
+        document.layout.page_furniture.header.enabled = true;
+        document.layout.page_furniture.header.left = serde_json::from_value(serde_json::json!([
+            { "kind": "text", "value": "页眉测试" }
+        ]))
+        .unwrap();
+        document.layout.page_furniture.footer.enabled = true;
+        document.layout.page_furniture.footer.center = serde_json::from_value(serde_json::json!([
+            { "kind": "page" }, { "kind": "text", "value": "/" }, { "kind": "pages" }
+        ]))
+        .unwrap();
+        document
+            .layout
+            .page_furniture
+            .header
+            .style
+            .padding_bottom_mm = 1.0;
+        document.layout.page_furniture.header.right = serde_json::from_value(serde_json::json!([
+            { "kind": "image", "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQiO0DAAGsAQzvOxmOAAAAAElFTkSuQmCC", "alt": "标识", "width_mm": 3.0, "height_mm": 3.0 }
+        ])).unwrap();
         let target = std::env::temp_dir().join(format!(
             "infinite-editor-export-test-{}.pdf",
             std::process::id()
@@ -238,6 +277,16 @@ mod tests {
         let bytes = std::fs::read(&target).expect("应读取 PDF");
         assert!(bytes.starts_with(b"%PDF-"));
         assert!(bytes.len() > 1_000);
+        document.layout.page_furniture.header.left = serde_json::from_value(serde_json::json!([
+            { "kind": "text", "value": "超长页眉".repeat(100) }
+        ]))
+        .unwrap();
+        assert!(export_pdf(&target, &document, &ResourceBundle::default()).is_err());
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            bytes,
+            "排版失败不能覆盖已有 PDF"
+        );
         let _ = std::fs::remove_file(target);
     }
 }

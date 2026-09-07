@@ -1,3 +1,4 @@
+import { pageMetrics, pageGeometry, readPageFurniture, renderPageFurniture } from "../../page_furniture.js";
 import { MeasurementWorkspace } from "../measurement_snapshot.js";
 import { workBudget, checkCancelled, yieldToInput, cancellable } from "../work_scheduler.js";
 import { mathRenderingSettled } from "../math_render_queue.js";
@@ -393,8 +394,11 @@ function paintPageGaps(view, layer) {
   const scale = bounds.width / (Number.parseFloat(style.width) + extraWidth) || 1;
   const viewport = window.innerHeight || 1000;
   const glyphCache = new Map();
+  const pageTops = [0];
+  const paddingTop = millimetersToPixels(style.getPropertyValue("--page-padding-top"));
   const fragments = [...view.dom.querySelectorAll(".infinite-pm-page-gap:not([data-secondary])")].map((gap) => {
     const rect = gap.getBoundingClientRect();
+    pageTops.push((rect.bottom - bounds.top) / scale - page.clientTop - paddingTop);
     if (rect.bottom < -viewport || rect.top > viewport * 2) return null;
     const paint = document.createElement("div");
     paint.className = "infinite-pm-page-chrome";
@@ -411,6 +415,7 @@ function paintPageGaps(view, layer) {
     return paint;
   });
   layer.replaceChildren(...fragments.filter(Boolean));
+  return pageTops;
 }
 
 function setFinalPageTail(view, tailHeight) {
@@ -491,6 +496,15 @@ export function paginationPlugin(options = {}) {
       layer.className = "infinite-pm-pagination-layer";
       layer.setAttribute("aria-hidden", "true");
       page?.appendChild(layer);
+      const furniture = document.createElement("div");
+      furniture.className = "infinite-pm-furniture-layer";
+      Object.assign(furniture.style, { position: "absolute", inset: "0", zIndex: "3", pointerEvents: "none" });
+      page?.appendChild(furniture);
+      const furnitureWarning = document.createElement("div");
+      furnitureWarning.className = "editor-layout-status";
+      furnitureWarning.setAttribute("role", "status");
+      furnitureWarning.hidden = true;
+      page?.parentElement.appendChild(furnitureWarning);
       const status = document.createElement("div");
       status.className = "editor-layout-status";
       status.setAttribute("role", "status");
@@ -501,7 +515,30 @@ export function paginationPlugin(options = {}) {
       const paint = () => {
         if (destroyed || !page) return;
         const start = performance.now();
-        paintPageGaps(view, layer);
+        const pageTops = paintPageGaps(view, layer);
+        if (!page.closest(".infinite-pm-surface")?.classList.contains("paged")) {
+          furniture.replaceChildren();
+          furnitureWarning.hidden = true;
+        } else {
+          const metrics = pageMetrics(page);
+          const bounds = page.getBoundingClientRect();
+          const scale = bounds.width / parseFloat(getComputedStyle(page).width) || 1;
+          const total = (paginationKey.getState(view.state)?.positions.length ?? 0) + 1;
+          page.dataset.pageCount = String(total);
+          // Physical edges come from the committed spacers. Inline and table
+          // rounding can accumulate, so index * nominal page height drifts.
+          const geometries = [];
+          const viewport = window.innerHeight || 1000;
+          for (let index = 0; index < pageTops.length; index++) {
+            const top = pageTops[index];
+            const bottom = index + 1 < pageTops.length ? pageTops[index + 1] - 20 : page.clientHeight;
+            if (bounds.top + bottom * scale < -viewport || bounds.top + top * scale > 2 * viewport) continue;
+            geometries.push(pageGeometry(metrics, index, top, bottom - top));
+          }
+          const error = renderPageFurniture(furniture, readPageFurniture(), geometries, metrics, total);
+          furnitureWarning.textContent = error || "";
+          furnitureWarning.hidden = !error;
+        }
         metrics.maxPaintMs = Math.max(metrics.maxPaintMs, performance.now() - start);
       };
       const schedulePaint = () => {
@@ -579,6 +616,7 @@ export function paginationPlugin(options = {}) {
       if (surface) attributes.observe(surface, { attributes: true, attributeFilter: ["class", "style"] });
       window.addEventListener("resize", schedule, { passive: true });
       window.addEventListener('infinite-editor-zoom', schedulePaint);
+      window.addEventListener('infinite-page-furniture-change', schedulePaint);
       window.addEventListener("scroll", schedulePaint, { passive: true, capture: true });
       window.addEventListener("infinite-math-renderer-ready", invalidate);
       document.fonts?.addEventListener("loadingdone", invalidate);
@@ -604,9 +642,12 @@ export function paginationPlugin(options = {}) {
           observer.disconnect();
           attributes.disconnect();
           layer.remove();
+          furniture.remove();
+          furnitureWarning.remove();
           workspace.destroy();
           window.removeEventListener("resize", schedule);
           window.removeEventListener('infinite-editor-zoom', schedulePaint);
+          window.removeEventListener('infinite-page-furniture-change', schedulePaint);
           window.removeEventListener("scroll", schedulePaint, true);
           window.removeEventListener("infinite-math-renderer-ready", invalidate);
           document.fonts?.removeEventListener("loadingdone", invalidate);

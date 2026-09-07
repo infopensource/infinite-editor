@@ -44,3 +44,28 @@ test('document zoom captures shortcuts and gestures, batches input, and leaves n
   assert.equal(event.defaultPrevented, false);
   window.close();
 });
+
+test('source mode ignores document zoom and cancels queued zoom without browser fallback', () => {
+  const { window } = new JSDOM('<div class="word-shell"><main class="editor-surface"></main><input class="zoom-slider" value="150"></div>');
+  let frame;
+  window.requestAnimationFrame = fn => { frame = fn; return 1; };
+  window.cancelAnimationFrame = () => {};
+  const dispose = installDocumentZoom(window);
+  const slider = window.document.querySelector('input');
+  const surface = window.document.querySelector('main');
+  const key = () => window.dispatchEvent(new window.KeyboardEvent('keydown', { key: '+', ctrlKey: true, cancelable: true }));
+  key();
+  surface.classList.add('markdown-mode'); slider.disabled = true;
+  frame(); frame = null;
+  assert.equal(slider.value, '150');
+  key();
+  const wheel = new window.WheelEvent('wheel', { ctrlKey: true, deltaY: -80, cancelable: true });
+  window.dispatchEvent(wheel);
+  assert.equal(wheel.defaultPrevented, true);
+  assert.equal(frame, null);
+  assert.equal(slider.value, '150');
+  surface.classList.remove('markdown-mode'); slider.disabled = false;
+  key(); frame();
+  assert.equal(slider.value, '160');
+  dispose(); window.close();
+});

@@ -338,9 +338,13 @@ export class WysiwygBridgeSession {
       return { ok: true, changed: false, deferred: true };
     }
     this.flushChange("wysiwyg-before-history");
+    const previousMarkdown = this.documentSession?.getSnapshot?.()?.markdown;
     const changed = this.documentSession?.[name]?.() ?? false;
     const snapshot = this.documentSession?.getSnapshot?.();
-    if (changed && snapshot?.richSnapshot) {
+    if (changed && snapshot?.markdown === previousMarkdown) {
+      // Metadata-only history must preserve the live selection and pagination.
+      this.editRevision = snapshot.editRevision;
+    } else if (changed && snapshot?.richSnapshot) {
       this.editor.restoreSnapshot(snapshot.richSnapshot);
       this.revealHistorySelection();
     } else if (changed && snapshot) {

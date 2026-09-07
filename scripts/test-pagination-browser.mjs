@@ -12,12 +12,12 @@ if (process.argv[2] === 'dialog') {
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = mkdtempSync(join(tmpdir(), 'infinite-pagination-'));
-const scenarios = process.argv.length > 2 ? process.argv.slice(2) : ['nested', 'table', 'table-long-cell', 'table-long-header', 'mixed', 'math-input'];
+const scenarios = process.argv.length > 2 ? process.argv.slice(2) : ['nested', 'table', 'table-long-cell', 'table-long-header', 'mixed', 'math-input', 'page-furniture'];
 const bundle = await build({
   entryPoints: [resolve(root, scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
   loader: { '.md': 'text', '.png': 'dataurl' }, bundle: true, write: false, format: 'iife',
 });
-const zoomCss = scenarios.includes('selection') ? readFileSync(resolve(root, 'assets/styling/word.css'), 'utf8') : '';
+const zoomCss = scenarios.includes('selection') || scenarios.includes('page-furniture') ? readFileSync(resolve(root, 'assets/styling/word.css'), 'utf8') : '';
 const css = readFileSync(resolve(root, 'assets/styling/wysiwyg_core.css'), 'utf8')
   + readFileSync(resolve(root, 'assets/math.bundle.css'), 'utf8');
 const math = readFileSync(resolve(root, 'assets/math.bundle.js'), 'utf8');
@@ -97,6 +97,51 @@ try {
     writeFileSync(join(output, scenario + '.json'), JSON.stringify(report, null, 2));
     console.log(scenario, report, imagePath);
     if (!report.ok) process.exitCode = 1;
+    if (scenario === 'page-furniture' && report.ok) {
+      const sourceZoom = await send('Runtime.evaluate', { expression: `(() => {
+        const shell = document.createElement('div');
+        shell.className = 'word-shell';
+        shell.style.cssText = 'position:fixed;left:0;top:0;width:800px;height:500px;display:block;--editor-zoom:2';
+        const source = document.createElement('main'); source.className = 'editor-surface markdown-mode';
+        source.style.cssText = 'width:100%;height:100%';
+        source.innerHTML = '<div class="markdown-code-editor">Source</div><div class="markdown-preview-pane">Preview</div>';
+        shell.appendChild(source); document.body.appendChild(shell);
+        const before = source.getBoundingClientRect().width;
+        const unscaled = getComputedStyle(source).transform === 'none';
+        source.classList.remove('markdown-mode');
+        const richScaled = getComputedStyle(source).transform !== 'none';
+        source.classList.add('markdown-mode');
+        const restored = source.getBoundingClientRect().width === before;
+        shell.remove(); return unscaled && richScaled && restored;
+      })()`, returnByValue: true }, sessionId);
+      if (!sourceZoom.result.value) throw new Error('Document zoom leaked into Markdown mode');
+
+      for (const [width, height] of [[1000, 600], [680, 480], [1280, 720]]) {
+        await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }, sessionId);
+        await new Promise(resolve => setTimeout(resolve, 180));
+        const visibility = await send('Runtime.evaluate', { expression: `(() => {
+          const dialog = document.getElementById('page-furniture-dialog');
+          const buttons = [...dialog.querySelectorAll('.page-furniture-buttons button')];
+          return buttons.every(button => {
+            const box = button.getBoundingClientRect();
+            return box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth
+              && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) === button;
+          }) && dialog.scrollHeight <= dialog.clientHeight + 1;
+        })()`, returnByValue: true }, sessionId);
+        if (!visibility.result.value) throw new Error(`Settings actions clipped at ${width}x${height}`);
+        const shot = await send('Page.captureScreenshot', { format: 'png' }, sessionId);
+        writeFileSync(join(output, `page-furniture-${width}x${height}.png`), Buffer.from(shot.data, 'base64'));
+      }
+
+      await send('Runtime.evaluate', { expression: `
+        document.body.innerHTML = window.furniturePrintHtml;
+        const style = document.createElement('style');
+        style.textContent = '@page { size: 210mm 120mm; margin: 0; } html,body {margin:0;padding:0;} .document-flow {display:block;padding:0;} .document-page {margin:0;box-shadow:none;break-after:page;} .document-page:last-child {break-after:auto;}';
+        document.head.appendChild(style);
+      ` }, sessionId);
+      const pdf = await send('Page.printToPDF', { preferCSSPageSize: true, printBackground: true }, sessionId);
+      writeFileSync(join(output, 'page-furniture.pdf'), Buffer.from(pdf.data, 'base64'));
+    }
     await send('Target.closeTarget', { targetId });
   }
 } finally {
