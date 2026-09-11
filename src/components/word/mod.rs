@@ -5,6 +5,7 @@ mod editor_surface;
 mod file_actions;
 mod file_backstage;
 mod outline;
+mod page_furniture_dialog;
 mod prosemirror_surface;
 mod resize_handles;
 mod ribbon_groups;

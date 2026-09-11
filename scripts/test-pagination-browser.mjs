@@ -1,7 +1,8 @@
 import { build } from 'esbuild';
+import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, extname, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -72,7 +73,44 @@ function send(method, params = {}, sessionId) {
     browser.stdio[3].write(JSON.stringify({ id, method, params, sessionId }) + '\0');
   });
 }
+let templateServer;
 try {
+  if (scenarios.includes('page-furniture')) {
+    // Read the actual Dioxus-rendered markup, never a duplicated HTML fixture.
+    // Build with: dx build --web --example page_furniture_harness --no-default-features --features web --offline
+    const fixtureRoot = resolve(root, 'target/dx/page_furniture_harness/debug/web/public');
+    readFileSync(join(fixtureRoot, 'index.html'));
+    templateServer = createServer((request, response) => {
+      const requested = resolve(fixtureRoot, '.' + new URL(request.url, 'http://localhost').pathname);
+      if (requested !== fixtureRoot && !requested.startsWith(fixtureRoot + sep)) { response.writeHead(403).end(); return; }
+      try {
+        const file = requested === fixtureRoot ? join(fixtureRoot, 'index.html') : requested;
+        const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm' };
+        const content = readFileSync(file);
+        response.writeHead(200, { 'Content-Type': mime[extname(file)] ?? 'application/octet-stream' });
+        response.end(content);
+      } catch { response.writeHead(404).end(); }
+    });
+    await new Promise((resolve, reject) => {
+      templateServer.once('error', reject);
+      templateServer.listen(0, '127.0.0.1', resolve);
+    });
+    const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+    const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+    await send('Page.enable', {}, sessionId);
+    await send('Page.navigate', { url: `http://127.0.0.1:${templateServer.address().port}/` }, sessionId);
+    let template;
+    for (let attempt = 0; attempt < 120 && !template; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const result = await send('Runtime.evaluate', {
+        expression: "document.querySelector('#page-furniture-dialog-template')?.outerHTML", returnByValue: true,
+      }, sessionId);
+      template = result.result?.value;
+    }
+    if (!template) throw new Error('Dioxus page furniture template did not mount');
+    writeFileSync(path, html.replace('<pre id="result">', () => template + '<pre id="result">'));
+    await send('Target.closeTarget', { targetId });
+  }
   for (const scenario of scenarios) {
     const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
@@ -160,6 +198,7 @@ try {
     await send('Target.closeTarget', { targetId });
   }
 } finally {
+  templateServer?.close();
   for (const entry of pending.values()) clearTimeout(entry.timer);
   browser.kill();
 }

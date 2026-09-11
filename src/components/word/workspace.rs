@@ -156,6 +156,7 @@ pub fn WordWorkspace() -> Element {
             "data-page-furniture": serde_json::to_string(&current_document.layout.page_furniture).unwrap_or_default(),
             "data-page-layout": serde_json::to_string(&current_document.layout).unwrap_or_default(),
             ResizeHandles {}
+            super::page_furniture_dialog::PageFurnitureDialogTemplate {}
             TitleBar {
                 document_title: title_name.clone(),
                 dirty: document() != saved_document(),

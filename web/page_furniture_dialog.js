@@ -20,52 +20,23 @@ export function openPageFurnitureDialog(api) {
   const metrics = { width: width * MM, height: height * MM, top: layout.margins.top_mm * MM,
     bottom: layout.margins.bottom_mm * MM, left: layout.margins.left_mm * MM, right: layout.margins.right_mm * MM };
   const total = Math.max(1, Number(document.querySelector('.infinite-pm-page')?.dataset.pageCount) || 1);
+  const template = document.querySelector('#page-furniture-dialog-template > dialog');
+  if (!template) return;
   const previousFocus = document.activeElement;
-  const element = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text) node.textContent = text;
-    return node;
-  };
-  const dialog = element('dialog', 'page-furniture-dialog');
+  const dialog = template.cloneNode(true);
   dialog.id = 'page-furniture-dialog';
   dialog.setAttribute('aria-labelledby', 'page-furniture-title');
-  const heading = element('h2', '', '页眉页脚');
-  heading.id = 'page-furniture-title';
-  const close = element('button', 'page-furniture-close', '×');
-  close.type = 'button';
-  close.setAttribute('aria-label', '关闭页眉页脚设置');
-  close.addEventListener('click', () => dialog.close());
-  const header = element('header', 'page-furniture-heading');
-  header.append(heading, close);
-  const form = element('form', 'page-furniture-form');
-  form.noValidate = true;
-  const scroll = element('div', 'page-furniture-scroll');
-  const tabs = element('div', 'page-furniture-tabs');
-  tabs.setAttribute('role', 'tablist');
-  tabs.setAttribute('aria-label', '编辑区域');
-  const panels = element('div', 'page-furniture-panels');
-  const previewSection = element('section', 'page-furniture-preview-section');
-  const previewLabel = element('div', 'page-furniture-preview-label');
-  const previewFrame = element('div', 'page-furniture-preview-frame');
-  const preview = element('div', 'page-furniture-preview');
-  const placeholder = element('span', 'page-furniture-placeholder');
-  previewFrame.append(preview, placeholder);
-  previewSection.append(previewLabel, previewFrame);
-  const error = element('p', 'page-furniture-error');
-  error.setAttribute('role', 'status');
-  const apply = element('button', 'page-furniture-apply', '应用');
-  apply.type = 'submit';
-  const cancel = element('button', '', '取消');
-  cancel.type = 'button';
-  cancel.addEventListener('click', () => dialog.close());
-  const actions = element('footer', 'page-furniture-actions');
-  const buttons = element('div', 'page-furniture-buttons');
-  buttons.append(cancel, apply);
-  actions.append(error, buttons);
-  scroll.append(panels, previewSection);
-  form.append(tabs, scroll, actions);
-  dialog.append(header, form);
+  dialog.querySelector('h2').id = 'page-furniture-title';
+  const find = name => dialog.querySelector(`.page-furniture-${name}`);
+  find('close').addEventListener('click', () => dialog.close());
+  find('cancel').addEventListener('click', () => dialog.close());
+  const form = find('form');
+  const previewLabel = find('preview-label');
+  const previewFrame = find('preview-frame');
+  const preview = find('preview');
+  const placeholder = find('placeholder');
+  const error = find('error');
+  const apply = find('apply');
   let active = 'header';
   let committed = false;
   let composing = false;
@@ -107,12 +78,11 @@ export function openPageFurnitureDialog(api) {
     }
     refresh();
   };
-  for (const [kind, title] of [['header', '页眉'], ['footer', '页脚']]) {
+  for (const kind of ['header', 'footer']) {
     const region = draft[kind];
-    const tab = element('button', 'page-furniture-tab', title);
-    tab.type = 'button';
+    const tab = dialog.querySelector(`.page-furniture-tab[data-region="${kind}"]`);
+    const panel = dialog.querySelector(`.page-furniture-panel[data-region="${kind}"]`);
     tab.id = `page-${kind}-tab`;
-    tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-controls', `page-${kind}-panel`);
     tab.addEventListener('click', () => select(kind));
     tab.addEventListener('keydown', event => {
@@ -123,87 +93,46 @@ export function openPageFurnitureDialog(api) {
       }
     });
     tabNodes.set(kind, tab);
-    tabs.appendChild(tab);
-    const panel = element('section', 'page-furniture-panel');
     panel.id = `page-${kind}-panel`;
-    panel.setAttribute('role', 'tabpanel');
     panel.setAttribute('aria-labelledby', tab.id);
     panelNodes.set(kind, panel);
-    panels.appendChild(panel);
-    const ribbon = element('div', 'page-furniture-ribbon');
-    const group = (title, className = '') => {
-      const section = element('section', `page-furniture-group ${className}`);
-      section.appendChild(element('h3', '', title));
-      ribbon.appendChild(section);
-      return section;
-    };
-    const input = (parent, name, type, value, change, options = {}) => {
-      const label = element('label', type === 'checkbox' ? 'page-furniture-check' : 'page-furniture-control');
-      const control = element('input');
-      control.type = type;
-      control.setAttribute('aria-label', title + name);
-      if (type === 'checkbox') control.checked = value;
+    const bindInput = (parent, field, value, change) => {
+      const control = parent.querySelector(`[data-field="${field}"]`);
+      if (control.type === 'checkbox') control.checked = value;
       else control.value = value;
-      if (type === 'number') {
-        control.min = options.min ?? '6'; control.max = options.max ?? '36'; control.step = '0.5';
-        control.required = true;
-      }
       control.addEventListener('input', () => {
-        change(type === 'checkbox' ? control.checked : control.value);
+        change(control.type === 'checkbox' ? control.checked : control.value);
         if (!composing) scheduleRefresh();
       });
-      if (type === 'checkbox') label.append(control, element('span', '', name));
-      else label.append(element('span', '', name), control);
-      parent.appendChild(label);
       return control;
     };
-    const visibility = group('显示', 'page-furniture-visibility');
-    input(visibility, '启用', 'checkbox', region.enabled, value => { region.enabled = value; });
-    input(visibility, '首页隐藏', 'checkbox', region.hide_first_page, value => { region.hide_first_page = value; });
-    const typography = group('字体与线条', 'page-furniture-typography');
-    input(typography, '字体', 'text', region.style.font_family, value => { region.style.font_family = value || 'system-ui'; });
-    input(typography, '字号 (pt)', 'number', region.style.font_size_pt, value => { region.style.font_size_pt = value === '' ? NaN : Number(value); });
-    input(typography, '颜色', 'color', region.style.color, value => { region.style.color = value; });
-    input(typography, '分隔线', 'checkbox', region.style.separator, value => { region.style.separator = value; });
-    const spacing = group('留白与间距 · mm', 'page-furniture-spacing');
-    for (const [key, label] of [['margin_top_mm', '上留白'], ['margin_bottom_mm', '下留白'],
-      ['margin_left_mm', '左缩进'], ['margin_right_mm', '右缩进'], ['column_gap_mm', '栏间距']]) {
-      input(spacing, label, 'number', region.style[key], value => { region.style[key] = value === '' ? NaN : Number(value); }, { min: '0', max: '100' });
+    for (const key of ['enabled', 'hide_first_page']) {
+      bindInput(panel, key, region[key], value => { region[key] = value; });
     }
-    const padding = element('details', 'page-furniture-padding');
-    padding.appendChild(element('summary', '', '内容与分隔线的内边距 · mm'));
-    const paddingControls = element('div', 'page-furniture-padding-controls');
-    for (const [key, label] of [['padding_top_mm', '上内边距'], ['padding_bottom_mm', '下内边距'],
-      ['padding_left_mm', '左内边距'], ['padding_right_mm', '右内边距']]) {
-      input(paddingControls, label, 'number', region.style[key], value => { region.style[key] = value === '' ? NaN : Number(value); }, { min: '0', max: '100' });
+    bindInput(panel, 'font_family', region.style.font_family, value => { region.style.font_family = value || 'system-ui'; });
+    for (const key of ['color', 'separator']) {
+      bindInput(panel, key, region.style[key], value => { region.style[key] = value; });
     }
-    padding.append(paddingControls, element('p', '', '页眉内容靠下方分隔线，页脚内容靠上方分隔线；内边距不会改变线的位置。'));
-    const content = element('section', 'page-furniture-content');
-    const contentHeading = element('div', 'page-furniture-content-heading');
-    contentHeading.append(element('h3', '', '内容'), element('span', '', '{page} 页码 · {pages} 总页数'));
-    content.appendChild(contentHeading);
-    const slots = element('div', 'page-furniture-slots');
-    for (const [slot, label] of [['left', '左侧'], ['center', '中间'], ['right', '右侧']]) {
-      const slotEditor = element('div', 'page-furniture-slot');
-      input(slotEditor, label, 'text', formatPageFields(region[slot]), value => {
+    for (const key of ['font_size_pt', 'margin_top_mm', 'margin_bottom_mm',
+      'margin_left_mm', 'margin_right_mm', 'column_gap_mm', 'padding_top_mm',
+      'padding_bottom_mm', 'padding_left_mm', 'padding_right_mm']) {
+      bindInput(panel, key, region.style[key], value => { region.style[key] = value === '' ? NaN : Number(value); });
+    }
+    for (const slot of ['left', 'center', 'right']) {
+      const slotEditor = panel.querySelector(`[data-slot="${slot}"]`);
+      bindInput(slotEditor, 'text', formatPageFields(region[slot]), value => {
         region[slot] = [...parsePageFields(value), ...region[slot].filter(part => part.kind === 'image')];
       });
-      const imageControls = element('div', 'page-furniture-image-controls');
-      const picker = element('input');
-      picker.type = 'file'; picker.accept = 'image/png,image/jpeg,image/webp,image/gif'; picker.hidden = true;
-      picker.setAttribute('aria-label', `${title}${label}图片文件`);
-      const choose = element('button', 'page-furniture-image-button', '插入图片');
-      choose.type = 'button'; choose.setAttribute('aria-label', `${title}${label}插入图片`);
+      const picker = slotEditor.querySelector('[type="file"]');
+      const choose = slotEditor.querySelector('.page-furniture-image-button');
       choose.addEventListener('click', () => picker.click());
-      const thumbnail = element('img', 'page-furniture-image-thumbnail');
-      const dimensions = element('div', 'page-furniture-image-dimensions');
-      const widthInput = input(dimensions, `${label}图片宽 (mm)`, 'number', '', value => resizeImage('width_mm', value), { min: '0.1', max: '100' });
-      const heightInput = input(dimensions, `${label}图片高 (mm)`, 'number', '', value => resizeImage('height_mm', value), { min: '0.1', max: '100' });
-      widthInput.step = heightInput.step = '0.1';
-      const sizing = element('div', 'page-furniture-image-sizing');
-      for (const [caption, action] of [['−', '缩小'], ['+', '放大'], ['适应栏位', '适应栏位']]) {
-        const button = element('button', '', caption);
-        button.type = 'button'; button.setAttribute('aria-label', `${title}${label}图片${action}`);
+      const thumbnail = slotEditor.querySelector('.page-furniture-image-thumbnail');
+      const dimensions = slotEditor.querySelector('.page-furniture-image-dimensions');
+      const widthInput = bindInput(dimensions, 'width_mm', '', value => resizeImage('width_mm', value));
+      const heightInput = bindInput(dimensions, 'height_mm', '', value => resizeImage('height_mm', value));
+      const sizing = slotEditor.querySelector('.page-furniture-image-sizing');
+      for (const button of sizing.querySelectorAll('button')) {
+        const action = button.dataset.action;
         button.addEventListener('click', () => {
           const image = region[slot].find(part => part.kind === 'image');
           if (!image) return;
@@ -216,10 +145,8 @@ export function openPageFurnitureDialog(api) {
           }
           updateImageControls(); refresh();
         });
-        sizing.appendChild(button);
       }
-      const remove = element('button', 'page-furniture-image-remove', '移除');
-      remove.type = 'button'; remove.setAttribute('aria-label', `${title}${label}移除图片`);
+      const remove = slotEditor.querySelector('.page-furniture-image-remove');
       let aspect = 1;
       const updateImageControls = () => {
         const image = region[slot].find(part => part.kind === 'image');
@@ -264,14 +191,8 @@ export function openPageFurnitureDialog(api) {
         region[slot] = region[slot].filter(part => part.kind !== 'image');
         imageError = null; updateImageControls(); refresh();
       });
-      imageControls.append(thumbnail, choose, remove, picker);
-      slotEditor.append(imageControls, sizing, dimensions);
-      slots.appendChild(slotEditor);
       updateImageControls();
     }
-    content.appendChild(slots);
-    const hint = element('p', 'page-furniture-spacing-hint', '上下留白位于对应页边距内；左右缩进以正文边缘为基准。');
-    panel.append(ribbon, hint, padding, content);
   }
   dialog.addEventListener('compositionstart', () => { composing = true; });
   dialog.addEventListener('compositionend', () => { composing = false; scheduleRefresh(); });

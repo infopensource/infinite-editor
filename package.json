@@ -10,7 +10,9 @@
     "test:editor": "node --test web/*.test.js",
     "test": "npm run test:editor && cargo test",
     "test:zoom-browser": "node scripts/test-pagination-browser.mjs zoom",
-    "test:pagination-browser": "node scripts/test-pagination-browser.mjs",
+    "test:pagination-browser": "npm run build:page-furniture-harness && node scripts/test-pagination-browser.mjs",
+    "build:page-furniture-harness": "dx build --web --example page_furniture_harness --no-default-features --features web --offline",
+    "test:page-furniture-browser": "npm run build:page-furniture-harness && node scripts/test-pagination-browser.mjs page-furniture",
     "test:pagination-performance": "node scripts/test-pagination-browser.mjs performance",
     "test:loading-dialog-browser": "dx build --web --example loading_dialog_harness --no-default-features --features web --offline && node scripts/test-pagination-browser.mjs dialog"
   },
