@@ -1,7 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { installDocumentZoom } from './document_zoom.js';
+import { installDocumentZoom, reconcileDocumentScroll } from './document_zoom.js';
+
+test('zoom clamps retained horizontal scroll using new paper geometry, preserving vertical position', () => {
+  const { window } = new JSDOM('<main class="editor-surface" style="padding:0 32px"><article class="infinite-pm-page"></article></main>');
+  const viewport = window.document.querySelector('main');
+  Object.defineProperty(viewport.firstChild, 'offsetWidth', { value: 600 });
+  let width = 400;
+  Object.defineProperty(viewport, 'clientWidth', { get: () => width });
+  Object.defineProperty(viewport, 'scrollWidth', { value: 1200 });
+  viewport.scrollLeft = 500;
+  viewport.scrollTop = 600;
+  reconcileDocumentScroll(window);
+  assert.equal(viewport.scrollLeft, 264);
+  width = 900;
+  reconcileDocumentScroll(window);
+  assert.equal(viewport.scrollLeft, 0);
+  assert.equal(viewport.scrollTop, 600);
+  viewport.classList.add('markdown-mode');
+  viewport.scrollLeft = 100;
+  reconcileDocumentScroll(window);
+  assert.equal(viewport.scrollLeft, 100);
+  window.close();
+});
 
 test('document zoom captures shortcuts and gestures, batches input, and leaves normal scroll alone', () => {
   const { window } = new JSDOM('<div class="word-shell"><input class="zoom-slider" type="range" min="50" max="200" step="10" value="100"></div>');

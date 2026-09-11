@@ -1811,6 +1811,18 @@ body.markdown-split-resizing * {
     min-width: 0;
     min-height: 0;
     overflow-x: auto;
+    padding-left: 0;
+    padding-right: 0;
+}
+/* Let the direct children include the full paper width in layout. Otherwise
+   overflowing grandchildren reach the scroll edge without the trailing padding. */
+.editor-surface:not(.markdown-mode) > .infinite-pm-surface,
+.editor-surface:not(.markdown-mode) > .page-ruler-sticky {
+    width: max-content;
+    min-width: 100%;
+    box-sizing: border-box;
+    padding-left: 32px;
+    padding-right: 32px;
 }
 .zoom-slider { width: 96px; accent-color: #2563eb; }
 .zoom-text { min-width: 52px; font-variant-numeric: tabular-nums; }
@@ -1911,7 +1923,9 @@ body.markdown-split-resizing * {
 .zoom-slider:disabled, .zoom-text:disabled { opacity: .5; cursor: default; }
 
 /* Outline stays outside the scaled paper viewport. */
-.document-workspace { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 0; min-width: 0; overflow: hidden; }
+/* Only the editor owns document scrolling. Transformed layout overflow must
+   not make this outer grid another programmatically scrollable viewport. */
+.document-workspace { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 0; min-width: 0; overflow: clip; }
 .document-workspace > .editor-surface { flex: 1; min-width: 0; min-height: 0; }
 /* Quiet, text-first chapter navigation. */
 .document-outline {

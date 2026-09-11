@@ -1,5 +1,22 @@
 // Capture browser zoom before editor keymaps/native page zoom handle it.
 // The existing slider remains the single bridge to the Dioxus zoom signal.
+export function reconcileDocumentScroll(target = window) {
+  const viewport = target.document.querySelector('.editor-surface:not(.markdown-mode)');
+  if (!viewport) return;
+  const page = viewport.querySelector('.infinite-pm-page');
+  if (!page) return;
+  const style = target.getComputedStyle(viewport);
+  const surface = page.closest('.infinite-pm-surface');
+  const surfaceStyle = surface ? target.getComputedStyle(surface) : null;
+  // Use the new layout geometry, not a potentially stale overflow extent from
+  // the previously transformed viewport (notably in desktop WebKit).
+  const maximum = Math.max(0, page.offsetWidth
+    + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+    + (parseFloat(surfaceStyle?.paddingLeft) || 0)
+    + (parseFloat(surfaceStyle?.paddingRight) || 0) - viewport.clientWidth);
+  viewport.scrollLeft = Math.min(Math.max(0, viewport.scrollLeft), maximum);
+}
+
 export function installDocumentZoom(target = window) {
   let frame = 0;
   let pending = null;
@@ -61,6 +78,8 @@ export function installDocumentZoom(target = window) {
     }
   };
   target.addEventListener('keydown', keydown, true);
+  const reconcile = () => reconcileDocumentScroll(target);
+  target.addEventListener('infinite-editor-zoom', reconcile);
   target.addEventListener('wheel', wheel, { capture: true, passive: false });
   for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
     target.addEventListener(type, gesture, { capture: true, passive: false });
@@ -68,6 +87,7 @@ export function installDocumentZoom(target = window) {
   return () => {
     target.cancelAnimationFrame(frame);
     target.removeEventListener('keydown', keydown, true);
+    target.removeEventListener('infinite-editor-zoom', reconcile);
     target.removeEventListener('wheel', wheel, true);
     for (const type of ['gesturestart', 'gesturechange', 'gestureend']) target.removeEventListener(type, gesture, true);
   };
