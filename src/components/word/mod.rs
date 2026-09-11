@@ -4,6 +4,7 @@ pub(crate) mod document_renderer;
 mod editor_surface;
 mod file_actions;
 mod file_backstage;
+mod outline;
 mod prosemirror_surface;
 mod resize_handles;
 mod ribbon_groups;

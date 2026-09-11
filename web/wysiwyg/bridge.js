@@ -1,3 +1,4 @@
+import { TextSelection } from "prosemirror-state";
 import { installDocumentZoom } from '../document_zoom.js';
 
 if (typeof window !== 'undefined') installDocumentZoom(window);
@@ -50,6 +51,19 @@ export function installWysiwygBridge(target = window) {
     setDocument(hostId, update) {
       return sessions.get(hostId)?.setDocument(update)
         ?? { ok: false, error: "WYSIWYG 会话不存在" };
+    },
+    navigateHeading(hostId, index) {
+      const editor = sessions.get(hostId)?.editor;
+      if (!editor || editor.compositionActive || editor.view.composing) return false;
+      let ordinal = 0;
+      let target = null;
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === "heading" && ordinal++ === index) target = pos + 1;
+      });
+      if (target === null) return false;
+      editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, target)).scrollIntoView());
+      editor.focus();
+      return true;
     },
     command(hostId, name) {
       return sessions.get(hostId)?.command(name)

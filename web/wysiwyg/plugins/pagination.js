@@ -396,13 +396,14 @@ function paintPageGaps(view, layer) {
   const glyphCache = new Map();
   const pageTops = [0];
   const paddingTop = millimetersToPixels(style.getPropertyValue("--page-padding-top"));
+  let chromeIndex = 0;
   const fragments = [...view.dom.querySelectorAll(".infinite-pm-page-gap:not([data-secondary])")].map((gap) => {
     const rect = gap.getBoundingClientRect();
     pageTops.push((rect.bottom - bounds.top) / scale - page.clientTop - paddingTop);
     if (rect.bottom < -viewport || rect.top > viewport * 2) return null;
-    const paint = document.createElement("div");
-    paint.className = "infinite-pm-page-chrome";
-    paint.style.top = `${(rect.top - bounds.top) / scale - page.clientTop}px`;
+    const paint = layer.children[chromeIndex++] ?? document.createElement("div");
+
+    const topValue = `${(rect.top - bounds.top) / scale - page.clientTop}px`;
     let bottom = rect.bottom;
     const position = Number(gap.dataset.position);
     if (gap.tagName !== "TR") {
@@ -411,10 +412,17 @@ function paintPageGaps(view, layer) {
       const nextTop = followingLineTop(view, position, glyphCache);
       if (nextTop > rect.top) bottom = Math.min(bottom, nextTop);
     }
-    paint.style.height = `${Math.max(0, (bottom - rect.top) / scale - (gap.tagName === "TR" ? 1 : 0))}px`;
-    return paint;
+    const heightValue = `${Math.max(0, (bottom - rect.top) / scale - (gap.tagName === "TR" ? 1 : 0))}px`;
+    return { paint, topValue, heightValue };
   });
-  layer.replaceChildren(...fragments.filter(Boolean));
+  // Finish all geometry reads before modifying the live chrome.
+  for (const { paint, topValue, heightValue } of fragments.filter(Boolean)) {
+    if (!paint.className) paint.className = "infinite-pm-page-chrome";
+    if (paint.style.top !== topValue) paint.style.top = topValue;
+    if (paint.style.height !== heightValue) paint.style.height = heightValue;
+    if (paint.parentElement !== layer) layer.appendChild(paint);
+  }
+  while (layer.children.length > chromeIndex) layer.lastElementChild.remove();
   return pageTops;
 }
 
@@ -476,6 +484,9 @@ export function paginationPlugin(options = {}) {
       let paintFrame = 0;
       let frame = 0;
       let compositionTimer = 0;
+      let editTimer = 0;
+      let editBatchStarted = null;
+      let editDeadline = 0;
       let activeJob = null;
       let destroyed = false;
       const workspace = new MeasurementWorkspace(view);
@@ -547,12 +558,23 @@ export function paginationPlugin(options = {}) {
       };
       const schedule = () => {
         if (destroyed || frame) return;
+        // Coalesce successive edits before updating the measurement DOM. A
+        // bounded deadline also makes progress during uninterrupted typing.
+        const remaining = editDeadline - performance.now();
+        if (remaining > 0) {
+          clearTimeout(editTimer);
+          editTimer = setTimeout(() => { editTimer = 0; schedule(); }, remaining);
+          return;
+        }
         frame = requestAnimationFrame(async () => {
           frame = 0;
           if (destroyed || view.composing) return;
           const signature = layoutSignature(view, page);
           if (lastDocument === view.state.doc && lastSignature === signature) return;
           if (activeJob) return;
+          if (performance.now() < editDeadline) { schedule(); return; }
+          editBatchStarted = null;
+          editDeadline = 0;
           if (signature !== lastSignature) measurementCache = new WeakMap();
           const controller = new AbortController();
           activeJob = controller;
@@ -627,7 +649,14 @@ export function paginationPlugin(options = {}) {
         update(nextView, previousState) {
           // Selection moves and our own decoration transactions do not change
           // content. Neither should launch another full-document layout pass.
-          if (nextView.state.doc !== previousState.doc) { activeJob?.abort(); schedule(); }
+          if (nextView.state.doc !== previousState.doc) {
+            activeJob?.abort();
+            const now = performance.now();
+            editBatchStarted ??= now;
+            editDeadline = Math.min(now + 80, editBatchStarted + 250);
+            if (page) page.dataset.paginationState = 'pending';
+            schedule();
+          }
           reportPageStatus();
         },
         destroy() {
@@ -636,6 +665,7 @@ export function paginationPlugin(options = {}) {
           if (frame) cancelAnimationFrame(frame);
           if (paintFrame) cancelAnimationFrame(paintFrame);
           clearTimeout(compositionTimer);
+          clearTimeout(editTimer);
           clearTimeout(statusTimer);
           status.remove();
           setFinalPageTail(view, 0);

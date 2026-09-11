@@ -18,6 +18,7 @@ import { wysiwygSchema } from "./schema.js";
 import { createNodeViews } from "./node_views.js";
 import { markdownInputRules } from "./plugins/input_rules.js";
 import { paginationPlugin } from "./plugins/pagination.js";
+import { endOfDocumentPlugin } from "./plugins/end_of_document.js";
 import { selectionPlugin } from "./plugins/selection.js";
 
 function editorPlugins(options = {}) {
@@ -27,6 +28,7 @@ function editorPlugins(options = {}) {
     markdownInputRules(wysiwygSchema),
     paginationPlugin({ onPageChange: options.onPageChange }),
     selectionPlugin(),
+    endOfDocumentPlugin(),
     keymap({ Backspace: undoInputRule }),
     keymap(blockKeyBindings(wysiwygSchema)),
     keymap(listKeyBindings(wysiwygSchema)),

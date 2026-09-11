@@ -159,16 +159,41 @@ export function validatePageFurniture(value, metrics, total = 1) {
   }
   return null;
 }
+// Retain only currently rendered regions; discarded pages can be collected.
+const renderedRegions = new WeakMap();
 export function renderPageFurniture(layer, settings, geometries, metrics, total) {
   const error = validatePageFurniture(settings, metrics, total);
-  layer.dataset.furnitureError = error || '';
+  if (layer.dataset.furnitureError !== (error || '')) layer.dataset.furnitureError = error || '';
   // The settings panel prevents invalid commits. A later paper/font change can
   // make an existing template invalid; expose that explicitly to the caller.
+  const previous = renderedRegions.get(layer) ?? new Map();
+  const next = new Map();
   const nodes = [];
+  // Validation deliberately runs on every paint, including after fonts load.
+  const signatures = Object.fromEntries(['header', 'footer'].map(kind =>
+    [kind, JSON.stringify([settings[kind], metrics, total])]));
   if (!error) for (const geometry of geometries) for (const kind of ['header', 'footer']) {
-    const element = createPageRegion(kind, settings[kind], geometry, metrics, total);
-    if (element) nodes.push(element);
+    const key = `${kind}:${geometry.index}`;
+    const signature = signatures[kind] + JSON.stringify(geometry);
+    const cached = previous.get(key);
+    const element = cached?.signature === signature ? cached.element
+      : createPageRegion(kind, settings[kind], geometry, metrics, total);
+    if (element) {
+      nodes.push(element);
+      next.set(key, { signature, element });
+    }
   }
-  layer.replaceChildren(...nodes);
+  // Keep unchanged DOM (and decoded images) mounted when scrolling.
+  let cursor = layer.firstChild;
+  for (const node of nodes) {
+    if (node === cursor) cursor = cursor.nextSibling;
+    else layer.insertBefore(node, cursor);
+  }
+  while (cursor) {
+    const following = cursor.nextSibling;
+    cursor.remove();
+    cursor = following;
+  }
+  renderedRegions.set(layer, next);
   return error;
 }

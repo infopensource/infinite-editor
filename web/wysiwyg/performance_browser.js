@@ -157,6 +157,8 @@ function mount(source, ast) {
   for (const task of tasks) longestByPhase[task.phase] = Math.max(longestByPhase[task.phase] ?? 0, task.ms);
   document.getElementById('result').textContent = JSON.stringify({
     ok: idleReads === 0 && selectionReads === 0 && reopenIdleReads === 0 && sourceMatches && roundtripMatches
+      // A burst of keystrokes must share layout work, not launch a pass per key.
+      && metrics.started < 15 && editReads < 6000
       && initialReads < 30000 && metrics.cancelled > 0 && stats.serializedBlocks <= 61 && stats.parsedBlocks <= 61
       && maxInputMs < 50 && maxTimerLagMs < 100,
     bytes: new TextEncoder().encode(markdown).length, mountMs, mountMetrics, modeSwitchMs, sourceMountMs, sourceMountMetrics: sourceMounted.mountMetrics, reopenMs, initialReads, reopenReads,

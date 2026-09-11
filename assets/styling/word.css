@@ -1388,11 +1388,28 @@ body.markdown-split-resizing * {
     height: inherit;
 }
 
+/* Keep the same table geometry as the editable ProseMirror surface. These
+   styles also travel with the standalone PDF document. */
 .markdown-rendered-html table {
-    display: block;
+    display: table;
     width: 100%;
     max-width: 100%;
-    overflow-x: auto;
+    margin: 12px 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.markdown-rendered-html th,
+.markdown-rendered-html td {
+    min-width: 1em;
+    padding: 6px 9px;
+    border: 1px solid #94a3b8;
+    vertical-align: top;
+}
+
+.markdown-rendered-html th {
+    background: #f1f5f9;
+    font-weight: 600;
 }
 
 .markdown-rendered-html h1,
@@ -1892,3 +1909,81 @@ body.markdown-split-resizing * {
 .page-furniture-image-sizing button { min-width: 30px; height: 28px; border: 1px solid #cbd6e1; border-radius: 4px; background: #fff; color: #205d8e; font-size: 12px; }
 .page-furniture-image-thumbnail { width: 36px; height: 36px; }
 .zoom-slider:disabled, .zoom-text:disabled { opacity: .5; cursor: default; }
+
+/* Outline stays outside the scaled paper viewport. */
+.document-workspace { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 0; min-width: 0; overflow: hidden; }
+.document-workspace > .editor-surface { flex: 1; min-width: 0; min-height: 0; }
+/* Quiet, text-first chapter navigation. */
+.document-outline {
+    width: 258px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: #f9fafc;
+    border-right: 1px solid #e1e6ed;
+    color: #344054;
+}
+.document-outline.collapsed { width: 44px; }
+.outline-header { display: flex; align-items: center; gap: 12px; padding: 18px 18px 12px; }
+.outline-heading { flex: 1; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.outline-heading strong { color: #293548; font-size: 14px; font-weight: 650; letter-spacing: .04em; }
+.outline-count { color: #8a94a3; font-size: 10px; font-weight: 400; white-space: nowrap; }
+.outline-toggle {
+    display: grid; place-items: center; flex: none;
+    width: 26px; height: 26px; padding: 0;
+    border: 0; border-radius: 5px; background: transparent;
+    color: #7d8795; cursor: pointer;
+}
+.outline-toggle:hover { background: #eaeef3; color: #344054; }
+.collapsed .outline-header { padding: 18px 8px; }
+.outline-search-field {
+    display: flex; align-items: center; gap: 7px;
+    margin: 0 16px 12px; padding: 0 9px;
+    background: #f0f2f6; border: 1px solid transparent; border-radius: 6px;
+    color: #9099a6;
+}
+.outline-search-field > svg { flex: none; }
+.outline-search-field:focus-within { border-color: #a8bdd8; background: #fff; }
+.outline-search {
+    width: 100%; min-width: 0; height: 30px; padding: 0;
+    border: 0; outline: none; background: transparent;
+    color: #344054; font: inherit; font-size: 11px;
+}
+.outline-search::placeholder { color: #8a94a3; }
+.outline-list {
+    flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+    padding: 2px 12px 24px; scrollbar-width: thin; scrollbar-color: #d5dce6 transparent;
+}
+.outline-item {
+    position: relative; display: block; width: 100%;
+    margin: 1px 0; padding: 5px 10px 5px calc(10px + var(--outline-depth) * 13px);
+    border: 0; border-radius: 4px;
+    background: transparent; color: #5c6675;
+    text-align: left; font: inherit; font-size: 13px; font-weight: 400;
+    cursor: pointer; transition: background-color 120ms ease, color 120ms ease;
+}
+.outline-item[data-level="1"] { margin-top: 12px; margin-bottom: 5px; color: #303c4d; font-size: 14px; font-weight: 600; }
+.outline-item[data-level="2"] { color: #404d60; font-weight: 500; }
+.outline-item:first-child { margin-top: 0; }
+.outline-label { display: block; overflow-wrap: anywhere; line-height: 1.65; }
+.outline-item:hover { background: #edf0f5; color: #2d4667; }
+.outline-item.active { background: #eaf0f8; color: #285a94; font-weight: 600; }
+.outline-item.active::before {
+    content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
+    width: 2px; min-height: 12px; border-radius: 2px; background: #5b80ad;
+}
+.outline-empty { padding: 32px 12px; color: #8a94a3; font-size: 12px; line-height: 1.8; text-align: center; }
+.outline-empty strong { color: #5c6675; font-size: 13px; font-weight: 500; }
+.outline-empty p { margin: 8px 0 0; }
+.outline-item:focus-visible, .outline-toggle:focus-visible { outline: 2px solid #7395bf; outline-offset: -2px; }
+@media (max-width: 900px) { .document-outline { width: 220px; } }
+@media (max-width: 600px) {
+    .document-outline { width: 180px; }
+    .outline-header { padding: 14px 12px 10px; }
+    .outline-count { display: none; }
+    .outline-search-field { margin: 0 10px 10px; }
+    .outline-list { padding-right: 8px; padding-left: 8px; }
+    .outline-item { padding-left: calc(8px + var(--outline-depth) * 10px); }
+}
+@media (prefers-reduced-motion: reduce) { .outline-item { transition: none; } }
+@media print { .document-outline { display: none; } .document-workspace { display: block; overflow: visible; } }

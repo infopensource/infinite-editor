@@ -1,3 +1,4 @@
+import { normalizeBlockWhitespace } from "./whitespace.js";
 import { pageMetrics, pageGeometry, readPageFurniture, renderPageFurniture } from "../page_furniture.js";
 function createPage(pages, seamless) {
   const page = document.createElement("article");
@@ -112,6 +113,7 @@ function sourceNodes(source) {
       continue;
     }
     const node = sourceNode.cloneNode(true);
+    normalizeBlockWhitespace(node);
     if (explicitPageBreak) {
       node.dataset.explicitPageBreak = "true";
       explicitPageBreak = false;

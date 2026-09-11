@@ -206,6 +206,8 @@ pub fn WordWorkspace() -> Element {
                     },
                 }
             } else {
+                div { class: "document-workspace",
+                super::outline::Outline { document, editor_mode: editor_mode() }
                 EditorSurface {
                     editor_mode: editor_mode(),
                     markdown_preview_open: markdown_preview_open(),
@@ -320,6 +322,7 @@ pub fn WordWorkspace() -> Element {
                     show_ruler: show_ruler(),
                     on_left_margin_change: move |value| { document.write().layout.margins.left_mm = value },
                     on_right_margin_change: move |value| { document.write().layout.margins.right_mm = value },
+                }
                 }
             }
             OpenConfigDialog {

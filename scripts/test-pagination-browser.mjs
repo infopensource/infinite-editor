@@ -14,10 +14,10 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const output = mkdtempSync(join(tmpdir(), 'infinite-pagination-'));
 const scenarios = process.argv.length > 2 ? process.argv.slice(2) : ['nested', 'table', 'table-long-cell', 'table-long-header', 'mixed', 'math-input', 'page-furniture'];
 const bundle = await build({
-  entryPoints: [resolve(root, scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
+  entryPoints: [resolve(root, scenarios.includes('tables-rendering') ? 'web/document_renderer/tables_browser.js' : scenarios.includes('lists') ? 'web/document_renderer/lists_browser.js' : scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
   loader: { '.md': 'text', '.png': 'dataurl' }, bundle: true, write: false, format: 'iife',
 });
-const zoomCss = scenarios.includes('selection') || scenarios.includes('page-furniture') ? readFileSync(resolve(root, 'assets/styling/word.css'), 'utf8') : '';
+const zoomCss = scenarios.includes('tables-rendering') || scenarios.includes('lists') || scenarios.includes('selection') || scenarios.includes('page-furniture') ? readFileSync(resolve(root, 'assets/styling/word.css'), 'utf8') : '';
 const css = readFileSync(resolve(root, 'assets/styling/wysiwyg_core.css'), 'utf8')
   + readFileSync(resolve(root, 'assets/math.bundle.css'), 'utf8');
 const math = readFileSync(resolve(root, 'assets/math.bundle.js'), 'utf8');
@@ -98,6 +98,21 @@ try {
     console.log(scenario, report, imagePath);
     if (!report.ok) process.exitCode = 1;
     if (scenario === 'page-furniture' && report.ok) {
+      const retainedChrome = await send('Runtime.evaluate', {
+        expression: `(async () => {
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const selectors = ['.infinite-pm-pagination-layer', '.infinite-pm-furniture-layer'];
+          const layers = selectors.map(selector => document.querySelector(selector));
+          const before = layers.map(layer => [...layer.children]);
+          if (before.some(nodes => nodes.length === 0)) return false;
+          window.dispatchEvent(new Event('scroll'));
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          return layers.every((layer, index) => layer.children.length === before[index].length
+            && [...layer.children].every((node, i) => node === before[index][i]));
+        })()`, awaitPromise: true, returnByValue: true,
+      }, sessionId);
+      if (!retainedChrome.result.value) throw new Error('Unchanged scroll rebuilt page chrome or furniture');
+
       const sourceZoom = await send('Runtime.evaluate', { expression: `(() => {
         const shell = document.createElement('div');
         shell.className = 'word-shell';

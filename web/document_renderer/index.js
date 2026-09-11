@@ -1,3 +1,4 @@
+import { normalizeBlockWhitespace } from "./whitespace.js";
 import { paginate } from "./pagination.js";
 import { normalizeResourcePath } from "../resource_path.js";
 
@@ -42,6 +43,8 @@ function sameResources(left = {}, right = {}) {
 
     const staging = document.createElement("div");
     staging.innerHTML = html;
+    staging.className = "markdown-rendered-html";
+    normalizeBlockWhitespace(staging);
     hydrateResourceImages(staging, resources);
     const math = window.InfiniteMathRenderer?.render(staging);
     const scroller = root.closest(".markdown-preview-pane");

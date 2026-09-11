@@ -7,7 +7,7 @@ import { NodeSelection, TextSelection } from "prosemirror-state";
 import { blockCommands } from "./wysiwyg/commands/blocks.js";
 import { listCommands } from "./wysiwyg/commands/lists.js";
 import { toolbarCommands } from "./wysiwyg/commands/toolbar.js";
-import { WysiwygBridgeSession } from "./wysiwyg/bridge.js";
+import { installWysiwygBridge, WysiwygBridgeSession } from "./wysiwyg/bridge.js";
 import { remarkReferenceBackend } from "./wysiwyg/markdown/backend.js";
 import { MarkdownPositionMapper } from "./wysiwyg/markdown/position_mapper.js";
 import { selectedCharacterCount } from "./selection_character_count.js";
@@ -1284,4 +1284,27 @@ test("Backspace undoes automatic math conversion without losing TeX", () => {
   editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
   assert.equal(editor.state.doc.textContent, source);
   assert.equal(editor.view.dom.querySelector('.math-inline'), null);
+});
+
+
+test("outline navigation distinguishes duplicate headings without changing content", () => {
+  const host = document.createElement("div");
+  host.id = "outline-test-host";
+  const bridge = document.createElement("textarea");
+  bridge.id = "outline-test-bridge";
+  document.body.append(host, bridge);
+  const api = installWysiwygBridge({ dispatchEvent() {} });
+  const markdown = "# Same\n\nparagraph\n\n## Same\n";
+  try {
+    assert.equal(api.mount({ host_id: host.id, bridge_id: bridge.id, ast: remarkReferenceBackend.parse(markdown), markdown, document_revision: 1, edit_revision: 0 }).ok, true);
+    assert.equal(api.navigateHeading(host.id, 1), true);
+    const selection = window.getSelection();
+    assert.equal(selection.anchorNode.parentElement.closest("h2")?.textContent, "Same");
+    assert.equal(host.querySelectorAll("h1, h2").length, 2);
+    assert.equal(api.navigateHeading(host.id, 8), false);
+  } finally {
+    api.destroy(host.id);
+    host.remove();
+    bridge.remove();
+  }
 });

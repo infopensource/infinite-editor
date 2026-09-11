@@ -629,6 +629,14 @@ function transactionSpec(changes, userEvent, isolate) {
 
 window.InfiniteMarkdownEditor = {
   initialize,
+  navigateTo(hostId, offset) {
+    const view = views.get(hostId)?.view;
+    if (!view || view.composing) return false;
+    const anchor = Math.max(0, Math.min(offset, view.state.doc.length));
+    view.dispatch({ selection: { anchor }, effects: EditorView.scrollIntoView(anchor, { y: "center" }) });
+    view.focus();
+    return true;
+  },
   clipboardMayContainImage,
   requestClipboardImage,
   completeClipboardImagePaste,
