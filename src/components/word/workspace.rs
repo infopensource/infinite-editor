@@ -82,6 +82,7 @@ pub fn WordWorkspace() -> Element {
     let mut editor_mode = use_signal(|| EditorMode::Wysiwyg);
     let mut markdown_preview_open = use_signal(|| true);
     let mut document = use_signal(|| ProjectDocument::new(String::new()));
+    let mut saved_document = use_signal(|| ProjectDocument::new(String::new()));
     let document_revision = use_signal(|| 0u64);
     let mut editor_revision = use_signal(|| 0u64);
     #[allow(unused_mut)]
@@ -99,10 +100,16 @@ pub fn WordWorkspace() -> Element {
     let mut open_auto_detect_encoding = use_signal(|| true);
     #[allow(unused_mut)]
     let mut browse_pending = use_signal(|| false);
-    let title_name = current_location()
+    use_effect(move || {
+        let _revision = document_revision();
+        saved_document.set(document.peek().clone());
+    });
+    let title_name = if !document.read().layout.document.title.is_empty() {
+        document.read().layout.document.title.clone()
+    } else { current_location()
         .as_ref()
         .map(|location| file_name_or(location.path(), "未命名文档"))
-        .unwrap_or_else(|| "未命名文档".to_string());
+        .unwrap_or_else(|| "未命名文档".to_string()) };
     let current_document = document();
     let count_source = use_memo(move || document.read().markdown.clone());
     let mut character_count = use_signal(|| 0usize);
@@ -149,7 +156,20 @@ pub fn WordWorkspace() -> Element {
             "data-page-furniture": serde_json::to_string(&current_document.layout.page_furniture).unwrap_or_default(),
             "data-page-layout": serde_json::to_string(&current_document.layout).unwrap_or_default(),
             ResizeHandles {}
-            TitleBar { document_title: title_name }
+            TitleBar {
+                document_title: title_name.clone(),
+                dirty: document() != saved_document(),
+                save_status: status_hint(),
+                on_rename: move |title| document.write().layout.document.title = title,
+                on_save: move |_| handle_save_document(document, resources, current_location, status_hint, saved_document),
+                on_command: move |command| {
+                    if editor_mode() == EditorMode::Wysiwyg {
+                        prosemirror_surface::run_command(command);
+                    } else {
+                        document_renderer::run_markdown_command(command);
+                    }
+                },
+            }
             TabsRow {
                 active_tab: active_tab(),
                 on_switch: move |tab| active_tab.set(tab),
@@ -190,7 +210,7 @@ pub fn WordWorkspace() -> Element {
                         }
                     },
                     on_save: move |_| {
-                        handle_save_document(document, resources, current_location, status_hint);
+                        handle_save_document(document, resources, current_location, status_hint, saved_document);
                     },
                     on_save_as: move |target| {
                         handle_save_as_document(
@@ -199,6 +219,7 @@ pub fn WordWorkspace() -> Element {
                             current_location,
                             status_hint,
                             Some(target),
+                            saved_document,
                         );
                     },
                     on_export: move |target| {
@@ -388,7 +409,7 @@ pub fn WordWorkspace() -> Element {
                 editor_mode: editor_mode(),
                 markdown_preview_open: markdown_preview_open(),
                 status_hint: status_hint(),
-                current_file: current_location().map(|location| file_name_or(location.path(), "未命名文档")),
+                current_file: Some(title_name),
                 character_count: character_count(),
                 selection_active: selection_active(),
                 selected_character_count: selected_character_count(),

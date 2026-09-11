@@ -42,17 +42,21 @@ async fn save_document_as_dialog(
     source_location: Option<DocumentLocation>,
     target: Option<SaveAsTarget>,
 ) -> Result<Option<DocumentLocation>, String> {
+    let title = document.layout.document.title.trim();
+    let file_stem = if title.is_empty() { "document".to_string() } else {
+        title.chars().map(|ch| if ch.is_control() || "<>:\"/\\|?*".contains(ch) { '_' } else { ch }).collect::<String>()
+    };
     let dialog = match target {
         Some(SaveAsTarget::InfiniteDocument) => rfd::AsyncFileDialog::new()
             .add_filter("Infinite Document", &["infdoc"])
-            .set_file_name("document.infdoc"),
+            .set_file_name(format!("{file_stem}.infdoc")),
         Some(SaveAsTarget::MarkdownProject) => rfd::AsyncFileDialog::new()
             .add_filter("Markdown", &["md"])
-            .set_file_name("document.md"),
+            .set_file_name(format!("{file_stem}.md")),
         None => rfd::AsyncFileDialog::new()
             .add_filter("Markdown", &["md"])
             .add_filter("Infinite Document", &["infdoc"])
-            .set_file_name("document.md"),
+            .set_file_name(format!("{file_stem}.md")),
     };
     let picked = dialog.save_file().await;
 
@@ -249,10 +253,47 @@ pub(super) fn handle_open_document_from_path(
 }
 
 pub(super) fn handle_save_document(
+    mut document: Signal<ProjectDocument>,
+    resources: Signal<ResourceBundle>,
+    current_location: Signal<Option<DocumentLocation>>,
+    mut status_hint: Signal<String>,
+    saved_document: Signal<ProjectDocument>,
+) {
+    status_hint.set("正在保存…".into());
+    spawn(async move {
+        let result = document::eval(r#"
+            if (document.getElementById('infinite-prosemirror-host')) {
+                const prepared = window.InfiniteWysiwygEditor?.prepareModeSwitch('infinite-prosemirror-host');
+                if (!prepared?.ok || prepared.deferred) return null;
+            }
+            return window.InfiniteMarkdownEditor?.getValue() ?? null;
+        "#).join::<Option<String>>().await;
+        match result {
+            Ok(Some(markdown)) => {
+                document.write().markdown = markdown;
+                save_current_document(document, resources, current_location, status_hint, saved_document);
+            }
+            Ok(None) => {
+                // The File tab unmounts the editor; the Rust document is authoritative there.
+                let mounted = document::eval("return !!document.querySelector('.editor-surface');").join::<bool>().await;
+                if matches!(mounted, Ok(false)) {
+                    save_current_document(document, resources, current_location, status_hint, saved_document);
+                } else {
+                    status_hint.set("请完成当前输入后再保存".into());
+                }
+            }
+            Err(error) => status_hint.set(format!("同步文档失败：{error}")),
+        }
+    });
+}
+
+fn save_current_document(
     document: Signal<ProjectDocument>,
     resources: Signal<ResourceBundle>,
     current_location: Signal<Option<DocumentLocation>>,
     mut status_hint: Signal<String>,
+    #[allow(unused_mut, unused_variables)]
+    mut saved_document: Signal<ProjectDocument>,
 ) {
     #[cfg(feature = "desktop")]
     {
@@ -262,6 +303,7 @@ pub(super) fn handle_save_document(
         if let Some(location) = current_location() {
             match storage::save_document(&location, &current_document, &resources.read()) {
                 Ok(_) => {
+                    saved_document.set(current_document.clone());
                     status_hint.set(format!("已保存 {}", file_name_or(location.path(), "文档")))
                 }
                 Err(err) => status_hint.set(err),
@@ -270,9 +312,10 @@ pub(super) fn handle_save_document(
             let current_resources = resources.read().clone();
             status_hint.set("请选择保存位置".to_string());
             spawn(async move {
-                match save_document_as_dialog(current_document, current_resources, None, None).await
+                match save_document_as_dialog(current_document.clone(), current_resources, None, None).await
                 {
                     Ok(Some(location)) => {
+                        saved_document.set(current_document.clone());
                         let name = file_name_or(location.path(), "文档");
                         current_location.set(Some(location));
                         status_hint.set(format!("已保存 {name}"));
@@ -299,6 +342,8 @@ pub(super) fn handle_save_as_document(
     current_location: Signal<Option<DocumentLocation>>,
     mut status_hint: Signal<String>,
     target: Option<SaveAsTarget>,
+    #[allow(unused_mut, unused_variables)]
+    mut saved_document: Signal<ProjectDocument>,
 ) {
     #[cfg(feature = "desktop")]
     {
@@ -309,7 +354,7 @@ pub(super) fn handle_save_as_document(
         status_hint.set("请选择另存位置".to_string());
         spawn(async move {
             match save_document_as_dialog(
-                current_document,
+                current_document.clone(),
                 current_resources,
                 source_location,
                 target,
@@ -317,6 +362,7 @@ pub(super) fn handle_save_as_document(
             .await
             {
                 Ok(Some(location)) => {
+                        saved_document.set(current_document.clone());
                     let name = file_name_or(location.path(), "文档");
                     current_location.set(Some(location));
                     status_hint.set(format!("已另存为 {name}"));

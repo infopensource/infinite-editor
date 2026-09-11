@@ -132,6 +132,7 @@ impl LayoutDocument {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DocumentReference {
+    pub title: String,
     pub source: String,
     pub source_hash: String,
 }

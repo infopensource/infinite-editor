@@ -1,3 +1,4 @@
+import { findTextMatches, searchIndex } from "../text_search.js";
 import { TextSelection } from "prosemirror-state";
 import { installDocumentZoom } from '../document_zoom.js';
 
@@ -64,6 +65,40 @@ export function installWysiwygBridge(target = window) {
       editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, target)).scrollIntoView());
       editor.focus();
       return true;
+    },
+    search(hostId, query, requested = 0) {
+      const editor = sessions.get(hostId)?.editor;
+      if (!editor || editor.compositionActive || editor.view.composing) return { index: -1, total: 0 };
+      const matches = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (!node.isTextblock) return;
+        matches.push(...findTextMatches(node.textBetween(0, node.content.size, '', '\ufffc'), query, pos + 1));
+        return false;
+      });
+      const index = searchIndex(requested, matches.length);
+      const match = matches[index];
+      if (match) editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, match.from, match.to)).scrollIntoView());
+      return { index, total: matches.length };
+    },
+    replaceMatches(hostId, query, replacement, requested = 0, all = false) {
+      const session = sessions.get(hostId);
+      const editor = session?.editor;
+      if (!editor || editor.compositionActive || editor.view.composing) return { count: 0, deferred: true };
+      session.flushChange("wysiwyg-before-command");
+      const matches = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (!node.isTextblock) return;
+        matches.push(...findTextMatches(node.textBetween(0, node.content.size, '', '\ufffc'), query, pos + 1));
+        return false;
+      });
+      const selected = all ? matches : matches.slice(searchIndex(requested, matches.length), searchIndex(requested, matches.length) + 1);
+      if (!selected.length) return { count: 0 };
+      let tr = editor.state.tr;
+      // Work backwards so earlier offsets remain valid. One transaction = one undo step.
+      for (const match of [...selected].reverse()) tr = tr.insertText(replacement, match.from, match.to);
+      editor.view.dispatch(tr);
+      session.flushChange("wysiwyg-command", "input", true);
+      return { count: selected.length };
     },
     command(hostId, name) {
       return sessions.get(hostId)?.command(name)

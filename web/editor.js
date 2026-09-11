@@ -1,3 +1,4 @@
+import { findTextMatches, searchIndex } from "./text_search.js";
 import { readPageFurniture, publishPageFurniture } from "./page_furniture.js";
 import { openPageFurnitureDialog } from "./page_furniture_dialog.js";
 import { minimalTextChange } from "./text_change.js";
@@ -17,6 +18,8 @@ import {
   indentWithTab,
   isolateHistory,
   invertedEffects,
+  redoDepth,
+  undoDepth,
   redo,
   undo
 } from "@codemirror/commands";
@@ -628,6 +631,29 @@ function transactionSpec(changes, userEvent, isolate) {
 }
 
 window.InfiniteMarkdownEditor = {
+  historyStatus() { return { undo: controller ? undoDepth(controller.state) > 0 : false, redo: controller ? redoDepth(controller.state) > 0 : false }; },
+  replaceMatches(query, replacement, requested = 0, all = false) {
+    if (!controller || [...views.values()].some(entry => entry.view.composing)) return { count: 0, deferred: true };
+    const matches = findTextMatches(controller.state.doc.toString(), query);
+    const selected = all ? matches : matches.slice(searchIndex(requested, matches.length), searchIndex(requested, matches.length) + 1);
+    if (!selected.length) return { count: 0 };
+    const transaction = controller.state.update({
+      changes: selected.map(match => ({ ...match, insert: replacement })),
+      annotations: [isolateHistory.of("full"), Transaction.userEvent.of("input.replace")],
+    });
+    applyTransactions([transaction], "source-command");
+    return { count: selected.length };
+  },
+  search(query, requested = 0) {
+    const matches = findTextMatches(controller?.state.doc.toString() ?? '', query);
+    const index = searchIndex(requested, matches.length);
+    const match = matches[index];
+    if (match) {
+      const transaction = controller.state.update({ selection: EditorSelection.range(match.from, match.to), effects: EditorView.scrollIntoView(match.from, { y: "center" }) });
+      applyTransactions([transaction], "selection");
+    }
+    return { index, total: matches.length };
+  },
   initialize,
   navigateTo(hostId, offset) {
     const view = views.get(hostId)?.view;
