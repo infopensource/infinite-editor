@@ -677,7 +677,7 @@ mod tests {
         document.layout.page_furniture.header.enabled = true;
         document.layout.page_furniture.header.style.color = "#123456".into();
         document.layout.page_furniture.footer.style.font_size_pt = 12.0;
-        document.layout.page_furniture.header.style.margin_left_mm = 4.0;
+        document.layout.page_furniture.header.style.margin_left_mm = Some(4.0);
         document.layout.page_furniture.header.style.padding_left_mm = 1.0;
         document.layout.page_furniture.header.left = serde_json::from_value(serde_json::json!([
             { "kind": "image", "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQiO0DAAGsAQzvOxmOAAAAAElFTkSuQmCC", "alt": "标识", "width_mm": 4.0, "height_mm": 4.0 }

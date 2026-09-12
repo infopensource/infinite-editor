@@ -1,6 +1,7 @@
+import { mountPageTextEditor } from './page_furniture_text.js';
 import { importPageImage, fitPageImage } from './page_furniture_image.js';
 import { defaultPageFurniture, furnitureRoot, readPageFurniture, publishPageFurniture,
-  parsePageFields, formatPageFields, renderPageFurniture, validatePageFurniture, pageGeometry, MM } from './page_furniture.js';
+  PAGE_TEXT_MARKS, pageFieldMarks, renderPageFurniture, validatePageFurniture, pageGeometry, MM } from './page_furniture.js';
 
 export function openPageFurnitureDialog(api) {
   const existing = document.getElementById('page-furniture-dialog');
@@ -11,7 +12,14 @@ export function openPageFurnitureDialog(api) {
   const saved = structuredClone(api.getPageFurniture() || readPageFurniture());
   const draft = structuredClone(saved);
   for (const kind of ['header', 'footer']) {
-    draft[kind].style = { ...defaultPageFurniture()[kind].style, ...draft[kind].style };
+    const region = draft[kind];
+    region.style = { ...defaultPageFurniture()[kind].style, ...region.style };
+    // Expand legacy whole-region formatting before switching to per-selection marks.
+    for (const slot of ['left', 'center', 'right']) {
+      region[slot] = region[slot].map(part => part.kind === 'image' ? part
+        : { ...part, marks: pageFieldMarks(part, region.style) });
+    }
+    for (const mark of PAGE_TEXT_MARKS) region.style[mark] = false;
   }
   const layout = JSON.parse(root.dataset.pageLayout);
   let [width, height] = layout.paper.mode === 'a5' ? [148, 210]
@@ -67,6 +75,7 @@ export function openPageFurnitureDialog(api) {
   const scheduleRefresh = () => {
     if (!pendingPreview) pendingPreview = requestAnimationFrame(() => { pendingPreview = 0; refresh(); });
   };
+  const textEditors = [];
   const tabNodes = new Map();
   const panelNodes = new Map();
   const select = kind => {
@@ -114,15 +123,38 @@ export function openPageFurnitureDialog(api) {
       bindInput(panel, key, region.style[key], value => { region.style[key] = value; });
     }
     for (const key of ['font_size_pt', 'margin_top_mm', 'margin_bottom_mm',
-      'margin_left_mm', 'margin_right_mm', 'column_gap_mm', 'padding_top_mm',
+      'column_gap_mm', 'padding_top_mm',
       'padding_bottom_mm', 'padding_left_mm', 'padding_right_mm']) {
       bindInput(panel, key, region.style[key], value => { region.style[key] = value === '' ? NaN : Number(value); });
     }
+    for (const side of ['left', 'right']) {
+      const key = `margin_${side}_mm`;
+      const documentMargin = layout.margins[`${side}_mm`];
+      const follow = panel.querySelector(`[data-follow="${key}"]`);
+      let customValue = region.style[key] ?? documentMargin;
+      const input = bindInput(panel, key, customValue, value => {
+        if (follow.checked) return;
+        customValue = value === '' ? NaN : Number(value);
+        region.style[key] = customValue;
+      });
+      const update = () => {
+        input.disabled = follow.checked;
+        input.value = follow.checked ? documentMargin : (Number.isFinite(customValue) ? customValue : '');
+      };
+      follow.checked = region.style[key] == null;
+      follow.addEventListener('change', () => {
+        region.style[key] = follow.checked ? null : customValue;
+        update();
+        if (!composing) scheduleRefresh();
+      });
+      update();
+    }
     for (const slot of ['left', 'center', 'right']) {
       const slotEditor = panel.querySelector(`[data-slot="${slot}"]`);
-      bindInput(slotEditor, 'text', formatPageFields(region[slot]), value => {
-        region[slot] = [...parsePageFields(value), ...region[slot].filter(part => part.kind === 'image')];
-      });
+      textEditors.push(mountPageTextEditor(slotEditor, region[slot], region.style, parts => {
+        region[slot] = [...parts, ...region[slot].filter(part => part.kind === 'image')];
+        if (!composing) scheduleRefresh();
+      }));
       const picker = slotEditor.querySelector('[type="file"]');
       const choose = slotEditor.querySelector('.page-furniture-image-button');
       choose.addEventListener('click', () => picker.click());
@@ -218,6 +250,7 @@ export function openPageFurnitureDialog(api) {
   dialog.addEventListener('close', () => {
     cancelAnimationFrame(pendingPreview);
     observer.disconnect(); resize.disconnect();
+    for (const editor of textEditors) editor.destroy();
     if (!committed) publishPageFurniture(api.getPageFurniture() || saved);
     dialog.remove();
     if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });

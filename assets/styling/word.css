@@ -2103,3 +2103,21 @@ body.markdown-split-resizing * {
 #title-replace-toggle[aria-expanded="true"] { background: #e8f0f7; }
 #title-replace-section[hidden] { display: none; }
 @media (max-width: 760px) { .title-search-panel { width: 320px; } }
+
+
+.page-furniture-text-toolbar { display: flex; gap: 4px; }
+.page-furniture-text-toolbar button { width: 30px; height: 26px; border: 1px solid #cbd6e1; border-radius: 4px; background: #fff; color: #24364b; }
+.page-furniture-text-toolbar button[aria-pressed="true"] { background: #dcecf9; border-color: #256399; color: #174f7e; }
+.page-furniture-text-toolbar [data-mark="bold"] { font-weight: bold; }
+.page-furniture-text-toolbar [data-mark="italic"] { font-style: italic; }
+.page-furniture-text-toolbar [data-mark="underline"] { text-decoration: underline; }
+.page-furniture-text-toolbar [data-mark="strikethrough"] { text-decoration: line-through; }
+.page-furniture-text-editor { min-height: 34px; max-width: 100%; overflow-x: auto; padding: 6px 8px; border: 1px solid #cbd6e1; border-radius: 5px; background: #fff; color: #24364b; font: 13px/1.4 "Segoe UI", "Microsoft YaHei", sans-serif; white-space: pre; overflow-wrap: normal; }
+.page-furniture-text-editor p { margin: 0; white-space: pre; }
+.page-furniture-text-editor strong { font-weight: bold; }
+.page-furniture-text-editor em { font-style: italic; }
+.page-furniture-field { border-radius: 3px; background: #e8eff6; }
+
+.page-furniture-follow { display: flex; align-items: flex-start; gap: 4px; margin-top: 5px; color: #65768b; font-size: 11px; line-height: 1.4; }
+.page-furniture-follow input { flex: none; margin: 1px 0 0; accent-color: #256399; }
+.page-furniture-control input:disabled { background: #e9edf2; color: #8a96a5; border-color: #d7dfe7; cursor: not-allowed; opacity: 1; }

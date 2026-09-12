@@ -6,6 +6,11 @@ import { join, resolve, extname, sep } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+if (process.argv[2] === 'page-furniture-entry') {
+  await import('./test-page-furniture-entry-browser.mjs');
+  process.exit(process.exitCode ?? 0);
+}
+
 if (process.argv[2] === 'dialog') {
   await import('./test-loading-dialog-browser.mjs');
   process.exit(process.exitCode ?? 0);

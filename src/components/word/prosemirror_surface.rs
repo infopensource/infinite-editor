@@ -83,17 +83,25 @@ fn mount_editor(
                 const mount = () => {{
                     return window.InfiniteWysiwygEditor.mount({config});
                 }};
-                if (window.InfiniteWysiwygEditor) return JSON.stringify(mount());
+                const isReady = () => window.InfiniteWysiwygEditor && window.InfiniteMarkdownEditor;
+                if (isReady()) return JSON.stringify(mount());
                 return await new Promise((resolve) => {{
-                    const ready = () => {{
+                    const events = ['infinite-wysiwyg-editor-ready', 'infinite-markdown-editor-ready'];
+                    const cleanup = () => {{
                         clearTimeout(timeout);
+                        for (const event of events) window.removeEventListener(event, ready);
+                    }};
+                    const ready = () => {{
+                        if (!isReady()) return;
+                        cleanup();
                         resolve(JSON.stringify(mount()));
                     }};
                     const timeout = setTimeout(() => {{
-                        window.removeEventListener('infinite-wysiwyg-editor-ready', ready);
-                        resolve(JSON.stringify({{ ok: false, error: 'WYSIWYG 内核在 5 秒内未就绪' }}));
+                        cleanup();
+                        resolve(JSON.stringify({{ ok: false, error: '编辑内核或文档控制器在 5 秒内未就绪' }}));
                     }}, 5000);
-                    window.addEventListener('infinite-wysiwyg-editor-ready', ready, {{ once: true }});
+                    for (const event of events) window.addEventListener(event, ready);
+                    ready();
                 }});
             "#,
         );

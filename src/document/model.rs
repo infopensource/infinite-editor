@@ -277,8 +277,8 @@ impl PageFurnitureSettings {
             if [
                 style.margin_top_mm,
                 style.margin_bottom_mm,
-                style.margin_left_mm,
-                style.margin_right_mm,
+                style.margin_left_mm.unwrap_or(0.0),
+                style.margin_right_mm.unwrap_or(0.0),
                 style.column_gap_mm,
                 style.padding_top_mm,
                 style.padding_bottom_mm,
@@ -354,7 +354,7 @@ impl PageFurnitureSettings {
                 return Err(format!("{name}颜色必须为 #RRGGBB"));
             }
             for slot in [&region.left, &region.center, &region.right] {
-                if slot.iter().any(|part| matches!(part, PageField::Text { value } if value.chars().any(char::is_control))) {
+                if slot.iter().any(|part| matches!(part, PageField::Text { value, .. } if value.chars().any(char::is_control))) {
                     return Err(format!("{name}仅支持单行文本"));
                 }
             }
@@ -379,9 +379,17 @@ pub struct PageRegion {
 pub enum PageField {
     Text {
         value: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        marks: Vec<PageTextMark>,
     },
-    Page,
-    Pages,
+    Page {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        marks: Vec<PageTextMark>,
+    },
+    Pages {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        marks: Vec<PageTextMark>,
+    },
     Image {
         src: String,
         alt: String,
@@ -390,17 +398,32 @@ pub enum PageField {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PageTextMark {
+    Bold,
+    Italic,
+    Underline,
+    Strikethrough,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PageRegionStyle {
+    // Legacy whole-region marks are expanded into PageField marks by the dialog.
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strikethrough: bool,
     pub font_family: String,
     pub font_size_pt: f32,
     pub color: String,
     pub separator: bool,
     pub margin_top_mm: f32,
     pub margin_bottom_mm: f32,
-    pub margin_left_mm: f32,
-    pub margin_right_mm: f32,
+    /// None follows the document margin; zero places the region at the paper edge.
+    pub margin_left_mm: Option<f32>,
+    pub margin_right_mm: Option<f32>,
     pub column_gap_mm: f32,
     pub padding_top_mm: f32,
     pub padding_bottom_mm: f32,
@@ -411,14 +434,18 @@ pub struct PageRegionStyle {
 impl Default for PageRegionStyle {
     fn default() -> Self {
         Self {
+            bold: false,
+            italic: false,
+            underline: false,
+            strikethrough: false,
             font_family: "system-ui".into(),
             font_size_pt: 9.0,
             color: "#64748b".into(),
             separator: false,
             margin_top_mm: 3.0,
             margin_bottom_mm: 3.0,
-            margin_left_mm: 0.0,
-            margin_right_mm: 0.0,
+            margin_left_mm: None,
+            margin_right_mm: None,
             column_gap_mm: 2.0,
             padding_top_mm: 0.0,
             padding_bottom_mm: 0.0,
@@ -517,19 +544,35 @@ mod tests {
     fn page_furniture_round_trips_and_old_layouts_default_to_disabled() {
         let old: LayoutDocument = toml::from_str("version = 1").unwrap();
         assert!(!old.page_furniture.header.enabled);
+        assert!(!old.page_furniture.header.style.bold);
+        assert!(!old.page_furniture.header.style.italic);
+        assert!(!old.page_furniture.header.style.underline);
+        assert!(!old.page_furniture.header.style.strikethrough);
         let mut layout = old;
         layout.page_furniture.header.enabled = true;
         layout.page_furniture.header.left = vec![PageField::Text {
             value: "标题".into(),
+            marks: vec![PageTextMark::Bold, PageTextMark::Italic],
         }];
         layout.page_furniture.header.style.color = "#ff0000".into();
+        layout.page_furniture.header.style.bold = true;
+        layout.page_furniture.header.style.italic = true;
+        layout.page_furniture.footer.style.underline = true;
+        layout.page_furniture.footer.style.strikethrough = true;
         layout.page_furniture.header.style.margin_top_mm = 1.5;
-        layout.page_furniture.header.style.margin_left_mm = 4.0;
+        layout.page_furniture.header.style.margin_left_mm = Some(4.0);
         layout.page_furniture.footer.style.column_gap_mm = 5.0;
         layout.page_furniture.footer.center = vec![
-            PageField::Page,
-            PageField::Text { value: "/".into() },
-            PageField::Pages,
+            PageField::Page {
+                marks: vec![PageTextMark::Underline],
+            },
+            PageField::Text {
+                value: "/".into(),
+                marks: vec![],
+            },
+            PageField::Pages {
+                marks: vec![PageTextMark::Strikethrough],
+            },
         ];
         layout.page_furniture.footer.style.font_size_pt = 12.0;
         let encoded = toml::to_string_pretty(&layout).unwrap();
@@ -541,6 +584,45 @@ mod tests {
             .validate_and_normalize()
             .unwrap_err()
             .contains("页眉"));
+    }
+
+    #[test]
+    fn page_furniture_offsets_distinguish_default_from_explicit_zero() {
+        let mut layout = LayoutDocument::default();
+        layout.margins.left_mm = 31.0;
+        layout.margins.right_mm = 17.0;
+        assert_eq!(layout.page_furniture.header.style.margin_left_mm, None);
+        layout.page_furniture.header.style.margin_left_mm = Some(0.0);
+        layout.page_furniture.header.style.margin_right_mm = Some(0.0);
+        let decoded: LayoutDocument = toml::from_str(&toml::to_string(&layout).unwrap()).unwrap();
+        assert_eq!(decoded, layout);
+        assert_eq!(decoded.page_furniture.header.style.margin_left_mm, Some(0.0));
+        assert_eq!(decoded.page_furniture.footer.style.margin_left_mm, None);
+        layout.validate_and_normalize().unwrap();
+    }
+
+    #[test]
+    fn page_field_marks_accept_old_data_and_validate_formatted_text() {
+        for json in [
+            r#"{"kind":"text","value":"旧页眉"}"#,
+            r#"{"kind":"page"}"#,
+            r#"{"kind":"pages"}"#,
+        ] {
+            let field: PageField = serde_json::from_str(json).unwrap();
+            assert_eq!(
+                serde_json::to_value(field).unwrap(),
+                serde_json::from_str::<serde_json::Value>(json).unwrap()
+            );
+        }
+        let mut layout = LayoutDocument::default();
+        layout.page_furniture.header.left = vec![PageField::Text {
+            value: "第一行\n第二行".into(),
+            marks: vec![PageTextMark::Bold],
+        }];
+        assert!(layout
+            .validate_and_normalize()
+            .unwrap_err()
+            .contains("单行"));
     }
 
     #[test]

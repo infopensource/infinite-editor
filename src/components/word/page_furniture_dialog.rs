@@ -90,11 +90,19 @@ fn RegionPanel(kind: String, title: String) -> Element {
                 section { class: "page-furniture-group page-furniture-spacing",
                     h3 { "留白与间距 · mm" }
                     for (field, name) in [("margin_top_mm", "上留白"), ("margin_bottom_mm", "下留白"), ("margin_left_mm", "左缩进"), ("margin_right_mm", "右缩进"), ("column_gap_mm", "栏间距")] {
-                        Field { title: title.clone(), name, field, input_type: "number", min: "0", max: "100" }
+                        div { class: "page-furniture-spacing-field",
+                            Field { title: title.clone(), name, field, input_type: "number", min: "0", max: "100" }
+                            if field == "margin_left_mm" || field == "margin_right_mm" {
+                                label { class: "page-furniture-follow",
+                                    input { r#type: "checkbox", "data-follow": field, aria_label: "{title}{name}跟随文档页边距" }
+                                    span { "跟随文档页边距" }
+                                }
+                            }
+                        }
                     }
                 }
             }
-            p { class: "page-furniture-spacing-hint", "上下留白位于对应页边距内；左右缩进以正文边缘为基准。" }
+            p { class: "page-furniture-spacing-hint", "上下留白位于对应页边距内；左右缩进以纸张边缘为基准，0 表示贴边，默认跟随文档页边距，取消勾选后可手动调整。" }
             details { class: "page-furniture-padding",
                 summary { "内容与分隔线的内边距 · mm" }
                 div { class: "page-furniture-padding-controls",
@@ -123,7 +131,15 @@ fn RegionPanel(kind: String, title: String) -> Element {
 fn SlotEditor(title: String, slot: String, label: String) -> Element {
     rsx! {
         div { class: "page-furniture-slot", "data-slot": slot,
-            Field { title: title.clone(), name: label.clone(), field: "text", input_type: "text" }
+            div { class: "page-furniture-control",
+                span { "{label}" }
+                div { class: "page-furniture-text-toolbar", role: "group", aria_label: "{title}{label}文字格式",
+                    for (mark, name, caption) in [("bold", "加粗", "B"), ("italic", "斜体", "I"), ("underline", "下划线", "U"), ("strikethrough", "删除线", "S")] {
+                        button { r#type: "button", "data-mark": mark, aria_label: "{title}{label}{name}", aria_pressed: "false", title: name, "{caption}" }
+                    }
+                }
+                div { "data-field": "text", aria_label: "{title}{label}" }
+            }
             div { class: "page-furniture-image-controls",
                 img { class: "page-furniture-image-thumbnail" }
                 button { class: "page-furniture-image-button", r#type: "button", aria_label: "{title}{label}插入图片", "插入图片" }

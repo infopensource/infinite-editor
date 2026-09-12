@@ -26,6 +26,12 @@ async function settled() {
   }
   throw new Error('Pagination did not settle');
 }
+async function replaceText(field, text) {
+  field.focus();
+  document.execCommand('selectAll');
+  document.execCommand('insertText', false, text);
+  await pause(30);
+}
 function verifyRegions(total, zoom = 1) {
   const metrics = pageMetrics(page);
   const bounds = page.getBoundingClientRect();
@@ -124,7 +130,7 @@ function verifyRegions(total, zoom = 1) {
     const printed = [...print.querySelectorAll('.infinite-page-footer')];
     assert(printed[1].textContent === '第 2 页 / 共 2 页', 'Print page fields incorrect');
     assert(getComputedStyle(printed[1]).color === 'rgb(0, 0, 255)', 'Print footer style differs');
-    assert(Math.abs(parseFloat(printed[1].style.left) - 23 * 96 / 25.4) < 0.1, 'Print footer indent differs');
+    assert(Math.abs(parseFloat(printed[1].style.left) - 1 * 96 / 25.4) < 0.1, 'Print footer indent differs');
     assert(printed[1].style.columnGap === '1mm', 'Print footer column gap differs');
     const printImages = [...print.querySelectorAll('.document-page-furniture img')];
     assert(printImages.length === 9, 'Print did not include all header/footer images');
@@ -153,6 +159,19 @@ function verifyRegions(total, zoom = 1) {
     const dialog = document.getElementById('page-furniture-dialog');
     assert(dialog?.open, 'Settings dialog did not open');
     assert(dialog.querySelectorAll('[role="tabpanel"]:not([hidden])').length === 1, 'Duplicate settings panels visible');
+    for (const side of ['左', '右']) {
+      const control = dialog.querySelector(`[aria-label="页眉${side}缩进"]`);
+      control.value = '0'; control.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await pause(100);
+    const edgeHeader = page.querySelector('.infinite-page-header');
+    assert(edgeHeader.style.left === '0px' && edgeHeader.style.right === '0px', 'Zero offsets did not reach paper edges');
+    const previewHeader = dialog.querySelector('.page-furniture-preview .infinite-page-header');
+    assert(previewHeader.style.left === '0px' && previewHeader.style.right === '0px', 'Preview uses a different offset origin');
+    for (const [side, value] of [['左', '5'], ['右', '6']]) {
+      const control = dialog.querySelector(`[aria-label="页眉${side}缩进"]`);
+      control.value = value; control.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     const footerTab = dialog.querySelector('#page-footer-tab');
     footerTab.click();
     assert(footerTab.getAttribute('aria-selected') === 'true', 'Footer tab did not activate');
@@ -161,13 +180,13 @@ function verifyRegions(total, zoom = 1) {
     spacing.value = '4'; spacing.dispatchEvent(new Event('input', { bubbles: true }));
     await pause(100);
     const actualFooter = page.querySelector('.infinite-page-footer');
-    assert(Math.abs(parseFloat(actualFooter.style.left) - 26 * 96 / 25.4) < 0.1, 'Footer indent did not preview');
+    assert(Math.abs(parseFloat(actualFooter.style.left) - 4 * 96 / 25.4) < 0.1, 'Footer indent did not preview');
     dialog.querySelector('#page-header-tab').click();
     assert(dialog.querySelector('[aria-label="页眉左缩进"]').value === '5', 'Tab switch changed header margins');
     const headerGap = dialog.querySelector('[aria-label="页眉栏间距"]');
     assert(headerGap.value === '3', 'Header column gap not restored');
     const input = dialog.querySelector('[aria-label="页眉左侧"]');
-    input.value = '输入预览'; input.dispatchEvent(new Event('input', { bubbles: true }));
+    await replaceText(input, '输入预览');
     await pause(100);
     assert(page.querySelector('.infinite-page-header').textContent.includes('输入预览'), 'Live preview missing');
     dialog.close(); await pause(100);
@@ -179,11 +198,11 @@ function verifyRegions(total, zoom = 1) {
     const submit = editing.querySelector('[type="submit"]');
     const headerTop = editing.querySelector('[aria-label="页眉上留白"]');
     headerTop.value = '1'; headerTop.dispatchEvent(new Event('input', { bubbles: true }));
-    field.value = '超长'.repeat(100); field.dispatchEvent(new Event('input', { bubbles: true }));
+    await replaceText(field, '超长'.repeat(100));
     await pause(100);
     assert(submit.disabled, 'Settings allowed an overflowing template');
     editing.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
-    field.value = '新的页眉'; field.dispatchEvent(new Event('input', { bubbles: true }));
+    await replaceText(field, '新的页眉');
     editing.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     assert(editing.open && api.getPageFurniture().header.left[0].value === '独立页眉', 'IME committed partial input');
     editing.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
@@ -196,6 +215,76 @@ function verifyRegions(total, zoom = 1) {
     session.command('undo'); await pause(100);
     assert(api.getPageFurniture().header.left[0].value === '独立页眉', 'Settings application did not form one undo event');
     assert(api.getPageFurniture().header.style.margin_top_mm === 2, 'Spacing was not undone');
+    api.openPageFurniture();
+    const richDialog = document.getElementById('page-furniture-dialog');
+    const richField = richDialog.querySelector('[aria-label="页眉左侧"]');
+    await replaceText(richField, '普通加粗斜体');
+    const textNode = richField.querySelector('p').firstChild;
+    window.getSelection().setBaseAndExtent(textNode, 2, textNode, 4);
+    await pause(30);
+    richDialog.querySelector('[aria-label="页眉左侧加粗"]').click();
+    await pause(30);
+    assert(richField.querySelector('strong')?.textContent === '加粗', 'Bold did not target selection');
+    assert(richDialog.querySelector('[aria-label="页眉左侧加粗"]').getAttribute('aria-pressed') === 'true', 'Toolbar lost selected format');
+    richDialog.querySelector('[aria-label="页眉左侧斜体"]').click();
+    await pause(100);
+    const liveRuns = [...page.querySelector('.infinite-page-header').firstChild.children];
+    assert(liveRuns.length === 3 && liveRuns[0].style.fontWeight === 'normal'
+      && liveRuns[1].style.fontWeight === 'bold' && liveRuns[1].style.fontStyle === 'italic'
+      && liveRuns[2].style.fontStyle === 'normal', 'Selection formatting leaked into adjacent text');
+    richField.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', ctrlKey: true, bubbles: true, cancelable: true }));
+    await pause(50);
+    assert(!richField.querySelector('em') && richField.querySelector('strong'), 'Local formatting undo failed');
+    richField.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    await pause(50);
+    assert(richField.querySelector('em'), 'Local formatting redo failed');
+    richDialog.querySelector('[type="submit"]').click();
+    await pause(100);
+    const richParts = api.getPageFurniture().header.left;
+    assert(richParts.length === 3 && richParts[1].marks.includes('bold') && richParts[1].marks.includes('italic'), 'Mixed formatting was not saved');
+    api.openPageFurniture();
+    const restoredRich = document.getElementById('page-furniture-dialog');
+    assert(restoredRich.querySelector('[aria-label="页眉左侧"] strong')?.textContent === '加粗', 'Reopening lost selected formatting');
+    const restoredField = restoredRich.querySelector('[aria-label="页眉左侧"]');
+    restoredField.focus();
+    const tail = restoredField.querySelector('p').lastChild;
+    window.getSelection().setBaseAndExtent(tail, tail.textContent.length, tail, tail.textContent.length);
+    await pause(30);
+    restoredRich.querySelector('[aria-label="页眉左侧下划线"]').click();
+    document.execCommand('insertText', false, '新');
+    await pause(50);
+    assert(restoredField.querySelector('u')?.textContent === '新'
+      && restoredField.querySelector('strong')?.textContent === '加粗', 'Typing lost existing marks or caret formatting');
+    const center = restoredRich.querySelector('[aria-label="页眉中间"]');
+    center.focus();
+    const clipboard = new DataTransfer();
+    clipboard.setData('text/plain', '第 {page} 页\n共 {pages} 页');
+    center.dispatchEvent(new ClipboardEvent('paste', { clipboardData: clipboard, bubbles: true, cancelable: true }));
+    await pause(50);
+    assert(center.querySelectorAll('[data-page-field]').length === 2, 'Paste lost structured page fields');
+    assert(!center.textContent.includes('\n'), 'Paste inserted a line break');
+    const pageField = center.querySelector('[data-page-field]');
+    const range = document.createRange();
+    range.selectNode(pageField);
+    window.getSelection().removeAllRanges(); window.getSelection().addRange(range);
+    await pause(30);
+    restoredRich.querySelector('[aria-label="页眉中间删除线"]').click();
+    await pause(50);
+    assert(center.querySelector('s [data-page-field="page"]'), 'Page field did not accept selected formatting');
+    const copied = new DataTransfer();
+    center.dispatchEvent(new ClipboardEvent('copy', { clipboardData: copied, bubbles: true, cancelable: true }));
+    assert(copied.getData('text/plain') === '{page}', 'Copy lost the dynamic field');
+    const right = restoredRich.querySelector('[aria-label="页眉右侧"]');
+    right.focus();
+    right.dispatchEvent(new ClipboardEvent('paste', { clipboardData: copied, bubbles: true, cancelable: true }));
+    await pause(50);
+    assert(right.querySelector('s [data-page-field="page"]'), 'Copy/paste lost field formatting');
+    right.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+    assert(restoredRich.open, 'Enter submitted the settings from a text editor');
+    restoredRich.close(); await pause(50);
+    session.command('undo'); await pause(100);
+    assert(api.getPageFurniture().header.left[0].value === '独立页眉', 'Formatting apply was not a single document undo');
+
     api.openPageFurniture();
     const imageDialog = document.getElementById('page-furniture-dialog');
     const baselineLine = page.querySelector('.infinite-page-header').getBoundingClientRect().bottom;
@@ -220,7 +309,7 @@ function verifyRegions(total, zoom = 1) {
         const picker = imageDialog.querySelector(`[aria-label="${title}${slot}图片文件"]`);
         picker.files = transfer.files;
         picker.dispatchEvent(new Event('change', { bubbles: true }));
-        for (let attempt = 0; attempt < 50 && picker.closest('.page-furniture-slot').querySelector('button').disabled; attempt++) await pause(20);
+        for (let attempt = 0; attempt < 50 && picker.closest('.page-furniture-slot').querySelector('.page-furniture-image-button').disabled; attempt++) await pause(20);
         assert(!picker.closest('.page-furniture-slot').querySelector('img').hidden, 'Image picker did not insert an image');
       }
     }

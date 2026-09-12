@@ -1,4 +1,4 @@
-import { regionSpacing, regionPadding, resolvePageFields, MM } from './page_furniture.js';
+import { regionSpacing, regionPadding, measurePageSlot, MM } from './page_furniture.js';
 // Embedded template images travel with the layout and its undo snapshots.
 export async function importPageImage(file) {
   if (!file || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
@@ -23,15 +23,14 @@ export async function importPageImage(file) {
 // Fit the full available slot, including text and inner padding, not a tiny
 // hard-coded thumbnail size. Used on import and by the explicit fit button.
 export function fitPageImage(image, region, slot, metrics, total, kind) {
-  const margin = regionSpacing(region.style);
+  const margin = regionSpacing(region.style, metrics);
   const padding = regionPadding(region.style);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
-  context.font = `${region.style.font_size_pt * 96 / 72}px ${region.style.font_family}`;
-  const text = resolvePageFields(region[slot].filter(part => part.kind !== 'image'), total, total);
-  const width = (metrics.width - metrics.left - metrics.right
+  const text = measurePageSlot(context, region[slot].filter(part => part.kind !== 'image'), region.style, total);
+  const width = (metrics.width
     - (margin.left + margin.right + padding.left + padding.right + 2 * margin.gap) * MM) / 3
-    - context.measureText(text).width;
+    - text.width;
   const height = (kind === 'header' ? metrics.top : metrics.bottom)
     - (margin.top + margin.bottom + padding.top + padding.bottom) * MM
     - (region.style.separator ? 96 / 144 : 0);
