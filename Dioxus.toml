@@ -1,6 +1,11 @@
 [application]
 default_platform = "desktop"
 
+[bundle]
+identifier = "io.github.hacktor.infinite-editor"
+publisher = "hacktor"
+icon = ["assets/app-icon-256.png", "assets/favicon.ico"]
+
 [web.app]
 
 # HTML title tag content

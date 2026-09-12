@@ -44,6 +44,17 @@ const APP_CSS: &str = concat!(
 
 #[cfg(feature = "desktop")]
 fn main() {
+    // Match the Linux desktop entry so taskbars can resolve the application icon.
+    #[cfg(target_os = "linux")]
+    gtk::glib::set_prgname(Some("infinite-editor"));
+
+    // RGBA bytes derived from app-icon.png, embedded for desktop window icons.
+    let icon = dioxus::desktop::tao::window::Icon::from_rgba(
+        include_bytes!("../assets/app-icon.rgba").to_vec(),
+        128,
+        128,
+    )
+    .expect("embedded app icon must contain 128 × 128 RGBA pixels");
     let desktop_config = dioxus::desktop::Config::default()
         .with_menu(None)
         .with_window(
@@ -52,7 +63,9 @@ fn main() {
                 .with_min_inner_size(dioxus::desktop::LogicalSize::new(1100.0, 700.0))
                 .with_decorations(false)
                 .with_resizable(true),
-        );
+        )
+        // with_window replaces the window settings, so set the icon afterwards.
+        .with_icon(icon);
 
     LaunchBuilder::desktop()
         .with_cfg(desktop_config)
