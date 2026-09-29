@@ -20,7 +20,20 @@ const nodes = {
     state.write(" ".repeat(2));
     state.write("\n");
   },
+  heading(state, node) {
+    state.write("#".repeat(node.attrs.level) + " ");
+    state.renderInline(node);
+    if (node.attrs.textAlign) state.write(`<!-- infinite-editor:align=${node.attrs.textAlign} -->`);
+    state.closeBlock(node);
+  },
   paragraph(state, node, parent, index) {
+    if (node.attrs.textAlign) {
+      if (node.childCount) state.renderInline(node);
+      else state.write(EMPTY_PARAGRAPH_SOURCE);
+      state.write(`<!-- infinite-editor:align=${node.attrs.textAlign} -->`);
+      state.closeBlock(node);
+      return;
+    }
     if (node.childCount === 0) {
       // The parser adds one caret host after a trailing page break. It is UI
       // scaffolding, not an authored blank line.

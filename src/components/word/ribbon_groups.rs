@@ -43,6 +43,10 @@ pub fn RibbonPanel(
                     CommandGroup {
                         title: "段落",
                         actions: vec![
+                            ("左对齐", "align_left"),
+                            ("居中", "align_center"),
+                            ("右对齐", "align_right"),
+                            ("两端对齐", "align_justify"),
                             ("项目符号", "unordered_list"),
                             ("编号", "ordered_list"),
                             ("引用", "quote"),
@@ -176,10 +180,11 @@ fn CommandGroup(
     rsx! {
         div { class: "ribbon-group",
             div { class: "group-main",
-                div { class: "group-actions command-actions",
+                div { class: if title == "段落" { "group-actions command-actions paragraph-actions" } else { "group-actions command-actions" },
                     for (label, command) in actions {
                         button {
                             class: "ribbon-small",
+                            "data-paragraph-alignment": command.strip_prefix("align_"),
                             r#type: "button",
                             onmousedown: move |event| {
                                 // Keep the document selection without executing a command

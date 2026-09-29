@@ -1,3 +1,4 @@
+import { Plugin } from "prosemirror-state";
 import { lift, setBlockType, toggleMark, wrapIn } from "prosemirror-commands";
 import { redo, undo } from "prosemirror-history";
 import { liftListItem, wrapInList } from "prosemirror-schema-list";
@@ -46,9 +47,31 @@ function toggleList(schema, targetType) {
   };
 }
 
+export function setParagraphAlignment(textAlign) {
+  return (state, dispatch) => {
+    if (!["left", "center", "right", "justify"].includes(textAlign)) return false;
+    const tr = state.tr;
+    let applicable = false;
+    state.doc.nodesBetween(state.selection.from, state.selection.to, (node, pos) => {
+      if (!["paragraph", "heading"].includes(node.type.name)) return;
+      applicable = true;
+      if (node.attrs.textAlign !== textAlign) tr.setNodeMarkup(pos, undefined, { ...node.attrs, textAlign });
+      return false;
+    });
+    if (dispatch && tr.docChanged) dispatch(tr.scrollIntoView());
+    return applicable;
+  };
+}
+
+export function alignmentKeyBindings() {
+  return Object.fromEntries([["l", "left"], ["e", "center"], ["r", "right"], ["j", "justify"]]
+    .map(([key, align]) => [`Mod-${key}`, setParagraphAlignment(align)]));
+}
+
 export function toolbarCommands(schema) {
   const blocks = blockCommands(schema);
   return {
+    ...Object.fromEntries(["left", "center", "right", "justify"].map(align => [`align_${align}`, setParagraphAlignment(align)])),
     undo,
     redo,
     bold: toggleMark(schema.marks.strong),
@@ -65,4 +88,26 @@ export function toolbarCommands(schema) {
     heading3: toggleHeading(schema, 3),
     paragraph: setBlockType(schema.nodes.paragraph),
   };
+}
+
+// The ribbon lives outside ProseMirror; expose the current paragraph selection
+// on its alignment buttons without moving focus away from the document.
+export function alignmentToolbarPlugin() {
+  return new Plugin({
+    view(view) {
+      const update = () => {
+        const values = new Set();
+        view.state.doc.nodesBetween(view.state.selection.from, view.state.selection.to, node => {
+          if (["paragraph", "heading"].includes(node.type.name)) values.add(node.attrs.textAlign ?? "left");
+        });
+        for (const button of view.dom.ownerDocument.querySelectorAll("[data-paragraph-alignment]")) {
+          const active = values.size === 1 && values.has(button.dataset.paragraphAlignment);
+          button.setAttribute("aria-pressed", String(active));
+          button.classList.toggle("active", active);
+        }
+      };
+      update();
+      return { update };
+    },
+  });
 }

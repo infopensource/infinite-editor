@@ -16,6 +16,8 @@ function astLeaves(documentNode) {
   const output = [];
   const visit = (nodes, parentPath = []) => nodes.forEach((node, index) => {
     const path = [...parentPath, index];
+    if (index === nodes.length - 1 && node.kind === "opaque_inline"
+      && /^<!-- infinite-editor:align=(left|center|right|justify) -->$/.test(node.source)) return;
     if (AST_LEAF_KINDS.has(node.kind)) {
       const range = ranges.get(path.join("."));
       if (range) output.push({ node, range });

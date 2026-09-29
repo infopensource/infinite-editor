@@ -1,16 +1,20 @@
 import { Schema } from "prosemirror-model";
 import { bulletList, listItem, orderedList } from "prosemirror-schema-list";
 
+const alignmentAttrs = (node) => node.attrs.textAlign ? { style: `text-align:${node.attrs.textAlign};text-align-last:auto` } : {};
+const readAlignment = (element) => ["left", "center", "right", "justify"].includes(element.style.textAlign) ? element.style.textAlign : null;
+
 const blockDom = (tag) => [tag, 0];
 
 const baseSchema = new Schema({
   nodes: {
     doc: { content: "block+" },
     paragraph: {
+      attrs: { textAlign: { default: null } },
       content: "inline*",
       group: "block",
-      parseDOM: [{ tag: "p" }],
-      toDOM: () => blockDom("p"),
+      parseDOM: [{ tag: "p", getAttrs: (element) => ({ textAlign: readAlignment(element) }) }],
+      toDOM: (node) => ["p", alignmentAttrs(node), 0],
     },
     blockquote: {
       content: "block+",
@@ -20,15 +24,15 @@ const baseSchema = new Schema({
       toDOM: () => blockDom("blockquote"),
     },
     heading: {
-      attrs: { level: { default: 1 } },
+      attrs: { level: { default: 1 }, textAlign: { default: null } },
       content: "inline*",
       group: "block",
       defining: true,
       parseDOM: Array.from({ length: 6 }, (_, index) => ({
         tag: `h${index + 1}`,
-        attrs: { level: index + 1 },
+        getAttrs: (element) => ({ level: index + 1, textAlign: readAlignment(element) }),
       })),
-      toDOM: (node) => blockDom(`h${node.attrs.level}`),
+      toDOM: (node) => [`h${node.attrs.level}`, alignmentAttrs(node), 0],
     },
     code_block: {
       attrs: { params: { default: "" } },

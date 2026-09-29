@@ -69,12 +69,21 @@ export function documentFromInfiniteAst(input, schema) {
     }
   });
 
+  const alignedBlock = (node, type, attrs = {}) => {
+    const children = [...node.children];
+    const marker = children.at(-1);
+    const match = marker?.kind === "opaque_inline" && /^<!-- infinite-editor:align=(left|center|right|justify) -->$/.exec(marker.source);
+    if (match) children.pop();
+    const content = children.length === 1 && children[0].kind === "text" && children[0].value === "\u00a0" ? [] : children;
+    return type.create({ ...attrs, textAlign: match ? match[1] : null }, inline(content));
+  };
+
   const blocks = (nodes) => nodes.flatMap((node) => {
     switch (node.kind) {
       case "paragraph":
-        return [schema.nodes.paragraph.create(null, inline(node.children))];
+        return [alignedBlock(node, schema.nodes.paragraph)];
       case "heading":
-        return [schema.nodes.heading.create({ level: node.level }, inline(node.children))];
+        return [alignedBlock(node, schema.nodes.heading, { level: node.level })];
       case "blockquote":
         return [schema.nodes.blockquote.create(null, blocks(node.children))];
       case "code_block": {

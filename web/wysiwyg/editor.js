@@ -1,5 +1,6 @@
+import { alignmentKeyBindings, alignmentToolbarPlugin } from "./commands/toolbar.js";
 import { MarkdownProjection } from "./markdown/projection.js";
-import { baseKeymap } from "prosemirror-commands";
+import { baseKeymap, chainCommands } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import { undoInputRule } from "prosemirror-inputrules";
@@ -25,12 +26,23 @@ function editorPlugins(options = {}) {
   const sharedHistory = options.sharedHistory;
   return [
     ...(sharedHistory ? [] : [history()]),
+    alignmentToolbarPlugin(),
     markdownInputRules(wysiwygSchema),
     paginationPlugin({ onPageChange: options.onPageChange }),
     selectionPlugin(),
     endOfDocumentPlugin(),
     keymap({ Backspace: undoInputRule }),
     keymap(blockKeyBindings(wysiwygSchema)),
+    keymap({ Enter: (state, dispatch, view) => {
+      const align = state.selection.$from.parent.attrs.textAlign;
+      return chainCommands(listKeyBindings(wysiwygSchema).Enter, baseKeymap.Enter)(state, dispatch && (tr => {
+        const { $from } = tr.selection;
+        if (align && ["paragraph", "heading"].includes($from.parent.type.name)) {
+          tr.setNodeMarkup($from.before(), undefined, { ...$from.parent.attrs, textAlign: align });
+        }
+        dispatch(tr);
+      }), view);
+    } }),
     keymap(listKeyBindings(wysiwygSchema)),
     keymap(sharedHistory
       ? {
@@ -43,6 +55,7 @@ function editorPlugins(options = {}) {
           "Mod-y": redo,
           "Shift-Mod-z": redo,
         }),
+    keymap(alignmentKeyBindings()),
     keymap(baseKeymap),
   ];
 }

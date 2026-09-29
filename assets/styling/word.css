@@ -361,6 +361,10 @@
     gap: 6px;
 }
 
+.paragraph-actions {
+    grid-template-columns: repeat(4, max-content);
+}
+
 .ribbon-small {
     border: 1px solid #d1d5db;
     border-radius: 6px;

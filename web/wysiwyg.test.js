@@ -1308,3 +1308,37 @@ test("outline navigation distinguishes duplicate headings without changing conte
     bridge.remove();
   }
 });
+
+test("paragraph alignment supports ranges, history and Markdown round trips", () => {
+  for (const align of ["left", "center", "right", "justify"]) {
+    let state = createEditorState("第一段\n\n## 第二段\n\n第三段");
+    const end = state.doc.child(0).nodeSize + state.doc.child(1).nodeSize;
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 1, end - 1)));
+    const dispatch = tr => { state = state.apply(tr); };
+    assert.equal(toolbarCommands(wysiwygSchema)[`align_${align}`](state, dispatch), true);
+    assert.equal(state.doc.child(0).attrs.textAlign, align);
+    assert.equal(state.doc.child(1).attrs.textAlign, align);
+    assert.equal(state.doc.child(2).attrs.textAlign, null);
+    assert.deepEqual(parseMarkdown(serializeMarkdown(state.doc)).toJSON(), state.doc.toJSON());
+    assert.equal(undo(state, dispatch), true);
+    assert.equal(state.doc.child(0).attrs.textAlign, null);
+    assert.equal(redo(state, dispatch), true);
+    assert.equal(state.doc.child(0).attrs.textAlign, align);
+  }
+});
+
+test("alignment handles a caret, empty paragraphs and nested list paragraphs", () => {
+  for (const source of ["", "段落", "- 项目"]) {
+    let state = createEditorState(source);
+    toolbarCommands(wysiwygSchema).align_center(state, tr => { state = state.apply(tr); });
+    assert.equal(state.selection.$from.parent.attrs.textAlign, "center");
+    assert.deepEqual(parseMarkdown(serializeMarkdown(state.doc)).toJSON(), state.doc.toJSON());
+  }
+});
+
+test("alignment metadata does not consume subsequent source position mappings", () => {
+  const source = "第一段<!-- infinite-editor:align=center -->\n\n第二段";
+  const doc = parseMarkdown(source);
+  const mapper = new MarkdownPositionMapper(remarkReferenceBackend.parse(source), doc, source);
+  assert.equal(mapper.sourceToProseMirror(source.indexOf("第二段")), doc.child(0).nodeSize + 1);
+});

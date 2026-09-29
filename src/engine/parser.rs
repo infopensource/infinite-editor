@@ -32,7 +32,7 @@ impl ParserGateway {
 
     pub fn render_html(&self, source: &str) -> Result<String, ParseError> {
         markdown::to_html_with_options(source, &math_options())
-            .map(|html| render_explicit_line_breaks(&html))
+            .map(|html| render_paragraph_alignment(&render_explicit_line_breaks(&html)))
             .map_err(|error| ParseError {
                 message: error.to_string(),
             })
@@ -53,6 +53,34 @@ impl ParserGateway {
                     .count()
             })
     }
+}
+
+// Only recognize our exact trailing paragraph metadata. Arbitrary HTML remains escaped.
+fn render_paragraph_alignment(html: &str) -> String {
+    let mut output = html.to_string();
+    for align in ["left", "center", "right", "justify"] {
+        let marker = format!("&lt;!-- infinite-editor:align={align} --&gt;");
+        let mut search_from = 0;
+        while let Some(relative) = output[search_from..].find(&marker) {
+            let start = search_from + relative;
+            let end = start + marker.len();
+            let tag = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"]
+                .into_iter()
+                .find(|tag| output[end..].starts_with(&format!("</{tag}>")));
+            if let Some(tag) = tag {
+                if let Some(open) = output[..start].rfind(&format!("<{tag}>")) {
+                    output.replace_range(start..end, "");
+                    let style =
+                        format!("<{tag} style=\"text-align:{align};text-align-last:auto\">");
+                    output.replace_range(open..open + tag.len() + 2, &style);
+                    search_from = open + style.len();
+                    continue;
+                }
+            }
+            search_from = end;
+        }
+    }
+    output
 }
 
 fn render_explicit_line_breaks(html: &str) -> String {
@@ -128,6 +156,16 @@ fn visible_character_count(node: &Node) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renders_paragraph_alignment() {
+        for align in ["left", "center", "right", "justify"] {
+            let source = format!("正文<!-- infinite-editor:align={align} -->");
+            let html = ParserGateway::markdown_rs().render_html(&source).unwrap();
+            assert!(html.contains(&format!("text-align:{align}")), "{html}");
+            assert!(!html.contains("infinite-editor:align"));
+        }
+    }
 
     #[test]
     fn renders_common_markdown_to_html() {
