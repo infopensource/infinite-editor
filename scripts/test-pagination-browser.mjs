@@ -11,6 +11,11 @@ if (process.argv[2] === 'page-furniture-entry') {
   process.exit(process.exitCode ?? 0);
 }
 
+if (process.argv[2] === 'file-actions') {
+  await import('./test-file-actions-browser.mjs');
+  process.exit(process.exitCode ?? 0);
+}
+
 if (process.argv[2] === 'dialog') {
   await import('./test-loading-dialog-browser.mjs');
   process.exit(process.exitCode ?? 0);

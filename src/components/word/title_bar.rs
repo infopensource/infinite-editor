@@ -77,7 +77,18 @@ fn TitleIcon(name: &'static str) -> Element {
 }
 
 #[component]
-pub fn TitleBar(document_title: String, dirty: bool, save_status: String, on_rename: EventHandler<String>, on_save: EventHandler<()>, on_command: EventHandler<String>) -> Element {
+pub fn TitleBar(
+    document_title: String,
+    dirty: bool,
+    save_status: String,
+    auto_save_enabled: bool,
+    auto_save_start_pending: bool,
+    auto_save_hint: String,
+    on_toggle_auto_save: EventHandler<()>,
+    on_rename: EventHandler<String>,
+    on_save: EventHandler<()>,
+    on_command: EventHandler<String>,
+) -> Element {
     let mut editing = use_signal(|| false);
     let mut draft = use_signal(String::new);
     use_effect(|| { let _ = document::eval(include_str!("../../../web/title_bar.js")); });
@@ -113,9 +124,26 @@ pub fn TitleBar(document_title: String, dirty: bool, save_status: String, on_ren
             div { class: "title-left",
                 onpointerdown: move |evt| evt.stop_propagation(),
                 ondoubleclick: move |evt| evt.stop_propagation(),
+                button {
+                    id: "title-auto-save",
+                    class: "title-auto-save",
+                    r#type: "button",
+                    role: "switch",
+                    "aria-checked": auto_save_enabled,
+                    disabled: auto_save_start_pending,
+                    aria_label: "自动保存",
+                    "aria-description": auto_save_hint.clone(),
+                    title: auto_save_hint.clone(),
+                    onmousedown: move |event| event.prevent_default(),
+                    onclick: move |_| on_toggle_auto_save.call(()),
+                    span { "自动保存" }
+                    span { class: "auto-save-track", "aria-hidden": "true", span { class: "auto-save-thumb" } }
+                }
+                div { class: "title-quick-actions", role: "group", aria_label: "快捷操作",
                 button { id: "title-undo", class: "icon-btn", title: "撤销 (Ctrl+Z)", aria_label: "撤销", onmousedown: move |e| e.prevent_default(), onclick: move |_| on_command.call("undo".into()), TitleIcon { name: "undo" } }
                 button { id: "title-redo", class: "icon-btn", title: "重做 (Ctrl+Y)", aria_label: "重做", onmousedown: move |e| e.prevent_default(), onclick: move |_| on_command.call("redo".into()), TitleIcon { name: "redo" } }
                 button { id: "title-save", class: "icon-btn", title: "保存 (Ctrl+S)", aria_label: "保存", onclick: move |_| on_save.call(()), TitleIcon { name: "save" } }
+                }
                 span { class: "divider" }
                 if editing() {
                     input {

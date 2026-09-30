@@ -4,6 +4,7 @@ pub(crate) mod document_renderer;
 mod editor_surface;
 mod file_actions;
 mod file_backstage;
+mod javascript;
 mod outline;
 mod page_furniture_dialog;
 mod prosemirror_surface;

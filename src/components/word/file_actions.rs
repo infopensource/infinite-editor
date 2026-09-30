@@ -253,48 +253,85 @@ pub(super) fn handle_open_document_from_path(
 }
 
 pub(super) fn handle_save_document(
+    document: Signal<ProjectDocument>,
+    resources: Signal<ResourceBundle>,
+    current_location: Signal<Option<DocumentLocation>>,
+    status_hint: Signal<String>,
+    saved_document: Signal<ProjectDocument>,
+) {
+    spawn(async move {
+        save_document_now(
+            document,
+            resources,
+            current_location,
+            status_hint,
+            saved_document,
+        )
+        .await;
+    });
+}
+
+// A caller creating a new document must wait for a successful save, including
+// the file picker. Cancellation or failure leaves the current document intact.
+pub(super) async fn save_document_now(
     mut document: Signal<ProjectDocument>,
     resources: Signal<ResourceBundle>,
     current_location: Signal<Option<DocumentLocation>>,
     mut status_hint: Signal<String>,
     saved_document: Signal<ProjectDocument>,
-) {
+) -> bool {
     status_hint.set("正在保存…".into());
-    spawn(async move {
-        let result = document::eval(r#"
+    let result = super::javascript::eval_reply::<Option<String>>(r#"
             if (document.getElementById('infinite-prosemirror-host')) {
                 const prepared = window.InfiniteWysiwygEditor?.prepareModeSwitch('infinite-prosemirror-host');
                 if (!prepared?.ok || prepared.deferred) return null;
             }
             return window.InfiniteMarkdownEditor?.getValue() ?? null;
-        "#).join::<Option<String>>().await;
-        match result {
-            Ok(Some(markdown)) => {
-                document.write().markdown = markdown;
-                save_current_document(document, resources, current_location, status_hint, saved_document);
-            }
-            Ok(None) => {
-                // The File tab unmounts the editor; the Rust document is authoritative there.
-                let mounted = document::eval("return !!document.querySelector('.editor-surface');").join::<bool>().await;
-                if matches!(mounted, Ok(false)) {
-                    save_current_document(document, resources, current_location, status_hint, saved_document);
-                } else {
-                    status_hint.set("请完成当前输入后再保存".into());
-                }
-            }
-            Err(error) => status_hint.set(format!("同步文档失败：{error}")),
+        "#).await;
+    match result {
+        Ok(Some(markdown)) => {
+            document.write().markdown = markdown;
+            save_current_document(
+                document,
+                resources,
+                current_location,
+                status_hint,
+                saved_document,
+            )
+            .await
         }
-    });
+        Ok(None) => {
+            // The File tab unmounts the editor; the Rust document is authoritative there.
+            let mounted = super::javascript::eval_reply::<bool>("return !!document.querySelector('.editor-surface');")
+                .await;
+            if matches!(mounted, Ok(false)) {
+                save_current_document(
+                    document,
+                    resources,
+                    current_location,
+                    status_hint,
+                    saved_document,
+                )
+                .await
+            } else {
+                status_hint.set("请完成当前输入后再保存".into());
+                false
+            }
+        }
+        Err(error) => {
+            status_hint.set(format!("同步文档失败：{error}"));
+            false
+        }
+    }
 }
 
-fn save_current_document(
+async fn save_current_document(
     document: Signal<ProjectDocument>,
     resources: Signal<ResourceBundle>,
     current_location: Signal<Option<DocumentLocation>>,
     mut status_hint: Signal<String>,
-    #[allow(unused_mut, unused_variables)]
-    mut saved_document: Signal<ProjectDocument>,
-) {
+    #[allow(unused_mut, unused_variables)] mut saved_document: Signal<ProjectDocument>,
+) -> bool {
     #[cfg(feature = "desktop")]
     {
         let mut current_location = current_location;
@@ -304,26 +341,36 @@ fn save_current_document(
             match storage::save_document(&location, &current_document, &resources.read()) {
                 Ok(_) => {
                     saved_document.set(current_document.clone());
-                    status_hint.set(format!("已保存 {}", file_name_or(location.path(), "文档")))
+                    status_hint.set(format!("已保存 {}", file_name_or(location.path(), "文档")));
+                    true
                 }
-                Err(err) => status_hint.set(err),
+                Err(err) => {
+                    status_hint.set(err);
+                    false
+                }
             }
         } else {
             let current_resources = resources.read().clone();
             status_hint.set("请选择保存位置".to_string());
-            spawn(async move {
-                match save_document_as_dialog(current_document.clone(), current_resources, None, None).await
-                {
-                    Ok(Some(location)) => {
-                        saved_document.set(current_document.clone());
-                        let name = file_name_or(location.path(), "文档");
-                        current_location.set(Some(location));
-                        status_hint.set(format!("已保存 {name}"));
-                    }
-                    Ok(None) => status_hint.set("已取消保存".to_string()),
-                    Err(err) => status_hint.set(err),
+            match save_document_as_dialog(current_document.clone(), current_resources, None, None)
+                .await
+            {
+                Ok(Some(location)) => {
+                    saved_document.set(current_document.clone());
+                    let name = file_name_or(location.path(), "文档");
+                    current_location.set(Some(location));
+                    status_hint.set(format!("已保存 {name}"));
+                    true
                 }
-            });
+                Ok(None) => {
+                    status_hint.set("已取消保存".to_string());
+                    false
+                }
+                Err(err) => {
+                    status_hint.set(err);
+                    false
+                }
+            }
         }
     }
 
@@ -333,6 +380,7 @@ fn save_current_document(
         let _ = resources;
         let _ = current_location;
         status_hint.set("当前平台暂不支持系统文件对话框".to_string());
+        false
     }
 }
 

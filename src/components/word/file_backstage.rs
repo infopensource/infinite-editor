@@ -69,6 +69,7 @@ enum BackstageSection {
     Info,
     SaveAs,
     Export,
+    Settings,
 }
 
 #[component]
@@ -76,7 +77,10 @@ pub fn FileBackstage(
     current_file: Option<String>,
     status_hint: String,
     has_location: bool,
+    dialog_style_b: bool,
+    on_dialog_style_change: EventHandler<bool>,
     on_back: EventHandler<()>,
+    on_new: EventHandler<()>,
     on_open: EventHandler<()>,
     on_save: EventHandler<()>,
     on_save_as: EventHandler<SaveAsTarget>,
@@ -114,6 +118,13 @@ pub fn FileBackstage(
                         span { "信息" }
                     }
                     button {
+                        id: "file-new",
+                        class: "file-nav-item command",
+                        onclick: move |_| on_new.call(()),
+                        span { class: "file-nav-symbol", "＋" }
+                        span { "新建" }
+                    }
+                    button {
                         class: "file-nav-item command",
                         onclick: move |_| on_open.call(()),
                         span { class: "file-nav-symbol", "↗" }
@@ -137,6 +148,14 @@ pub fn FileBackstage(
                         onclick: move |_| section.set(BackstageSection::Export),
                         span { class: "file-nav-symbol", "⇱" }
                         span { "导出" }
+                    }
+                    div { class: "file-nav-divider" }
+                    button {
+                        id: "file-settings",
+                        class: if section() == BackstageSection::Settings { "file-nav-item active" } else { "file-nav-item" },
+                        onclick: move |_| section.set(BackstageSection::Settings),
+                        span { class: "file-nav-symbol", "⚙" }
+                        span { "设置" }
                     }
                 }
             }
@@ -243,6 +262,48 @@ pub fn FileBackstage(
                                         span { "{target.description()}" }
                                     }
                                     span { class: "file-choice-action", "{target.availability_label()}" }
+                                }
+                            }
+                        }
+                    },
+                    BackstageSection::Settings => rsx! {
+                        header { class: "file-page-header",
+                            h1 { "编辑器设置" }
+                            p { "设置此设备上的界面偏好。" }
+                        }
+                        section { class: "file-settings-group",
+                            h2 { "对话框样式" }
+                            p { "用于保存确认、打开文档和其他编辑器对话框。选择后立即生效。" }
+                            div { class: "dialog-style-choices", role: "radiogroup", aria_label: "对话框样式",
+                                button {
+                                    id: "dialog-style-a",
+                                    r#type: "button",
+                                    role: "radio",
+                                    aria_checked: !dialog_style_b,
+                                    class: if dialog_style_b { "dialog-style-choice" } else { "dialog-style-choice selected" },
+                                    onclick: move |_| on_dialog_style_change.call(false),
+                                    span { class: "dialog-style-mini style-a", aria_hidden: "true",
+                                        span { class: "dialog-style-mini-title" }
+                                        span { class: "dialog-style-mini-line" }
+                                        span { class: "dialog-style-mini-actions" }
+                                    }
+                                    strong { "A · 编辑器原生" }
+                                    small { "紧凑、清晰" }
+                                }
+                                button {
+                                    id: "dialog-style-b",
+                                    r#type: "button",
+                                    role: "radio",
+                                    aria_checked: dialog_style_b,
+                                    class: if dialog_style_b { "dialog-style-choice selected" } else { "dialog-style-choice" },
+                                    onclick: move |_| on_dialog_style_change.call(true),
+                                    span { class: "dialog-style-mini style-b", aria_hidden: "true",
+                                        span { class: "dialog-style-mini-title" }
+                                        span { class: "dialog-style-mini-line" }
+                                        span { class: "dialog-style-mini-actions" }
+                                    }
+                                    strong { "B · 桌面办公" }
+                                    small { "分区明确，延续 Word 风格" }
                                 }
                             }
                         }
@@ -367,6 +428,42 @@ pub fn WarningAlert(message: Option<String>, on_close: EventHandler<()>) -> Elem
                         autofocus: true,
                         onclick: move |_| on_close.call(()),
                         "知道了"
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn NewDocumentDialog(
+    visible: bool,
+    saving: bool,
+    status: String,
+    on_cancel: EventHandler<()>,
+    on_discard: EventHandler<()>,
+    on_save: EventHandler<()>,
+) -> Element {
+    rsx! {
+        DialogRoot {
+            open: visible,
+            on_open_change: move |open: bool| { if !open && !saving { on_cancel.call(()); } },
+            class: "editor-progress-backdrop",
+            DialogContent {
+                id: "new-document-dialog",
+                class: "dialog-card new-document-dialog",
+                header { class: "dialog-header",
+                    DialogTitle { class: "new-document-title", "保存对当前文档的更改吗？" }
+                    p { "新建文档前，可以保存当前文档中的修改。" }
+                }
+                if !status.is_empty() {
+                    p { class: "new-document-feedback", role: "status", "{status}" }
+                }
+                footer { class: "dialog-footer",
+                    button { id: "new-discard", class: "dialog-btn discard", disabled: saving, onclick: move |_| on_discard.call(()), "不保存" }
+                    button { id: "new-cancel", class: "dialog-btn ghost", disabled: saving, onclick: move |_| on_cancel.call(()), "取消" }
+                    button { id: "new-save", class: "dialog-btn primary", disabled: saving, onclick: move |_| on_save.call(()),
+                        if saving { "正在保存…" } else { "保存并新建" }
                     }
                 }
             }

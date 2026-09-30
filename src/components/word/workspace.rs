@@ -2,9 +2,9 @@
 use super::file_actions::browse_document_dialog;
 use super::file_actions::{
     file_name_or, handle_export_document, handle_open_document_from_path, handle_save_as_document,
-    handle_save_document, OpenDocumentState,
+    handle_save_document, save_document_now, OpenDocumentState,
 };
-use super::file_backstage::{FileBackstage, OpenConfigDialog, WarningAlert};
+use super::file_backstage::{FileBackstage, NewDocumentDialog, OpenConfigDialog, WarningAlert};
 use super::resize_handles::ResizeHandles;
 use super::{
     document_renderer, prosemirror_surface, ribbon_groups, EditorSurface, RibbonTab, StatusBar,
@@ -83,14 +83,21 @@ pub fn WordWorkspace() -> Element {
     let mut markdown_preview_open = use_signal(|| true);
     let mut document = use_signal(|| ProjectDocument::new(String::new()));
     let mut saved_document = use_signal(|| ProjectDocument::new(String::new()));
-    let document_revision = use_signal(|| 0u64);
+    let mut document_revision = use_signal(|| 0u64);
     let mut editor_revision = use_signal(|| 0u64);
     #[allow(unused_mut)]
     let mut resources = use_signal(ResourceBundle::default);
     let mut show_ruler = use_signal(|| true);
-    let current_location = use_signal(|| None::<DocumentLocation>);
+    let mut current_location = use_signal(|| None::<DocumentLocation>);
     #[allow(unused_mut)]
     let mut status_hint = use_signal(|| "就绪".to_string());
+    let mut new_dialog_visible = use_signal(|| false);
+    let mut new_saving = use_signal(|| false);
+    let mut new_save_feedback = use_signal(String::new);
+    let mut new_request_pending = use_signal(|| false);
+    let mut auto_save_enabled = use_signal(|| false);
+    let mut auto_save_start_pending = use_signal(|| false);
+    let mut auto_save_error = use_signal(|| None::<String>);
     let mut open_pending = use_signal(|| false);
     let mut open_generation = use_signal(|| 0u64);
     let mut open_dialog_visible = use_signal(|| false);
@@ -98,11 +105,64 @@ pub fn WordWorkspace() -> Element {
     let mut open_path_input = use_signal(String::new);
     let mut open_read_only_mode = use_signal(|| false);
     let mut open_auto_detect_encoding = use_signal(|| true);
+    let mut dialog_style_b = use_signal(|| false);
+    use_effect(move || {
+        spawn(async move {
+            let script = "try { return localStorage.getItem('infinite-editor.dialog-style') === 'b'; } catch (_) { return false; }";
+            if let Ok(style_b) = document::eval(script).join::<bool>().await {
+                dialog_style_b.set(style_b);
+                let _ = document::eval(if style_b {
+                    "document.body.classList.add('dialog-style-b')"
+                } else {
+                    "document.body.classList.remove('dialog-style-b')"
+                });
+            }
+        });
+    });
     #[allow(unused_mut)]
     let mut browse_pending = use_signal(|| false);
     use_effect(move || {
         let _revision = document_revision();
         saved_document.set(document.peek().clone());
+    });
+    let document_dirty = use_memo(move || *document.read() != *saved_document.read());
+    // Only the switch restarts this task. Editing does not postpone a tick.
+    // Inspect borrowed values first; clone a snapshot only when a save is due.
+    #[cfg(feature = "desktop")]
+    use_resource(move || {
+        let enabled = auto_save_enabled();
+        async move {
+            if !enabled {
+                return;
+            }
+            let period = std::time::Duration::from_secs(30);
+            let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                if !*auto_save_enabled.peek() {
+                    return;
+                }
+                if *open_pending.peek() || *new_dialog_visible.peek() || !*document_dirty.peek() {
+                    continue;
+                }
+                let Some(location) = current_location.peek().clone() else { continue };
+                let snapshot = document.peek().clone();
+                match crate::storage::save_document(&location, &snapshot, &resources.peek()) {
+                    Ok(()) => {
+                        saved_document.set(snapshot);
+                        auto_save_error.set(None);
+                        status_hint.set(format!("已保存 {}", file_name_or(location.path(), "文档")));
+                    }
+                    Err(error) => {
+                        status_hint.set(format!("自动保存失败：{error}"));
+                        auto_save_error.set(Some(format!("自动保存失败：{error}。请检查后重新开启，或手动保存。")));
+                        auto_save_enabled.set(false);
+                        return;
+                    }
+                }
+            }
+        }
     });
     let title_name = if !document.read().layout.document.title.is_empty() {
         document.read().layout.document.title.clone()
@@ -151,16 +211,71 @@ pub fn WordWorkspace() -> Element {
     let paper = current_document.layout.paper.clone();
     let margins = current_document.layout.margins.clone();
 
+    let mut create_document = move || {
+        open_generation.with_mut(|value| *value = value.wrapping_add(1));
+        open_pending.set(false);
+        open_dialog_visible.set(false);
+        open_path_input.set(String::new());
+        warning_alert.set(None);
+        let blank = ProjectDocument::new(String::new());
+        document.set(blank.clone());
+        saved_document.set(blank);
+        resources.set(ResourceBundle::default());
+        current_location.set(None);
+        document_revision.with_mut(|value| *value = value.wrapping_add(1));
+        editor_revision.set(0);
+        selection_active.set(false);
+        selected_source.set(None);
+        selected_character_count.set(None);
+        page_status.set(PageStatus { current: 1, total: 1 });
+        auto_save_error.set(None);
+        auto_save_enabled.set(false);
+        new_dialog_visible.set(false);
+        status_hint.set("已新建空白文档".into());
+        active_tab.set(RibbonTab::Home);
+    };
+
     rsx! {
-        div { class: if active_tab() == RibbonTab::File { "word-shell file-mode" } else { "word-shell" },
+        div { class: match (active_tab() == RibbonTab::File, dialog_style_b()) {
+                (true, true) => "word-shell file-mode dialog-style-b",
+                (true, false) => "word-shell file-mode",
+                (false, true) => "word-shell dialog-style-b",
+                (false, false) => "word-shell",
+            },
             "data-page-furniture": serde_json::to_string(&current_document.layout.page_furniture).unwrap_or_default(),
             "data-page-layout": serde_json::to_string(&current_document.layout).unwrap_or_default(),
             ResizeHandles {}
             super::page_furniture_dialog::PageFurnitureDialogTemplate {}
             TitleBar {
                 document_title: title_name.clone(),
-                dirty: document() != saved_document(),
+                dirty: document_dirty(),
                 save_status: status_hint(),
+                auto_save_enabled: auto_save_enabled(),
+                auto_save_start_pending: auto_save_start_pending(),
+                auto_save_hint: auto_save_error().unwrap_or_else(|| {
+                    if !cfg!(feature = "desktop") { "当前平台暂不支持自动保存到本地文件".into() }
+                    else if auto_save_start_pending() { "正在保存文档；保存成功后开启自动保存".into() }
+                    else if open_pending() { "正在打开文档，自动保存已暂停".into() }
+                    else if auto_save_enabled() { "自动保存已开启：每 30 秒检查一次，仅保存未保存的修改".into() }
+                    else { "自动保存已关闭：请使用保存按钮或 Ctrl+S 保存".into() }
+                }),
+                on_toggle_auto_save: move |_| {
+                    if auto_save_start_pending() { return; }
+                    auto_save_error.set(None);
+                    if auto_save_enabled() {
+                        auto_save_enabled.set(false);
+                        return;
+                    }
+                    auto_save_start_pending.set(true);
+                    let revision = document_revision();
+                    spawn(async move {
+                        let saved = save_document_now(document, resources, current_location, status_hint, saved_document).await;
+                        auto_save_start_pending.set(false);
+                        if saved && document_revision() == revision && current_location().is_some() {
+                            auto_save_enabled.set(true);
+                        }
+                    });
+                },
                 on_rename: move |title| document.write().layout.document.title = title,
                 on_save: move |_| handle_save_document(document, resources, current_location, status_hint, saved_document),
                 on_command: move |command| {
@@ -203,7 +318,42 @@ pub fn WordWorkspace() -> Element {
                     current_file: current_location().map(|location| location.path().display().to_string()),
                     status_hint: status_hint(),
                     has_location: current_location().is_some(),
+                    dialog_style_b: dialog_style_b(),
+                    on_dialog_style_change: move |style_b| {
+                        dialog_style_b.set(style_b);
+                        let script = if style_b {
+                            "try { localStorage.setItem('infinite-editor.dialog-style', 'b'); } catch (_) {} document.body.classList.add('dialog-style-b');"
+                        } else {
+                            "try { localStorage.setItem('infinite-editor.dialog-style', 'a'); } catch (_) {} document.body.classList.remove('dialog-style-b');"
+                        };
+                        let _ = document::eval(script);
+                    },
                     on_back: move |_| active_tab.set(RibbonTab::Home),
+                    on_new: move |_| {
+                        if new_request_pending() || new_saving() { return; }
+                        new_request_pending.set(true);
+                        let revision = document_revision();
+                        spawn(async move {
+                            // The source controller survives leaving the File tab. Read its
+                            // latest content before deciding whether unsaved work exists.
+                            let script = format!("const snapshot = window.InfiniteMarkdownEditor?.getSnapshot(); return snapshot?.documentRevision === {revision} ? snapshot.markdown : null;");
+                            let result = super::javascript::eval_reply::<Option<String>>(&script).await;
+                            new_request_pending.set(false);
+                            if document_revision() != revision { return; }
+                            match result {
+                                Ok(markdown) => {
+                                    if let Some(markdown) = markdown { document.write().markdown = markdown; }
+                                    if *document.peek() != *saved_document.peek() {
+                                        new_save_feedback.set(String::new());
+                                        new_dialog_visible.set(true);
+                                    } else {
+                                        create_document();
+                                    }
+                                }
+                                Err(error) => status_hint.set(format!("同步文档失败：{error}")),
+                            }
+                        });
+                    },
                     on_open: move |_| {
                         open_dialog_visible.set(true);
                         if let Some(location) = current_location() {
@@ -346,6 +496,31 @@ pub fn WordWorkspace() -> Element {
                     on_right_margin_change: move |value| { document.write().layout.margins.right_mm = value },
                 }
                 }
+            }
+            NewDocumentDialog {
+                visible: new_dialog_visible(),
+                saving: new_saving(),
+                status: new_save_feedback(),
+                on_cancel: move |_| new_dialog_visible.set(false),
+                on_discard: move |_| create_document(),
+                on_save: move |_| {
+                    if new_saving() { return; }
+                    new_saving.set(true);
+                    new_save_feedback.set(String::new());
+                    let revision = document_revision();
+                    spawn(async move {
+                        let saved = save_document_now(document, resources, current_location, status_hint, saved_document).await;
+                        new_saving.set(false);
+                        if document_revision() != revision { return; }
+                        if saved && *document.peek() == *saved_document.peek() {
+                            create_document();
+                        } else if saved {
+                            new_save_feedback.set("保存期间文档有新修改，请再次保存或取消新建。".into());
+                        } else {
+                            new_save_feedback.set(status_hint.peek().clone());
+                        }
+                    });
+                },
             }
             OpenConfigDialog {
                 visible: open_dialog_visible(),
