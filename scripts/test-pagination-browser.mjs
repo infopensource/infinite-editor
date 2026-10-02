@@ -28,7 +28,13 @@ const bundle = await build({
   entryPoints: [resolve(root, scenarios.includes('alignment') ? 'web/wysiwyg/alignment_browser.js' : scenarios.includes('zoom') ? 'web/zoom_browser.js' : scenarios.includes('tables-rendering') ? 'web/document_renderer/tables_browser.js' : scenarios.includes('lists') ? 'web/document_renderer/lists_browser.js' : scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
   loader: { '.md': 'text', '.png': 'dataurl' }, bundle: true, write: false, format: 'iife',
 });
-const zoomCss = scenarios.includes('zoom') || scenarios.includes('tables-rendering') || scenarios.includes('lists') || scenarios.includes('selection') || scenarios.includes('page-furniture') ? readFileSync(resolve(root, 'assets/styling/word.css'), 'utf8') : '';
+const wordStyleFiles = [...readFileSync(resolve(root, 'src/styling.rs'), 'utf8')
+  .matchAll(/include_str!\("\.\.\/assets\/styling\/word\/([^"/]+\.css)"\)/g)]
+  .map(([, file]) => file);
+if (wordStyleFiles.length === 0) throw new Error('No word styles found in src/styling.rs');
+const zoomCss = scenarios.includes('zoom') || scenarios.includes('tables-rendering') || scenarios.includes('lists') || scenarios.includes('selection') || scenarios.includes('page-furniture')
+  ? wordStyleFiles.map(file => readFileSync(resolve(root, 'assets/styling/word', file), 'utf8')).join('')
+  : '';
 const css = readFileSync(resolve(root, 'assets/styling/wysiwyg_core.css'), 'utf8')
   + readFileSync(resolve(root, 'assets/math.bundle.css'), 'utf8');
 const math = readFileSync(resolve(root, 'assets/math.bundle.js'), 'utf8');

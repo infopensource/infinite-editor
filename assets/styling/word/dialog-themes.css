@@ -1,0 +1,65 @@
+/* Confirmation dialogs have no empty form body between copy and actions. */
+.new-document-dialog { width: min(520px, calc(100vw - 32px)); }
+.new-document-title { margin: 0; font-size: 18px; line-height: 1.4; color: #0f172a; }
+.new-document-feedback { margin: 0; padding: 12px 16px; font-size: 13px; line-height: 1.5; color: #9a3412; overflow-wrap: anywhere; }
+.new-document-dialog .dialog-footer { flex-wrap: wrap; }
+
+/* Editor dialog appearance: A is the default; B follows desktop office windows. */
+.word-shell .dialog-overlay,
+.word-shell .editor-progress-backdrop { background: rgb(24 35 49 / 32%); backdrop-filter: none; }
+.word-shell .dialog-card {
+    width: min(460px, calc(100vw - 32px));
+    border: 1px solid #9caec0;
+    border-radius: 5px;
+    box-shadow: 0 14px 38px rgb(20 36 59 / 22%);
+}
+.word-shell .dialog-header { padding: 22px 24px 0; border: 0; background: #fff; }
+.word-shell .dialog-header h2,
+.word-shell .dialog-header h3 { font-size: 18px; line-height: 1.4; font-weight: 600; }
+.word-shell .dialog-header p { margin-top: 8px; font-size: 13px; line-height: 1.5; color: #5d6a78; }
+.word-shell .dialog-body { padding: 14px 24px 18px; }
+.word-shell .dialog-footer { padding: 14px 24px 20px; border: 0; background: #fff; }
+.word-shell .dialog-btn,
+.word-shell .dialog-browse-btn,
+.word-shell .dialog-input,
+.word-shell .dialog-option { border-radius: 4px; }
+.word-shell .new-document-dialog .dialog-footer { padding-top: 14px; }
+.word-shell .new-document-dialog .dialog-btn.discard { margin-right: auto; padding-left: 0; border-color: transparent; color: #a03024; background: transparent; }
+.word-shell .new-document-dialog .dialog-btn.discard:hover { text-decoration: underline; }
+.word-shell .new-document-feedback { padding: 12px 24px 0; color: #a93228; }
+.word-shell .editor-progress-dialog {
+    width: min(460px, calc(100vw - 32px));
+    border: 1px solid #9caec0;
+    border-radius: 5px;
+    box-shadow: 0 14px 38px rgb(20 36 59 / 22%);
+}
+.word-shell.dialog-style-b .dialog-card { width: min(520px, calc(100vw - 32px)); border-color: #bbc8d5; border-top: 3px solid #23679c; border-radius: 2px; box-shadow: 0 12px 32px rgb(20 36 59 / 18%); }
+.word-shell.dialog-style-b .dialog-header { padding: 21px 26px 18px; border-bottom: 1px solid #e1e5e9; }
+.word-shell.dialog-style-b .dialog-body { padding: 16px 26px; }
+.word-shell.dialog-style-b .dialog-footer { padding: 16px 26px; border-top: 1px solid #e1e5e9; }
+.word-shell.dialog-style-b .dialog-btn,
+.word-shell.dialog-style-b .dialog-browse-btn,
+.word-shell.dialog-style-b .dialog-input,
+.word-shell.dialog-style-b .dialog-option { border-radius: 2px; }
+.word-shell.dialog-style-b .new-document-feedback { padding: 12px 26px 0; }
+.word-shell.dialog-style-b .editor-progress-dialog { width: min(520px, calc(100vw - 32px)); border-color: #bbc8d5; border-top: 3px solid #23679c; border-radius: 2px; box-shadow: 0 12px 32px rgb(20 36 59 / 18%); }
+.page-furniture-dialog { border-radius: 5px; box-shadow: 0 14px 38px rgb(20 36 59 / 22%); }
+body.dialog-style-b .page-furniture-dialog { border-top: 3px solid #23679c; border-radius: 2px; box-shadow: 0 12px 32px rgb(20 36 59 / 18%); }
+
+.file-settings-group { max-width: 680px; padding-top: 24px; }
+.file-settings-group h2 { margin: 0 0 6px; font-size: 18px; }
+.file-settings-group > p { margin: 0 0 20px; color: #637487; font-size: 13px; }
+.dialog-style-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.dialog-style-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 16px; border: 1px solid #cbd5df; border-radius: 5px; color: #26384a; background: #fff; text-align: left; cursor: pointer; }
+.dialog-style-choice:hover { border-color: #7ea3c2; }
+.dialog-style-choice.selected { border-color: #28679c; box-shadow: inset 0 0 0 1px #28679c; background: #f6faff; }
+.dialog-style-choice strong { font-size: 14px; }
+.dialog-style-choice small { color: #637487; font-size: 12px; }
+.dialog-style-choice:focus-visible { outline: 2px solid #28679c; outline-offset: 2px; }
+.dialog-style-mini { position: relative; display: block; width: 100%; height: 88px; margin-bottom: 6px; border: 1px solid #9caec0; border-radius: 5px; background: #fff; box-shadow: 0 5px 12px rgb(20 36 59 / 12%); }
+.dialog-style-mini.style-b { border-color: #bbc8d5; border-top: 3px solid #23679c; border-radius: 2px; }
+.dialog-style-mini-title { position: absolute; left: 12px; top: 12px; width: 38%; height: 7px; border-radius: 1px; background: #34465a; }
+.dialog-style-mini-line { position: absolute; left: 12px; top: 30px; width: 64%; height: 5px; background: #c8d2dd; }
+.dialog-style-mini-actions { position: absolute; right: 12px; bottom: 11px; width: 38%; height: 15px; background: linear-gradient(90deg, #e3e9ef 0 47%, transparent 47% 53%, #28679c 53%); }
+.dialog-style-mini.style-b::after { content: ""; position: absolute; left: 0; right: 0; top: 48px; border-top: 1px solid #e1e5e9; }
+@media (max-width: 600px) { .dialog-style-choices { grid-template-columns: 1fr; } }

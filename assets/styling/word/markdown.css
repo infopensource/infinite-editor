@@ -1,0 +1,290 @@
+.editor-surface.markdown-mode {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-top: 8px;
+    padding-bottom: 12px;
+}
+
+.markdown-workspace {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    align-items: stretch;
+}
+
+.markdown-workspace.with-preview {
+    --markdown-editor-ratio: 50%;
+    grid-template-columns: minmax(0, var(--markdown-editor-ratio)) 9px minmax(0, 1fr);
+}
+
+.markdown-workspace.immersive {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.markdown-split-line {
+    position: relative;
+    width: 9px;
+    cursor: col-resize;
+    touch-action: none;
+    background: transparent;
+    outline: none;
+}
+
+.markdown-split-line::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 1px;
+    background: rgba(148, 163, 184, 0.45);
+    transition: background-color 120ms ease, width 120ms ease, left 120ms ease;
+}
+
+.markdown-split-line:hover::after,
+.markdown-split-line.dragging::after {
+    left: 3.5px;
+    width: 2px;
+    background: rgba(96, 165, 250, 0.62);
+}
+
+body.markdown-split-resizing,
+body.markdown-split-resizing * {
+    cursor: col-resize !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
+}
+
+.markdown-editor-pane,
+.markdown-preview-pane {
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+}
+
+.markdown-editor-pane {
+    overflow: hidden;
+    background: #f8fafc;
+}
+
+.markdown-editor-stack {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+.markdown-code-editor {
+    width: 100%;
+    height: 100%;
+    background: #f8fafc;
+    overflow: hidden;
+}
+
+.markdown-editor-fallback {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: grid;
+    place-content: center;
+    gap: 8px;
+    padding: 24px;
+    background: #fff7ed;
+    color: #9a3412;
+    text-align: center;
+}
+
+.markdown-editor-fallback p {
+    margin: 0;
+    max-width: 560px;
+}
+
+.markdown-editor-bridge {
+    display: none;
+}
+
+.markdown-preview-pane {
+    overflow: auto;
+    padding: 12px 18px;
+    background: #ffffff;
+    color: #0f172a;
+    line-height: 1.7;
+}
+
+/* Dioxus writes new HTML into the staging layer. The renderer keeps the last
+   complete preview visible until resources and math are ready, then swaps the
+   staged tree into the stable live root in one operation. */
+.markdown-preview-pane:not(.preview-ready) > #markdown-math-preview {
+    display: none;
+}
+
+.markdown-preview-pane.preview-ready > .markdown-preview-staging {
+    display: none;
+}
+
+/* Keep rendered content inside the writable area even when the margins leave
+   only a very narrow column. Natural-language text may wrap normally, while
+   unbroken URLs, identifiers, and inline code are allowed to break anywhere. */
+.markdown-rendered-html {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.markdown-rendered-html > *,
+.markdown-rendered-html li,
+.markdown-rendered-html blockquote {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.markdown-rendered-html a,
+.markdown-rendered-html :not(pre) > code {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.markdown-rendered-html img,
+.markdown-rendered-html video,
+.markdown-rendered-html iframe,
+.markdown-rendered-html svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+/* KaTeX uses absolutely positioned SVG pieces for extensible arrows. The
+   general Markdown media rule above must not turn those pieces into images. */
+.markdown-rendered-html .katex svg {
+    display: block;
+    max-width: none;
+    height: inherit;
+}
+
+/* Keep the same table geometry as the editable ProseMirror surface. These
+   styles also travel with the standalone PDF document. */
+.markdown-rendered-html table {
+    display: table;
+    width: 100%;
+    max-width: 100%;
+    margin: 12px 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.markdown-rendered-html th,
+.markdown-rendered-html td {
+    min-width: 1em;
+    padding: 6px 9px;
+    border: 1px solid #94a3b8;
+    vertical-align: top;
+}
+
+.markdown-rendered-html th {
+    background: #f1f5f9;
+    font-weight: 600;
+}
+
+.markdown-rendered-html h1,
+.markdown-preview-pane h1 {
+    margin: 0 0 16px;
+    font-size: 28px;
+    line-height: 1.25;
+}
+
+.markdown-rendered-html h2,
+.markdown-preview-pane h2 {
+    margin: 24px 0 12px;
+    font-size: 22px;
+    line-height: 1.3;
+}
+
+.markdown-rendered-html h3,
+.markdown-preview-pane h3 {
+    margin: 18px 0 10px;
+    font-size: 18px;
+    line-height: 1.35;
+}
+
+.markdown-rendered-html p,
+.markdown-preview-pane p {
+    margin: 0 0 12px;
+    color: #1f2937;
+}
+
+.markdown-rendered-html ul,
+.markdown-rendered-html ol,
+.markdown-preview-pane ul,
+.markdown-preview-pane ol {
+    margin: 0 0 12px 24px;
+    padding: 0;
+}
+
+.markdown-rendered-html li,
+.markdown-preview-pane li {
+    margin: 4px 0;
+}
+
+.markdown-rendered-html blockquote,
+.markdown-preview-pane blockquote {
+    margin: 0 0 12px;
+    padding: 4px 0 4px 12px;
+    border-left: 3px solid #93c5fd;
+    color: #334155;
+}
+
+.markdown-rendered-html hr,
+.markdown-preview-pane hr {
+    border: none;
+    border-top: 1px solid #cbd5e1;
+    margin: 14px 0;
+}
+
+.markdown-rendered-html pre,
+.markdown-preview-code {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #f1f5f9;
+    font-family: Consolas, "Cascadia Mono", "JetBrains Mono", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    width: 100%;
+    max-width: 100%;
+    white-space: pre;
+    overflow: auto;
+}
+
+.markdown-rendered-html code {
+    font-family: Consolas, "Cascadia Mono", "JetBrains Mono", monospace;
+}
+
+.markdown-rendered-html .infinite-math {
+    color: inherit;
+    max-width: 100%;
+}
+
+.markdown-rendered-html .infinite-math.math-inline {
+    display: inline-block;
+    vertical-align: baseline;
+}
+
+.markdown-rendered-html .infinite-math.math-display {
+    display: block;
+    margin: 0 0 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: center;
+}
+
+.markdown-preview-code-lang {
+    color: #334155;
+}
+
+.markdown-preview-placeholder {
+    color: #94a3b8;
+}

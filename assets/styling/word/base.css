@@ -1,0 +1,124 @@
+:root {
+    color-scheme: light;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+.word-shell {
+    position: relative;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 44px 38px 124px 1fr 30px;
+    background: var(--ie-shell-background, #f3f4f6);
+    color: var(--ie-shell-text, #111827);
+    overflow: hidden;
+    border: 1px solid var(--ie-shell-border, #1f4e78);
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* WebKitGTK does not consistently inherit `user-select` through native-like
+   controls. Make the application chrome non-selectable explicitly, then opt
+   the actual document and editing surfaces back in below. */
+.word-shell * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.word-shell.file-mode {
+    grid-template-rows: 44px 38px minmax(0, 1fr) 30px;
+}
+
+.word-shell input,
+.word-shell textarea,
+.word-shell [contenteditable="true"],
+.markdown-code-editor,
+.markdown-code-editor *,
+.markdown-preview-pane .markdown-rendered-html,
+.markdown-preview-pane .markdown-rendered-html *,
+.document-page,
+.document-page * {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.markdown-rendered-html {
+    white-space: break-spaces;
+}
+
+.resize-handle {
+    position: absolute;
+    z-index: 20;
+    background: transparent;
+    pointer-events: auto;
+}
+
+.resize-n,
+.resize-s {
+    left: 12px;
+    right: 12px;
+    height: 10px;
+}
+
+.resize-n {
+    top: 0;
+    cursor: n-resize;
+}
+
+.resize-s {
+    bottom: 0;
+    cursor: s-resize;
+}
+
+.resize-e,
+.resize-w {
+    top: 12px;
+    bottom: 12px;
+    width: 10px;
+}
+
+.resize-w {
+    left: 0;
+    cursor: w-resize;
+}
+
+.resize-e {
+    right: 0;
+    cursor: e-resize;
+}
+
+.resize-nw,
+.resize-ne,
+.resize-sw,
+.resize-se {
+    width: 14px;
+    height: 14px;
+}
+
+.resize-nw {
+    top: 0;
+    left: 0;
+    cursor: nw-resize;
+}
+
+.resize-ne {
+    top: 0;
+    right: 0;
+    cursor: ne-resize;
+}
+
+.resize-sw {
+    left: 0;
+    bottom: 0;
+    cursor: sw-resize;
+}
+
+.resize-se {
+    right: 0;
+    bottom: 0;
+    cursor: se-resize;
+}

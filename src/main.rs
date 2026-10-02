@@ -11,6 +11,7 @@ mod document;
 mod engine;
 mod export;
 mod storage;
+mod styling;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
 mod views;
 
@@ -34,13 +35,6 @@ const WYSIWYG_JS: Asset = asset!("/assets/wysiwyg.bundle.js");
 const MATH_JS: Asset = asset!("/assets/math.bundle.js");
 const MATH_CSS: Asset = asset!("/assets/math.bundle.css");
 const DOCUMENT_RENDERER_JS: Asset = asset!("/assets/document_renderer.js");
-const APP_CSS: &str = concat!(
-    include_str!("../assets/styling/main.css"),
-    "\n",
-    include_str!("../assets/styling/word.css"),
-    "\n",
-    include_str!("../assets/styling/wysiwyg_core.css")
-);
 
 #[cfg(feature = "desktop")]
 fn main() {
@@ -93,7 +87,7 @@ fn App() -> Element {
         dioxus::document::Script { src: WYSIWYG_JS }
         dioxus::document::Script { src: MATH_JS }
         dioxus::document::Script { src: DOCUMENT_RENDERER_JS }
-        style { "{APP_CSS}" }
+        style { "{styling::APP_CSS}" }
 
         // The router component renders the route enum we defined above. It will handle synchronization of the URL and render
         // the layouts and components for the active route.

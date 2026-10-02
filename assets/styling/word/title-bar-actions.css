@@ -1,0 +1,58 @@
+/* AutoSave and quick actions share the title bar's compact control rhythm. */
+.title-auto-save {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    height: 30px;
+    padding: 0 4px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.title-auto-save:hover { background: #ffffff12; }
+.title-quick-actions {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 2px;
+    margin-left: 6px;
+    padding-left: 8px;
+    border-left: 1px solid #ffffff26;
+}
+.auto-save-track {
+    display: inline-flex;
+    align-items: center;
+    width: 28px;
+    height: 16px;
+    padding: 2px;
+    box-sizing: border-box;
+    border: 1px solid #b5c7d8;
+    border-radius: 10px;
+    background: transparent;
+    transition: background .15s ease, border-color .15s ease;
+}
+.auto-save-thumb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #d8e3ed;
+    transition: transform .15s ease;
+}
+.title-auto-save[aria-checked="true"] .auto-save-track { background: #d1e8fa; border-color: #d1e8fa; }
+.title-auto-save[aria-checked="true"] .auto-save-thumb { background: #244f77; transform: translateX(12px); }
+@media (max-width: 760px) {
+    .title-bar { grid-template-columns: minmax(200px, 1fr) minmax(80px, 140px) auto; }
+    #title-undo, #title-redo { display: none; }
+    .title-auto-save { padding: 0 3px; gap: 6px; }
+    .title-quick-actions { margin-left: 2px; padding-left: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .auto-save-thumb, .auto-save-track { transition: none; }
+}

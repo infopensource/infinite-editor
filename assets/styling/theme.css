@@ -1,0 +1,21 @@
+/* Application chrome only. Document typography and paper colors stay in the
+   document styles so exported PDFs do not depend on the UI theme. */
+.word-shell {
+    --ie-shell-background: #f3f4f6;
+    --ie-shell-text: #111827;
+    --ie-shell-border: #1f4e78;
+    --ie-title-background: #244f77;
+    --ie-title-text: #eef3f7;
+    --ie-tabs-background: #f8fafc;
+    --ie-panel-background: #ffffff;
+    --ie-panel-border: #d1d5db;
+    --ie-canvas-background: #eef2f7;
+    --ie-file-background: #ffffff;
+    --ie-file-nav-background: #f5f6f8;
+    --ie-file-nav-active-background: #dce8f5;
+    --ie-file-nav-active-text: #174f7e;
+    --ie-accent: #2563eb;
+    --ie-accent-background: #dbeafe;
+    --ie-accent-text: #1e40af;
+    --ie-status-background: #f8fafc;
+}

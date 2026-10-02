@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 use url::Url;
 
-const DOCUMENT_CSS: &str = include_str!("../../assets/styling/word.css");
+use crate::styling::DOCUMENT_CSS;
 const MATH_CSS: &str = include_str!("../../assets/math.bundle.css");
 const MATH_JS: &str = include_str!("../../assets/math.bundle.js");
 const PAGINATION_JS: &str = include_str!("../../assets/document_renderer.js");
