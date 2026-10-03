@@ -1,0 +1,5 @@
+# Copy to your user configuration directory as infinite-editor/settings.toml.
+# Restart the editor after manual edits. UI changes are saved automatically.
+[appearance]
+# a = 编辑器原生; b = 桌面办公
+dialog_style = "a"

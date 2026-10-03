@@ -36,6 +36,19 @@ pub(super) async fn browse_document_dialog() -> Option<PathBuf> {
 }
 
 #[cfg(feature = "desktop")]
+pub(super) async fn browse_import_dialog() -> Option<PathBuf> {
+    rfd::AsyncFileDialog::new()
+        .add_filter("AnyDoc 支持的文档", &[
+            "doc", "docx", "docm", "ppt", "pps", "pot", "pptx", "pptm", "ppsx",
+            "ppsm", "xls", "xlsx", "xlsm", "xlsb", "odt", "ods", "odp", "rtf",
+            "epub", "csv", "pdf",
+        ])
+        .pick_file()
+        .await
+        .map(|file| file.path().to_path_buf())
+}
+
+#[cfg(feature = "desktop")]
 async fn save_document_as_dialog(
     document: ProjectDocument,
     resources: ResourceBundle,
@@ -147,6 +160,7 @@ async fn export_dialog(target: ExportTarget) -> Result<Option<PathBuf>, String> 
 pub(super) struct OpenDocumentState {
     pub(super) active_tab: Signal<RibbonTab>,
     pub(super) document: Signal<ProjectDocument>,
+    pub(super) saved_document: Signal<ProjectDocument>,
     pub(super) resources: Signal<ResourceBundle>,
     pub(super) document_revision: Signal<u64>,
     pub(super) editor_revision: Signal<u64>,
@@ -203,6 +217,7 @@ pub(super) fn handle_open_document_from_path(
                             .set(Some(storage::STALE_LAYOUT_WARNING.to_string()));
                         warnings.retain(|warning| warning != storage::STALE_LAYOUT_WARNING);
                     }
+                    state.saved_document.set(loaded.document.clone());
                     state.document.set(loaded.document);
                     state.resources.set(loaded.resources);
                     state

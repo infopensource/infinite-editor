@@ -82,11 +82,14 @@ pub fn FileBackstage(
     on_back: EventHandler<()>,
     on_new: EventHandler<()>,
     on_open: EventHandler<()>,
+    on_import: EventHandler<()>,
     on_save: EventHandler<()>,
     on_save_as: EventHandler<SaveAsTarget>,
     on_export: EventHandler<ExportTarget>,
 ) -> Element {
     let mut section = use_signal(|| BackstageSection::Info);
+    let mut preview_open = use_signal(|| false);
+    let mut preview_style_b = use_signal(|| false);
     let file_display = current_file
         .as_deref()
         .and_then(|path| std::path::Path::new(path).file_name())
@@ -129,6 +132,14 @@ pub fn FileBackstage(
                         onclick: move |_| on_open.call(()),
                         span { class: "file-nav-symbol", "↗" }
                         span { "打开" }
+                    }
+                    button {
+                        id: "file-import",
+                        class: "file-nav-item command",
+                        title: "用 AnyDoc 将 Office、PDF 等文档转换为 Markdown",
+                        onclick: move |_| on_import.call(()),
+                        span { class: "file-nav-symbol", "⇥" }
+                        span { "导入" }
                     }
                     button {
                         class: "file-nav-item command",
@@ -275,6 +286,7 @@ pub fn FileBackstage(
                             h2 { "对话框样式" }
                             p { "用于保存确认、打开文档和其他编辑器对话框。选择后立即生效。" }
                             div { class: "dialog-style-choices", role: "radiogroup", aria_label: "对话框样式",
+                                div { class: "dialog-style-choice-container",
                                 button {
                                     id: "dialog-style-a",
                                     r#type: "button",
@@ -291,6 +303,18 @@ pub fn FileBackstage(
                                     small { "紧凑、清晰" }
                                 }
                                 button {
+                                    r#type: "button",
+                                    class: "dialog-preview-trigger dialog-style-preview-trigger",
+                                    aria_label: "预览编辑器原生风格",
+                                    onclick: move |_| {
+                                        preview_style_b.set(false);
+                                        preview_open.set(true);
+                                    },
+                                    "预览"
+                                }
+                                }
+                                div { class: "dialog-style-choice-container",
+                                button {
                                     id: "dialog-style-b",
                                     r#type: "button",
                                     role: "radio",
@@ -305,10 +329,108 @@ pub fn FileBackstage(
                                     strong { "B · 桌面办公" }
                                     small { "分区明确，延续 Word 风格" }
                                 }
+                                button {
+                                    r#type: "button",
+                                    class: "dialog-preview-trigger dialog-style-preview-trigger",
+                                    aria_label: "预览桌面办公风格",
+                                    onclick: move |_| {
+                                        preview_style_b.set(true);
+                                        preview_open.set(true);
+                                    },
+                                    "预览"
+                                }
+                                }
+                            }
+                            if preview_open() {
+                                DialogStyleGallery {
+                                    initial_style_b: preview_style_b(),
+                                    on_close: move |_| preview_open.set(false),
+                                }
                             }
                         }
                     },
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn DialogStyleGallery(initial_style_b: bool, on_close: EventHandler<()>) -> Element {
+    let mut style_b = use_signal(|| initial_style_b);
+    let mut scene = use_signal(|| 0usize);
+    let titles = [
+        "保存对当前文档的更改吗？",
+        "打开文档",
+        "无法保存文档",
+        "正在打开文档",
+    ];
+    rsx! {
+        DialogRoot {
+            open: true,
+            on_open_change: move |open: bool| { if !open { on_close.call(()); } },
+            class: "editor-progress-backdrop",
+            DialogContent { class: "dialog-preview-gallery",
+                header { class: "dialog-preview-heading",
+                    DialogTitle { "对话框预览" }
+                    button { r#type: "button", class: "dialog-preview-trigger",
+                        onclick: move |_| on_close.call(()), "关闭"
+                    }
+                }
+                div { class: "dialog-preview-controls", role: "group", aria_label: "预览风格",
+                    for (desktop, label) in [(false, "A · 编辑器原生"), (true, "B · 桌面办公")] {
+                        button { r#type: "button", aria_pressed: style_b() == desktop,
+                            onclick: move |_| style_b.set(desktop), "{label}"
+                        }
+                    }
+                }
+                div { class: "dialog-preview-controls", role: "group", aria_label: "预览场景",
+                    for (index, label) in ["保存确认", "打开文档", "操作失败", "处理中"].into_iter().enumerate() {
+                        button { r#type: "button", aria_pressed: scene() == index,
+                            onclick: move |_| scene.set(index), "{label}"
+                        }
+                    }
+                }
+                div { class: if style_b() { "dialog-preview-stage style-b" } else { "dialog-preview-stage" },
+                    div { class: "dialog-preview-window", role: "img",
+                        aria_label: format!("{}：{}，仅作外观展示", if style_b() { "桌面办公" } else { "编辑器原生" }, titles[scene()]),
+                        div { class: "dialog-preview-example", aria_hidden: "true",
+                            header { "{titles[scene()]}" }
+                            div { class: "dialog-preview-body",
+                                match scene() {
+                                    0 => rsx! { p { "新建文档前，可以保存未命名文档中的修改。" } },
+                                    1 => rsx! {
+                                        span { class: "dialog-preview-label", "文件路径" }
+                                        span { class: "dialog-preview-input", "/Documents/notes.md" }
+                                        p { "☑ 自动检测编码　　☐ 只读" }
+                                    },
+                                    2 => rsx! {
+                                        p { "保存位置不可用。请检查路径，或选择其他位置。" }
+                                        p { class: "dialog-preview-error", "详细信息：无法写入目标文件" }
+                                    },
+                                    _ => rsx! {
+                                        p { "正在读取 notes.md，请稍候。" }
+                                        div { class: "dialog-preview-progress", span {} }
+                                    },
+                                }
+                            }
+                            footer {
+                                if scene() == 0 {
+                                    span { class: "dialog-preview-discard", "不保存" }
+                                }
+                                span { class: "dialog-preview-action",
+                                    if scene() == 2 { "关闭" } else { "取消" }
+                                }
+                                if scene() != 3 {
+                                    span { class: "dialog-preview-action primary",
+                                        match scene() { 0 => "保存并新建", 1 => "打开", _ => "另存为" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                p { class: "dialog-preview-hint", "仅预览外观，实际样式请在设置中选择。" }
             }
         }
     }
@@ -440,6 +562,7 @@ pub fn NewDocumentDialog(
     visible: bool,
     saving: bool,
     status: String,
+    importing: bool,
     on_cancel: EventHandler<()>,
     on_discard: EventHandler<()>,
     on_save: EventHandler<()>,
@@ -454,7 +577,7 @@ pub fn NewDocumentDialog(
                 class: "dialog-card new-document-dialog",
                 header { class: "dialog-header",
                     DialogTitle { class: "new-document-title", "保存对当前文档的更改吗？" }
-                    p { "新建文档前，可以保存当前文档中的修改。" }
+                    p { if importing { "导入文件前，可以保存当前文档中的修改。" } else { "新建文档前，可以保存当前文档中的修改。" } }
                 }
                 if !status.is_empty() {
                     p { class: "new-document-feedback", role: "status", "{status}" }
@@ -463,7 +586,7 @@ pub fn NewDocumentDialog(
                     button { id: "new-discard", class: "dialog-btn discard", disabled: saving, onclick: move |_| on_discard.call(()), "不保存" }
                     button { id: "new-cancel", class: "dialog-btn ghost", disabled: saving, onclick: move |_| on_cancel.call(()), "取消" }
                     button { id: "new-save", class: "dialog-btn primary", disabled: saving, onclick: move |_| on_save.call(()),
-                        if saving { "正在保存…" } else { "保存并新建" }
+                        if saving { "正在保存…" } else if importing { "保存并导入" } else { "保存并新建" }
                     }
                 }
             }

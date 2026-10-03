@@ -1,5 +1,24 @@
 # Development
 
+## User settings
+
+Desktop preferences are stored in a user-editable `settings.toml`:
+
+- Linux: `$XDG_CONFIG_HOME/infinite-editor/settings.toml`, or
+  `~/.config/infinite-editor/settings.toml` when XDG_CONFIG_HOME is unset.
+- macOS: `~/Library/Application Support/infinite-editor/settings.toml`.
+- Windows: `%APPDATA%/infinite-editor/settings.toml`.
+
+See [settings.example.toml](settings.example.toml) for the configuration format.
+Currently `[appearance].dialog_style` accepts `"a"` (native) or `"b"` (office).
+The file is created on first launch, importing the old localStorage preference
+when available. Existing settings files take precedence. UI changes save
+automatically; restart after manual edits. Invalid files are reported rather
+than overwritten. Saving preserves unknown fields, but reformats TOML and
+does not preserve comments. Web builds continue using localStorage.
+
+Document layout files and `Dioxus.toml` remain separate from user preferences.
+
 ## Document formats
 
 Infinite Editor keeps Markdown as the source of truth and stores presentation

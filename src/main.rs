@@ -7,9 +7,13 @@ use views::Home;
 /// Define a components module that contains all shared components for our app.
 mod components;
 mod config;
+#[cfg(feature = "desktop")]
+mod settings;
 mod document;
 mod engine;
 mod export;
+#[cfg(feature = "desktop")]
+mod import;
 mod storage;
 mod styling;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
