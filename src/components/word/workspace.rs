@@ -13,6 +13,7 @@ use super::{
 use crate::document::{ProjectDocument, ResourceBundle};
 use crate::engine::{EditorMode, ParserGateway};
 use crate::storage::DocumentLocation;
+use crate::theme::ThemeSettings;
 use dioxus::prelude::*;
 
 #[derive(Debug, serde::Deserialize)]
@@ -108,6 +109,7 @@ pub fn WordWorkspace() -> Element {
     let mut open_read_only_mode = use_signal(|| false);
     let mut open_auto_detect_encoding = use_signal(|| true);
     let mut dialog_style_b = use_signal(|| false);
+    let mut theme = use_signal(ThemeSettings::default);
     use_effect(move || {
         spawn(async move {
             let script = "try { return localStorage.getItem('infinite-editor.dialog-style') === 'b'; } catch (_) { return false; }";
@@ -138,6 +140,33 @@ pub fn WordWorkspace() -> Element {
                 });
             } else if let Err(error) = loaded_style {
                 status_hint.set(format!("读取设置失败：{error}"));
+            }
+        });
+    });
+    use_effect(move || {
+        let dark = theme.read().mode == crate::theme::ThemeMode::Dark;
+        let _ = document::eval(if dark {
+            "document.body.classList.add('theme-dark')"
+        } else {
+            "document.body.classList.remove('theme-dark')"
+        });
+    });
+    use_effect(move || {
+        spawn(async move {
+            #[cfg(feature = "desktop")]
+            let loaded = crate::settings::load_theme().map(|stored| stored.unwrap_or_default());
+            #[cfg(not(feature = "desktop"))]
+            let loaded = document::eval("try { return localStorage.getItem('infinite-editor.theme') || ''; } catch (_) { return ''; }")
+                .join::<String>().await
+                .map_err(|error| error.to_string())
+                .and_then(|stored| {
+                    if stored.is_empty() { Ok(ThemeSettings::default()) }
+                    else { serde_json::from_str::<ThemeSettings>(&stored).map_err(|error| error.to_string()) }
+                });
+            match loaded {
+                Ok(settings) if ThemeSettings::valid_color(&settings.custom_color) => theme.set(settings),
+                Ok(_) => status_hint.set("主题颜色配置无效，已使用默认主题".into()),
+                Err(error) => status_hint.set(format!("读取主题设置失败：{error}")),
             }
         });
     });
@@ -274,13 +303,12 @@ pub fn WordWorkspace() -> Element {
         active_tab.set(RibbonTab::Home);
     };
 
+    let theme_settings = theme();
+    let mut shell_class = format!("word-shell {}", theme_settings.class());
+    if active_tab() == RibbonTab::File { shell_class.push_str(" file-mode"); }
+    if dialog_style_b() { shell_class.push_str(" dialog-style-b"); }
     rsx! {
-        div { class: match (active_tab() == RibbonTab::File, dialog_style_b()) {
-                (true, true) => "word-shell file-mode dialog-style-b",
-                (true, false) => "word-shell file-mode",
-                (false, true) => "word-shell dialog-style-b",
-                (false, false) => "word-shell",
-            },
+        div { class: shell_class, style: theme_settings.style(),
             "data-page-furniture": serde_json::to_string(&current_document.layout.page_furniture).unwrap_or_default(),
             "data-page-layout": serde_json::to_string(&current_document.layout).unwrap_or_default(),
             ResizeHandles {}
@@ -350,6 +378,23 @@ pub fn WordWorkspace() -> Element {
                             document_renderer::run_markdown_command(command);
                         }
                     },
+                    on_clipboard_action: move |action: String| {
+                        if action == "paste" {
+                            #[cfg(feature = "desktop")]
+                            {
+                                let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
+                                if clipboard.wait_for_image().is_some() {
+                                    let _ = document::eval("window.InfiniteToolbarClipboard?.pasteImage();");
+                                } else if let Some(text) = clipboard.wait_for_text() {
+                                    if let Ok(value) = serde_json::to_string(&text.as_str()) {
+                                        let _ = document::eval(&format!("window.InfiniteToolbarClipboard?.insertText({value});"));
+                                    }
+                                } else {
+                                    status_hint.set("剪贴板中没有可粘贴的文本".into());
+                                }
+                            }
+                        }
+                    },
                 }
             }
             if active_tab() == RibbonTab::File {
@@ -358,6 +403,7 @@ pub fn WordWorkspace() -> Element {
                     status_hint: status_hint(),
                     has_location: current_location().is_some(),
                     dialog_style_b: dialog_style_b(),
+                    theme: theme_settings.clone(),
                     on_dialog_style_change: move |style_b| {
                         #[cfg(feature = "desktop")]
                         if let Err(error) = crate::settings::save(style_b) {
@@ -378,6 +424,22 @@ pub fn WordWorkspace() -> Element {
                             "try { localStorage.setItem('infinite-editor.dialog-style', 'a'); } catch (_) {} document.body.classList.remove('dialog-style-b');"
                         };
                         let _ = document::eval(script);
+                    },
+                    on_theme_change: move |next: ThemeSettings| {
+                        if next == theme() { return; }
+                        #[cfg(feature = "desktop")]
+                        if let Err(error) = crate::settings::save_theme(&next) {
+                            status_hint.set(format!("保存主题设置失败：{error}"));
+                            return;
+                        }
+                        #[cfg(not(feature = "desktop"))]
+                        if let Ok(value) = serde_json::to_string(&next) {
+                            if let Ok(literal) = serde_json::to_string(&value) {
+                                let script = format!("try {{ localStorage.setItem('infinite-editor.theme', {literal}); }} catch (_) {{}}");
+                                let _ = document::eval(&script);
+                            }
+                        }
+                        theme.set(next);
                     },
                     on_back: move |_| active_tab.set(RibbonTab::Home),
                     on_new: move |_| {

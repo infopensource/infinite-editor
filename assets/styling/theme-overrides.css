@@ -1,1 +1,175 @@
-/* Put local theme tokens or selector overrides here. Loaded last in the app. */
+/* Theme controls are intentionally limited to application chrome. Paper stays white. */
+.word-shell .title-search-inline { background: var(--ie-control-background); color: var(--ie-muted-text); border-color: var(--ie-panel-border); }
+.word-shell #title-search { color: var(--ie-chrome-text); }
+.word-shell #title-search::placeholder { color: var(--ie-muted-text); }
+.word-shell .title-bar .icon-btn:hover,
+.word-shell .title-bar .window-btn:not(.close):hover,
+.word-shell .title-auto-save:hover,
+.word-shell .title-bar .doc-title-trigger:hover { background: var(--ie-chrome-hover); }
+.word-shell.theme-light.theme-classic-blue .title-bar .icon-btn:hover,
+.word-shell.theme-light.theme-classic-blue .title-bar .window-btn:not(.close):hover,
+.word-shell.theme-light.theme-classic-blue .title-auto-save:hover,
+.word-shell.theme-light.theme-classic-blue .title-bar .doc-title-trigger:hover { background: #ffffff26; }
+.word-shell .title-quick-actions { border-left-color: var(--ie-panel-border); }
+.word-shell .title-bar .divider { background: var(--ie-panel-border); opacity: 1; }
+.word-shell .auto-save-track { border-color: var(--ie-muted-text); }
+.word-shell .auto-save-thumb { background: var(--ie-muted-text); }
+.word-shell .title-auto-save[aria-checked="true"] .auto-save-track { background: var(--ie-accent); border-color: var(--ie-accent); }
+.word-shell .title-auto-save[aria-checked="true"] .auto-save-thumb { background: var(--ie-panel-background); }
+.word-shell .tab-item:hover,
+.word-shell .ribbon-small:hover,
+.word-shell .ribbon-large:hover,
+.word-shell .status-view:hover { background: var(--ie-chrome-hover); }
+.word-shell .ribbon-small,
+.word-shell .ribbon-large { color: var(--ie-chrome-text); }
+.word-shell .ribbon-small.active,
+.word-shell .ribbon-large.active,
+.word-shell .ribbon-small[aria-pressed="true"] { background: var(--ie-accent-background); border-color: var(--ie-accent); color: var(--ie-accent-text); }
+.word-shell .paper-size-label { color: var(--ie-muted-text); }
+.word-shell .paper-size-input { border-color: var(--ie-panel-border); background: var(--ie-control-background); color: var(--ie-chrome-text); }
+.word-shell .paper-size-input:disabled { background: var(--ie-tabs-background); color: var(--ie-muted-text); }
+.word-shell .status-bar,
+.word-shell .status-state { color: var(--ie-chrome-text); }
+.word-shell .status-view.active { color: var(--ie-accent-text); }
+.word-shell .zoom-slider { accent-color: var(--ie-accent); }
+.word-shell .file-nav { border-color: var(--ie-panel-border); color: var(--ie-chrome-text); }
+.word-shell .file-nav-title,
+.word-shell .file-content { color: var(--ie-chrome-text); }
+.word-shell .file-nav-item:hover,
+.word-shell .file-back-button:hover { background: var(--ie-chrome-hover); }
+.word-shell .file-nav-item.active::before { background: var(--ie-accent); }
+.word-shell .file-nav-symbol,
+.word-shell .file-page-header p,
+.word-shell .document-summary-label,
+.word-shell .document-summary-path,
+.word-shell .file-details dt,
+.word-shell .file-choice-copy span,
+.word-shell .file-choice-copy code,
+.word-shell .file-settings-group > p { color: var(--ie-muted-text); }
+.word-shell .file-page-header,
+.word-shell .document-summary,
+.word-shell .file-details dl,
+.word-shell .file-details dl > div,
+.word-shell .file-nav-divider { border-color: var(--ie-panel-border); }
+.word-shell .file-nav-divider { background: var(--ie-panel-border); }
+.word-shell .file-choice-row,
+.word-shell .file-action-button,
+.word-shell .dialog-style-choice { background: var(--ie-control-background); border-color: var(--ie-panel-border); color: var(--ie-chrome-text); }
+.word-shell .file-choice-row:hover,
+.word-shell .file-action-button:hover,
+.word-shell .dialog-style-choice:hover { background: var(--ie-chrome-hover); border-color: var(--ie-accent); }
+.word-shell .file-action-button.primary { background: var(--ie-accent); border-color: var(--ie-accent); color: #fff; }
+.word-shell .file-type-mark,
+.word-shell .document-file-mark { border-color: var(--ie-panel-border); background: var(--ie-accent-background); color: var(--ie-accent-text); }
+.word-shell .file-choice-action { color: var(--ie-accent); }
+.word-shell .file-help { border-left-color: var(--ie-accent); background: var(--ie-tabs-background); }
+.word-shell .file-help p { color: var(--ie-muted-text); }
+.word-shell .document-outline { background: var(--ie-tabs-background); border-color: var(--ie-panel-border); color: var(--ie-chrome-text); }
+.word-shell .outline-heading strong,
+.word-shell .outline-item[data-level="1"],
+.word-shell .outline-item[data-level="2"] { color: var(--ie-chrome-text); }
+.word-shell .outline-item,
+.word-shell .outline-empty,
+.word-shell .outline-count { color: var(--ie-muted-text); }
+.word-shell .outline-item:hover,
+.word-shell .outline-toggle:hover { background: var(--ie-chrome-hover); color: var(--ie-chrome-text); }
+.word-shell .outline-item.active { background: var(--ie-accent-background); color: var(--ie-accent-text); }
+.word-shell .outline-item.active::before { background: var(--ie-accent); }
+.word-shell .outline-search-field { background: var(--ie-control-background); border-color: var(--ie-panel-border); }
+.word-shell .outline-search { color: var(--ie-chrome-text); }
+
+/* Appearance controls in File → Settings. */
+.word-shell .theme-settings-group { padding-top: 25px; }
+.word-shell .theme-setting-label { margin: 17px 0 9px; color: var(--ie-chrome-text); font-size: 13px; font-weight: 600; }
+.word-shell .theme-mode-choices,
+.word-shell .theme-preset-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.word-shell .theme-mode-choice,
+.word-shell .theme-preset-choice,
+.word-shell .theme-reset-button { border: 1px solid var(--ie-panel-border); border-radius: 5px; background: var(--ie-control-background); color: var(--ie-chrome-text); cursor: pointer; font: inherit; }
+.word-shell .theme-mode-choice { min-width: 88px; padding: 7px 13px; }
+.word-shell .theme-preset-choice { min-width: 136px; display: flex; align-items: center; gap: 9px; padding: 9px 10px; text-align: left; }
+.word-shell .theme-mode-choice:hover,
+.word-shell .theme-preset-choice:hover,
+.word-shell .theme-reset-button:hover { border-color: var(--ie-accent); background: var(--ie-chrome-hover); }
+.word-shell .theme-mode-choice.selected,
+.word-shell .theme-preset-choice.selected { border-color: var(--ie-accent); background: var(--ie-accent-background); color: var(--ie-accent-text); font-weight: 600; }
+.word-shell .theme-preset-swatch { width: 22px; height: 22px; flex: none; border: 1px solid var(--ie-panel-border); border-radius: 4px; background: var(--theme-swatch); }
+.word-shell .theme-preset-choice:first-child .theme-preset-swatch { background: linear-gradient(#f1f3f6 0 45%, #fff 45%); border-bottom: 4px solid #3978ad; }
+.word-shell .theme-custom-row { display: flex; align-items: center; gap: 11px; margin-top: 16px; color: var(--ie-chrome-text); }
+.word-shell .theme-color-label { font-weight: 600; }
+.word-shell #theme-custom-color { width: 48px; height: 34px; padding: 3px; border: 1px solid var(--ie-panel-border); border-radius: 4px; background: var(--ie-control-background); cursor: pointer; }
+.word-shell .theme-color-value { font-family: Consolas, monospace; color: var(--ie-muted-text); }
+.word-shell .theme-custom-active { padding: 2px 7px; border-radius: 3px; background: var(--ie-accent-background); color: var(--ie-accent-text); font-size: 11px; }
+.word-shell .theme-reset-button { margin-top: 18px; padding: 7px 12px; }
+.word-shell .theme-mode-choice:focus-visible,
+.word-shell .theme-preset-choice:focus-visible,
+.word-shell .theme-reset-button:focus-visible,
+.word-shell #theme-custom-color:focus-visible { outline: 2px solid var(--ie-accent); outline-offset: 2px; }
+
+.word-shell.theme-dark .title-search-panel,
+.word-shell.theme-dark .replace-button,
+.word-shell.theme-dark #title-replace { background: var(--ie-control-background); border-color: var(--ie-panel-border); color: var(--ie-chrome-text); }
+.word-shell.theme-dark .title-search-panel .icon-btn:hover,
+.word-shell.theme-dark .replace-button:hover { background: var(--ie-chrome-hover); }
+.word-shell.theme-dark .file-choice-row.unavailable { background: #2b343e; color: var(--ie-muted-text); }
+.word-shell.theme-dark .file-choice-row.unavailable:hover { background: #2b343e; }
+.word-shell.theme-dark .dialog-style-choice.selected { background: var(--ie-accent-background); }
+.word-shell.theme-dark .dialog-style-mini { background: #f8fafc; }
+.word-shell.theme-dark .markdown-editor-pane,
+.word-shell.theme-dark .markdown-code-editor,
+.word-shell.theme-dark .cm-editor { background: #232e39; color: #e5edf5; }
+.word-shell.theme-dark .cm-content { caret-color: #e5edf5; }
+.word-shell.theme-dark .cm-gutters { background: #273440; color: #a6b5c5; border-color: #465666; }
+.word-shell.theme-dark .cm-activeLine { background: #344858; }
+.word-shell.theme-dark .cm-activeLineGutter { background: #344858; color: #dce8f3; }
+.word-shell.theme-dark .cm-selectionBackground { background: #456a89; }
+.word-shell.theme-dark .markdown-preview-pane { background: #fff; color: #0f172a; }
+
+/* Screen-only paper tint. Background layers leave document ink and saved/PDF colors intact. */
+@media screen {
+    .word-shell.theme-dark .document-page,
+    .word-shell.theme-dark .markdown-preview-pane {
+        background-color: #fff;
+        background-image: linear-gradient(rgb(30 42 56 / 13%), rgb(30 42 56 / 13%));
+    }
+}
+
+body.theme-dark .dialog-card,
+body.theme-dark .dialog-preview-gallery,
+body.theme-dark .editor-progress-dialog { background: #28333f; border-color: #526273; color: #e7edf3; }
+body.theme-dark .dialog-header,
+body.theme-dark .dialog-footer { background: #28333f; border-color: #526273; }
+body.theme-dark .dialog-header h2,
+body.theme-dark .dialog-header h3,
+body.theme-dark .new-document-title { color: #e7edf3; }
+body.theme-dark .dialog-header p,
+body.theme-dark .dialog-label,
+body.theme-dark .dialog-preview-hint { color: #aab8c6; }
+body.theme-dark .dialog-btn,
+body.theme-dark .dialog-browse-btn,
+body.theme-dark .dialog-option,
+body.theme-dark .dialog-input,
+body.theme-dark .dialog-preview-controls button,
+body.theme-dark .dialog-preview-trigger { background: #303e4b; border-color: #596b7c; color: #e7edf3; }
+body.theme-dark .dialog-option.active { background: #284b69; color: #d7eaff; }
+body.theme-dark .dialog-preview-stage { background: #1c2530; border-color: #526273; }
+body.theme-dark .dialog-preview-example { background: #303e4b; border-color: #596b7c; }
+body.theme-dark .dialog-preview-example > footer { border-color: #596b7c; }
+body.theme-dark .dialog-preview-body { color: #bdc9d5; }
+body.theme-dark .page-furniture-dialog { background: #28333f; border-color: #526273; color: #e7edf3; }
+body.theme-dark .page-furniture-ribbon,
+body.theme-dark .page-furniture-padding,
+body.theme-dark .page-furniture-spacing-hint,
+body.theme-dark .page-furniture-actions { background: #303e4b; border-color: #526273; }
+body.theme-dark .page-furniture-tabs,
+body.theme-dark .page-furniture-group,
+body.theme-dark .page-furniture-preview-frame { border-color: #526273; }
+body.theme-dark .page-furniture-tab,
+body.theme-dark .page-furniture-dialog h3,
+body.theme-dark .page-furniture-control,
+body.theme-dark .page-furniture-content-heading span { color: #bdc9d5; }
+body.theme-dark .page-furniture-tab[aria-selected="true"] { color: #8bc6ee; border-bottom-color: #8bc6ee; }
+body.theme-dark .page-furniture-control input,
+body.theme-dark .page-furniture-buttons button,
+body.theme-dark .page-furniture-image-controls button { background: #26333f; border-color: #627487; color: #e7edf3; }
+body.theme-dark .page-furniture-preview { background: #fff; color: #263442; }

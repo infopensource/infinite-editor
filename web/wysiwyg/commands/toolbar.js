@@ -47,6 +47,48 @@ function toggleList(schema, targetType) {
   };
 }
 
+function toggleTaskList(schema) {
+  return (state, dispatch) => {
+    const { $from } = state.selection;
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      const node = $from.node(depth);
+      if (node.type !== schema.nodes.list_item) continue;
+      if (dispatch) dispatch(state.tr.setNodeMarkup($from.before(depth), undefined, {
+        ...node.attrs, checked: node.attrs.checked === null ? false : null,
+      }).scrollIntoView());
+      return true;
+    }
+    return wrapInList(schema.nodes.bullet_list)(state, transaction => {
+      const selection = transaction.selection.$from;
+      for (let depth = selection.depth; depth > 0; depth -= 1) {
+        if (selection.node(depth).type === schema.nodes.list_item) {
+          transaction.setNodeMarkup(selection.before(depth), undefined, { checked: false });
+          break;
+        }
+      }
+      dispatch?.(transaction);
+    });
+  };
+}
+
+function promptFor(label) {
+  const value = globalThis.window?.prompt?.(label);
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function insertLink(schema) {
+  return (state, dispatch) => {
+    const href = promptFor("链接地址");
+    if (!href) return false;
+    if (state.selection.empty) {
+      const text = schema.text("链接文本", [schema.marks.link.create({ href, title: null })]);
+      if (dispatch) dispatch(state.tr.replaceSelectionWith(text, false).scrollIntoView());
+      return true;
+    }
+    return toggleMark(schema.marks.link, { href, title: null })(state, dispatch);
+  };
+}
+
 export function setParagraphAlignment(textAlign) {
   return (state, dispatch) => {
     if (!["left", "center", "right", "justify"].includes(textAlign)) return false;
@@ -77,15 +119,27 @@ export function toolbarCommands(schema) {
     bold: toggleMark(schema.marks.strong),
     italic: toggleMark(schema.marks.em),
     strike: toggleMark(schema.marks.strike),
+    inline_code: toggleMark(schema.marks.code),
     code_block: toggleBlock(schema.nodes.code_block, schema.nodes.paragraph),
     quote: toggleBlockquote(schema),
     unordered_list: toggleList(schema, schema.nodes.bullet_list),
     ordered_list: toggleList(schema, schema.nodes.ordered_list),
+    task_list: toggleTaskList(schema),
+    link: insertLink(schema),
+    image: (state, dispatch) => {
+      const src = promptFor("图片地址");
+      return src ? blocks.image({ src, alt: "图片", title: null })(state, dispatch) : false;
+    },
+    table: blocks.table(),
+    hard_break: blocks.hardBreak(),
     horizontal_rule: blocks.horizontalRule(),
     page_break: blocks.pageBreak(),
     heading1: toggleHeading(schema, 1),
     heading2: toggleHeading(schema, 2),
     heading3: toggleHeading(schema, 3),
+    heading4: toggleHeading(schema, 4),
+    heading5: toggleHeading(schema, 5),
+    heading6: toggleHeading(schema, 6),
     paragraph: setBlockType(schema.nodes.paragraph),
   };
 }

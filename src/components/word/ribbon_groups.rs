@@ -16,27 +16,25 @@ pub fn RibbonPanel(
     on_toggle_ruler: EventHandler<()>,
     on_reset_zoom: EventHandler<()>,
     on_editor_command: EventHandler<String>,
+    on_clipboard_action: EventHandler<String>,
 ) -> Element {
     let mut width_draft = use_signal(|| custom_width_mm.to_string());
     let mut height_draft = use_signal(|| custom_height_mm.to_string());
+    use_effect(|| { let _ = document::eval(include_str!("../../../web/toolbar_clipboard.js")); });
 
     rsx! {
         section { class: "ribbon-panel",
             match active_tab {
                 RibbonTab::File => rsx! {},
                 RibbonTab::Home => rsx! {
+                    ClipboardGroup { on_action: on_clipboard_action }
                     CommandGroup {
-                        title: "历史",
-                        actions: vec![("撤销", "undo"), ("重做", "redo")],
-                        on_action: on_editor_command,
-                    }
-                    CommandGroup {
-                        title: "字体",
+                        title: "字符格式",
                         actions: vec![
                             ("加粗", "bold"),
                             ("斜体", "italic"),
                             ("删除线", "strike"),
-                            ("代码块", "code_block"),
+                            ("行内代码", "inline_code"),
                         ],
                         on_action: on_editor_command,
                     }
@@ -49,8 +47,8 @@ pub fn RibbonPanel(
                             ("两端对齐", "align_justify"),
                             ("项目符号", "unordered_list"),
                             ("编号", "ordered_list"),
+                            ("任务列表", "task_list"),
                             ("引用", "quote"),
-                            ("分隔线", "horizontal_rule"),
                         ],
                         on_action: on_editor_command,
                     }
@@ -60,6 +58,9 @@ pub fn RibbonPanel(
                             ("标题 1", "heading1"),
                             ("标题 2", "heading2"),
                             ("标题 3", "heading3"),
+                            ("标题 4", "heading4"),
+                            ("标题 5", "heading5"),
+                            ("标题 6", "heading6"),
                             ("正文", "paragraph"),
                         ],
                         on_action: on_editor_command,
@@ -67,19 +68,19 @@ pub fn RibbonPanel(
                 },
                 RibbonTab::Insert => rsx! {
                     CommandGroup {
-                        title: "页面",
-                        actions: vec![("分页符", "page_break"), ("页眉页脚", "page_furniture"), ("分隔线", "horizontal_rule")],
+                        title: "链接与媒体",
+                        actions: vec![("链接", "link"), ("图片", "image")],
                         on_action: on_editor_command,
                     }
-                    Group {
-                        title: "插图",
-                        large_action: "图片",
-                        actions: vec!["形状", "图标", "图表"],
+                    CommandGroup {
+                        title: "Markdown 结构",
+                        actions: vec![("表格", "table"), ("代码块", "code_block"), ("分隔线", "horizontal_rule"), ("硬换行", "hard_break")],
+                        on_action: on_editor_command,
                     }
-                    Group {
-                        title: "文本",
-                        large_action: "文本框",
-                        actions: vec!["艺术字", "首字下沉"],
+                    CommandGroup {
+                        title: "页面",
+                        actions: vec![("分页符", "page_break"), ("页眉页脚", "page_furniture")],
+                        on_action: on_editor_command,
                     }
                 },
                 RibbonTab::View => rsx! {
@@ -172,6 +173,45 @@ pub fn RibbonPanel(
 }
 
 #[component]
+fn ClipboardGroup(on_action: EventHandler<String>) -> Element {
+    rsx! {
+        div { class: "ribbon-group clipboard-group", role: "group", aria_label: "剪贴板",
+            div { class: "clipboard-main",
+                button {
+                    class: "clipboard-paste", r#type: "button", title: "粘贴剪贴板内容",
+                    onmousedown: move |event| event.prevent_default(),
+                    onauxclick: move |event| event.prevent_default(),
+                    "data-clipboard-action": "paste",
+                    onclick: move |_| on_action.call("paste".into()),
+                    svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.7", stroke_linecap: "round", stroke_linejoin: "round", "aria-hidden": "true",
+                        path { d: "M8 4h2a2 2 0 0 1 4 0h2v3H8V4Z" }
+                        path { d: "M7 6H5v15h14V6h-2M8 12h8M8 16h6" }
+                    }
+                    span { "粘贴" }
+                }
+                div { class: "clipboard-secondary",
+                    button { class: "clipboard-small", r#type: "button", title: "剪切选中文本",
+                        onmousedown: move |event| event.prevent_default(),
+                        onauxclick: move |event| event.prevent_default(),
+                        "data-clipboard-action": "cut",
+                        span { class: "clipboard-symbol", aria_hidden: "true", "✂" }
+                        "剪切"
+                    }
+                    button { class: "clipboard-small", r#type: "button", title: "复制选中文本",
+                        onmousedown: move |event| event.prevent_default(),
+                        onauxclick: move |event| event.prevent_default(),
+                        "data-clipboard-action": "copy",
+                        span { class: "clipboard-symbol", aria_hidden: "true", "▢" }
+                        "复制"
+                    }
+                }
+            }
+            div { class: "group-title", "剪贴板" }
+        }
+    }
+}
+
+#[component]
 fn CommandGroup(
     title: String,
     actions: Vec<(&'static str, &'static str)>,
@@ -180,7 +220,7 @@ fn CommandGroup(
     rsx! {
         div { class: "ribbon-group",
             div { class: "group-main",
-                div { class: if title == "段落" { "group-actions command-actions paragraph-actions" } else { "group-actions command-actions" },
+                div { class: if title == "段落" || title == "样式" { "group-actions command-actions paragraph-actions" } else { "group-actions command-actions" },
                     for (label, command) in actions {
                         button {
                             class: "ribbon-small",
@@ -205,12 +245,59 @@ fn CommandGroup(
                                     on_action.call(command.to_string());
                                 }
                             },
+                            span { class: "ribbon-command-icon", aria_hidden: "true",
+                                {command_icon(command)}
+                            }
                             "{label}"
                         }
                     }
                 }
             }
             div { class: "group-title", "{title}" }
+        }
+    }
+}
+
+fn command_icon(command: &str) -> Element {
+    match command {
+        "align_left" | "align_center" | "align_right" | "align_justify" => {
+            let lines = match command {
+                "align_left" => "M3 5h18M3 9h12M3 13h18M3 17h12",
+                "align_center" => "M3 5h18M6 9h12M3 13h18M6 17h12",
+                "align_right" => "M3 5h18M9 9h12M3 13h18M9 17h12",
+                _ => "M3 5h18M3 9h18M3 13h18M3 17h18",
+            };
+            rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", path { d: lines } } }
+        }
+        "unordered_list" => rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8",
+            path { d: "M8 5h13M8 12h13M8 19h13" }
+            circle { cx: "3", cy: "5", r: "1" } circle { cx: "3", cy: "12", r: "1" } circle { cx: "3", cy: "19", r: "1" }
+        } },
+        "ordered_list" => rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8",
+            path { d: "M9 5h12M9 12h12M9 19h12M3 5h2v3M3 12h2l-2 3h2M3 19h2l-2 3h2" }
+        } },
+        "link" => rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", stroke_linecap: "round",
+            path { d: "M10 13a5 5 0 0 0 7 .4l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7-.4l-3 3a5 5 0 0 0 7 7l1.7-1.7" }
+        } },
+        "image" => rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", stroke_linecap: "round",
+            rect { x: "3", y: "4", width: "18", height: "16", rx: "2" }
+            circle { cx: "8", cy: "9", r: "1.5" }
+            path { d: "m4 18 6-6 4 4 2-2 4 4" }
+        } },
+        "table" => rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8",
+            rect { x: "3", y: "4", width: "18", height: "16", rx: "1" }
+            path { d: "M3 9h18M9 9v11M15 9v11" }
+        } },
+        _ => {
+            let glyph = match command {
+                "bold" => "B", "italic" => "I", "strike" => "S̶", "inline_code" => "</>",
+                "task_list" => "☑", "quote" => "❞", "code_block" => "{ }",
+                "horizontal_rule" => "―", "hard_break" => "↵",
+                "heading1" => "H₁", "heading2" => "H₂", "heading3" => "H₃",
+                "heading4" => "H₄", "heading5" => "H₅", "heading6" => "H₆", "paragraph" => "¶",
+                "page_break" => "▤", "page_furniture" => "▣", _ => "·",
+            };
+            rsx! { "{glyph}" }
         }
     }
 }

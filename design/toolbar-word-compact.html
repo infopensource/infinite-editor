@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工具栏视觉优化预览</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    --outside: #e9eef3;
+    --outside-text: #243547;
+    --outside-muted: #637386;
+    --outside-card: #fff;
+    --outside-border: #ced9e4;
+    --app-border: #c9d3dd;
+    --chrome: #f2f5f8;
+    --file-nav: #f2f5f8;
+    --tabs: #f8fafc;
+    --ribbon: #fff;
+    --canvas: #e8edf3;
+    --status: #f9fafb;
+    --text: #263849;
+    --muted: #667587;
+    --line: #d7dfe7;
+    --hover: #eaf2f9;
+    --active: #dcecfb;
+    --accent: #2c75b1;
+    --field: #fff;
+    --field-border: #b8c8d6;
+    --ruler-bg: #f4f5f6;
+    --ruler-border: #cbd2d9;
+    --ruler-tick: #9ba5af;
+    --ruler-label: #5d6976;
+    --ruler-handle: #596674;
+    margin: 0;
+    background: var(--outside);
+    color: var(--outside-text);
+    font: 13px/1.4 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    transition: background .18s ease, color .18s ease;
+  }
+  body[data-theme="light"][data-preset="blue"] {
+    --chrome: #244f77;
+    --file-nav: #eaf2f9;
+    --tabs: #eaf2f9;
+    --ribbon: #f4f8fc;
+    --canvas: #e2ebf3;
+    --status: #eaf2f9;
+    --text: #263849;
+    --line: #bfd2e2;
+    --hover: #dcebf6;
+    --active: #dcecf9;
+    --accent: #286da3;
+    --app-border: #94b3ce;
+  }
+  body[data-preset="forest"] { --chrome: #2d7057; --accent: #2d7057; }
+  body[data-preset="plum"] { --chrome: #70548d; --accent: #70548d; }
+  body[data-preset="custom"] { --chrome: var(--custom-color); --accent: var(--custom-color); }
+  body[data-theme="dark"] {
+    --outside: #151b23;
+    --outside-text: #e6ebf1;
+    --outside-muted: #a4afbd;
+    --outside-card: #232b35;
+    --outside-border: #394654;
+    --app-border: #3d4b59;
+    --chrome: #252d36;
+    --file-nav: #252d36;
+    --tabs: #29323c;
+    --ribbon: #303945;
+    --canvas: #1c242e;
+    --status: #28313b;
+    --text: #e6ebf2;
+    --muted: #acb8c4;
+    --line: #485563;
+    --hover: #405263;
+    --active: #214f75;
+    --accent: #73b9ef;
+    --field: #242d37;
+    --field-border: #667585;
+    --ruler-bg: #2e3945;
+    --ruler-border: #536271;
+    --ruler-tick: #82919f;
+    --ruler-label: #c3ccd5;
+    --ruler-handle: #d3dbe2;
+  }
+  body[data-theme="dark"][data-preset="blue"] {
+    --chrome: #203e58;
+    --file-nav: #223344;
+    --tabs: #263a4d;
+    --ribbon: #2d4050;
+    --status: #263a4d;
+    --line: #4c6275;
+    --field: #283b4c;
+    --accent: #76b5e4;
+    --app-border: #47647d;
+  }
+  body[data-theme="dark"][data-preset="forest"] { --chrome: #244236; --accent: #80cba8; }
+  body[data-theme="dark"][data-preset="plum"] { --chrome: #3b3049; --accent: #c4a6e2; }
+  body[data-theme="dark"][data-preset="custom"] { --accent: var(--custom-color); }
+  button, input { font: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .intro { max-width: 1320px; margin: 24px auto 14px; padding: 0 18px; display: flex; align-items: end; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+  .intro h1 { margin: 0 0 5px; font-size: 20px; font-weight: 650; }
+  .intro p { margin: 0; color: var(--outside-muted); }
+  .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .segmented { display: flex; padding: 3px; gap: 2px; border: 1px solid var(--outside-border); border-radius: 7px; background: var(--outside-card); }
+  .segmented button { min-width: 56px; padding: 5px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--outside-muted); }
+  .segmented button[aria-pressed="true"] { background: var(--active); color: var(--accent); font-weight: 600; }
+  .preview-frame { width: min(1280px, calc(100% - 36px)); margin: 0 auto; }
+  .preview-frame[data-width="medium"] { width: min(940px, calc(100% - 36px)); }
+  .preview-frame[data-width="narrow"] { width: min(680px, calc(100% - 36px)); }
+  .viewport { overflow-x: auto; border: 1px solid var(--app-border); box-shadow: 0 9px 32px #0b253026; scrollbar-color: var(--field-border) transparent; }
+  .app { min-width: 1100px; background: var(--ribbon); color: var(--text); }
+  .title-bar { height: 46px; padding: 0 14px; display: grid; grid-template-columns: minmax(530px, 1fr) minmax(270px, 380px) 120px; gap: 14px; align-items: center; background: var(--chrome); border-bottom: 1px solid var(--line); }
+  .title-left, .title-actions, .window-actions { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .auto-save { display: inline-flex; align-items: center; gap: 7px; padding: 4px 5px; color: var(--text); background: transparent; border: 0; white-space: nowrap; }
+  .auto-save:hover, .title-icon:hover, .window-actions button:hover { background: var(--hover); }
+  body[data-theme="light"][data-preset="blue"] .title-bar .auto-save:hover,
+  body[data-theme="light"][data-preset="blue"] .title-bar .title-icon:hover,
+  body[data-theme="light"][data-preset="blue"] .title-bar .window-actions button:hover { background: #ffffff26; }
+  .switch-track { width: 28px; height: 16px; border-radius: 10px; padding: 2px; background: var(--field-border); transition: background .18s ease; }
+  .switch-thumb { display: block; width: 12px; height: 12px; border-radius: 50%; background: var(--ribbon); transition: transform .18s ease; }
+  .auto-save[aria-checked="true"] .switch-track { background: var(--accent); }
+  .auto-save[aria-checked="true"] .switch-thumb { transform: translateX(12px); }
+  .title-divider { height: 18px; width: 1px; background: var(--line); margin: 0 6px; flex: none; }
+  .title-icon, .window-actions button { width: 30px; height: 30px; display: inline-grid; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--text); }
+  .title-icon svg, .search-field svg, .small-command svg, .large-command svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .doc-name { display: flex; align-items: center; min-width: 0; max-width: 220px; padding: 5px 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text); font-weight: 600; text-align: left; }
+  .doc-name:hover { border-color: var(--field-border); }
+  .doc-name span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dirty-dot { width: 6px; height: 6px; margin-left: 4px; background: #d49339; border-radius: 50%; flex: none; }
+  .search-field { height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 9px; background: var(--field); border: 1px solid var(--field-border); border-radius: 5px; color: var(--muted); }
+  .search-field input { width: 100%; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text); font-size: 12px; }
+  .search-field input::placeholder { color: var(--muted); }
+  .window-actions { justify-content: end; }
+  .tabs-row { height: 39px; display: flex; align-items: stretch; gap: 2px; padding: 0 12px; background: var(--tabs); border-bottom: 1px solid var(--line); }
+  .tab { min-width: 54px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text); white-space: nowrap; }
+  .tab:hover { background: var(--hover); }
+  .tab[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); font-weight: 650; }
+  .ribbon-panel { height: 124px; display: flex; align-items: stretch; padding: 8px 7px 5px; background: var(--ribbon); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin; }
+  .ribbon-panel[hidden], .document-canvas[hidden], .backstage[hidden] { display: none; }
+  .ribbon-group { flex: none; display: grid; grid-template-rows: minmax(0, 1fr) 16px; padding: 1px 12px 0; border-right: 1px solid var(--line); }
+  .ribbon-group:last-child { border-right: 0; }
+  .group-main { display: flex; align-items: center; gap: 6px; min-height: 0; }
+  .group-actions { display: grid; grid-template-columns: repeat(2, max-content); grid-auto-rows: 34px; align-content: center; gap: 4px 5px; }
+  .paragraph-actions { grid-template-columns: repeat(4, max-content); }
+  .small-command { height: 34px; min-width: 82px; padding: 0 7px; display: flex; align-items: center; justify-content: flex-start; gap: 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text); white-space: nowrap; }
+  .small-command:hover, .large-command:hover { background: var(--hover); border-color: var(--field-border); }
+  .small-command[aria-pressed="true"], .large-command[aria-pressed="true"] { background: var(--active); border-color: var(--accent); color: var(--accent); }
+  .small-command .glyph { width: 17px; min-width: 17px; text-align: center; font-size: 15px; line-height: 1; font-weight: 650; }
+  .small-command .glyph.italic { font-style: italic; }
+  .small-command .glyph.strike { text-decoration: line-through; }
+  .small-command .label { font-size: 12px; }
+  .large-command { height: 72px; min-width: 72px; padding: 7px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text); white-space: nowrap; }
+  .large-command .glyph { font-size: 23px; line-height: 1; color: var(--accent); }
+  .group-title { align-self: end; color: var(--muted); text-align: center; font-size: 11px; white-space: nowrap; }
+  .clipboard-preview { display: flex; align-items: center; gap: 3px; }
+  .clipboard-preview .group-actions { grid-template-columns: 1fr; }
+  .preview-color { width: 34px; height: 32px; padding: 2px; border: 1px solid var(--outside-border); border-radius: 5px; background: var(--outside-card); cursor: pointer; }
+  body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar { color: #fff; }
+  body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .title-icon,
+  body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .doc-name,
+  body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .auto-save,
+  body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .window-actions button { color: #fff; }
+  .paper-group .group-main { display: grid; align-content: center; gap: 5px; }
+  .paper-modes { display: flex; gap: 4px; }
+  .paper-modes .small-command { min-width: 70px; justify-content: center; }
+  .paper-size { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .paper-size input { width: 58px; height: 26px; padding: 0 5px; border: 1px solid var(--field-border); border-radius: 3px; background: var(--field); color: var(--text); }
+  .paper-size input:disabled { opacity: .52; }
+  .document-canvas { height: 345px; overflow: hidden; padding: 24px max(25px, calc((100% - 730px)/2)); background: var(--canvas); }
+  .preview-ruler { position: relative; height: 26px; display: flex; justify-content: space-between; padding: 2px 7px; background: var(--ruler-bg); box-shadow: inset 0 0 0 1px var(--ruler-border); color: var(--ruler-label); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .preview-ruler::before, .preview-ruler::after { content: ""; position: absolute; top: 1px; z-index: 2; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 10px solid var(--ruler-handle); }
+  .preview-ruler::before { left: 13%; }
+  .preview-ruler::after { right: 13%; }
+  .preview-ruler-ticks { position: absolute; inset: 15px 1px 1px; background: repeating-linear-gradient(90deg, var(--ruler-tick) 0 1px, transparent 1px 18px); opacity: .8; }
+  .preview-ruler span { position: relative; z-index: 1; }
+  .paper { min-height: 470px; padding: 48px 58px; background: #fff; color: #263342; box-shadow: 0 2px 11px #07131d26; user-select: text; }
+  body[data-theme="dark"] .paper { background-image: linear-gradient(rgb(30 42 56 / 13%), rgb(30 42 56 / 13%)); }
+  .paper h2 { margin: 0 0 17px; font-size: 20px; font-weight: 600; }
+  .paper p { margin: 0 0 12px; line-height: 1.75; }
+  .paper .muted { color: #73808e; }
+  .backstage { height: 469px; display: flex; background: var(--ribbon); }
+  .file-nav { width: 190px; flex: none; padding: 17px 12px; background: var(--file-nav); border-right: 1px solid var(--line); }
+  .file-nav h2 { margin: 12px 9px 16px; font-size: 23px; }
+  .file-nav button { display: block; width: 100%; padding: 8px 11px; text-align: left; border: 0; border-radius: 3px; background: transparent; color: var(--text); }
+  .file-nav button:hover { background: var(--hover); }
+  .file-nav button.selected { background: var(--active); color: var(--accent); border-left: 3px solid var(--accent); }
+  .file-content { padding: 30px 44px; }
+  .file-content h2 { margin: 0 0 4px; font-size: 23px; }
+  .file-content p { color: var(--muted); }
+  .file-summary { display: flex; align-items: center; gap: 15px; margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--line); }
+  .file-summary strong { display: grid; place-items: center; width: 62px; height: 78px; background: var(--active); color: var(--accent); font-size: 17px; }
+  .status-bar { height: 29px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px; background: var(--status); border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+  .notes { max-width: 1280px; margin: 15px auto 30px; padding: 0 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .note { padding: 13px 15px; border: 1px solid var(--outside-border); background: var(--outside-card); }
+  .note b { display: block; margin-bottom: 4px; }
+  .note p { margin: 0; color: var(--outside-muted); font-size: 12px; line-height: 1.55; }
+  @media (max-width: 760px) { .intro { margin-top: 14px; } .preview-frame, .preview-frame[data-width] { width: calc(100% - 20px); } .notes { grid-template-columns: 1fr; padding: 0 10px; } }
+  @media (prefers-reduced-motion: reduce) { body, .switch-track, .switch-thumb { transition: none; } }
+</style>
+</head>
+<body data-theme="light" data-preset="office" style="--custom-color:#3978ad">
+<header class="intro">
+  <div><h1>工具栏视觉优化预览</h1><p>保持当前功能分组和顺序；借鉴 Word 的细分隔线、图标与组标题层级。</p></div>
+  <div class="controls">
+    <div class="segmented" role="group" aria-label="颜色模式"><button data-theme-choice="light" aria-pressed="true">浅色</button><button data-theme-choice="dark" aria-pressed="false">暗色</button></div>
+    <div class="segmented" role="group" aria-label="预设主题"><button data-preset-choice="office" aria-pressed="true">默认白色</button><button data-preset-choice="blue" aria-pressed="false">经典蓝</button><button data-preset-choice="forest" aria-pressed="false">森林绿</button><button data-preset-choice="plum" aria-pressed="false">暮光紫</button></div>
+    <input class="preview-color" id="preview-color" type="color" value="#3978ad" aria-label="自选主色" title="自选主色">
+    <div class="segmented"><button id="reset-theme" type="button">恢复默认</button></div>
+    <div class="segmented" role="group" aria-label="预览宽度"><button data-width-choice="wide" aria-pressed="true">宽屏</button><button data-width-choice="medium" aria-pressed="false">中屏</button><button data-width-choice="narrow" aria-pressed="false">窄屏</button></div>
+  </div>
+</header>
+<div class="preview-frame" id="frame" data-width="wide"><div class="viewport"><div class="app">
+  <header class="title-bar">
+    <div class="title-left">
+      <button class="auto-save" role="switch" aria-checked="false" title="自动保存"><span>自动保存</span><span class="switch-track"><span class="switch-thumb"></span></span></button>
+      <span class="title-divider"></span>
+      <div class="title-actions" role="group" aria-label="快捷操作">
+        <button class="title-icon" title="撤销" aria-label="撤销" data-command="撤销"><svg viewBox="0 0 24 24"><path d="M9 5 4 10l5 5M4 10h9a6 6 0 0 1 0 12"/></svg></button>
+        <button class="title-icon" title="重做" aria-label="重做" data-command="重做"><svg viewBox="0 0 24 24"><path d="m15 5 5 5-5 5m5-5h-9a6 6 0 0 0 0 12"/></svg></button>
+        <button class="title-icon" title="保存" aria-label="保存" data-command="保存"><svg viewBox="0 0 24 24"><path d="M5 3h12l4 4v14H3V3h2Zm2 0v6h10V3M7 21v-8h10v8"/></svg></button>
+      </div>
+      <span class="title-divider"></span><button class="doc-name" title="编辑文档标题"><span>未命名文档</span></button><span class="dirty-dot" title="有未保存的更改"></span>
+    </div>
+    <label class="search-field"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6"/></svg><input type="search" placeholder="搜索 (Ctrl + F)" aria-label="全文搜索"></label>
+    <div class="window-actions"><button title="最小化">−</button><button title="最大化">□</button><button title="关闭">×</button></div>
+  </header>
+  <nav class="tabs-row" aria-label="功能区标签">
+    <button class="tab" data-tab="file" aria-selected="false">文件</button><button class="tab" data-tab="home" aria-selected="true">开始</button><button class="tab" data-tab="insert" aria-selected="false">插入</button><button class="tab" data-tab="draw" aria-selected="false">绘图</button><button class="tab" data-tab="layout" aria-selected="false">布局</button><button class="tab" data-tab="references" aria-selected="false">引用</button><button class="tab" data-tab="review" aria-selected="false">审阅</button><button class="tab" data-tab="view" aria-selected="false">视图</button>
+  </nav>
+  <section class="ribbon-panel" id="ribbon" aria-label="开始功能区"></section>
+  <main class="document-canvas" id="canvas"><div class="preview-ruler" aria-label="标尺预览"><div class="preview-ruler-ticks" aria-hidden="true"></div><span>0</span><span>5</span><span>10</span><span>15</span><span>20</span></div><article class="paper"><h2>未命名文档</h2><p>这是工具栏的视觉预览。按钮和分组沿用当前编辑器的布局，浅色与暗色只改变应用界面的颜色与层级。</p><p class="muted">暗色模式只在屏幕上柔和显示纸张；文档和导出的纸张仍是原本的颜色。</p></article></main>
+  <main class="backstage" id="backstage" hidden><aside class="file-nav"><button data-tab="home">← 返回</button><h2>文件</h2><button class="selected">信息</button><button>新建</button><button>打开</button><button>导入</button><button>保存</button><button>另存为</button><button>导出</button><button>设置</button></aside><section class="file-content"><h2>文档信息</h2><p>查看当前文档的位置和保存状态。</p><div class="file-summary"><strong>MD</strong><div><span>新建文档</span><h3>未命名文档</h3><span>尚未选择保存位置</span></div></div></section></main>
+  <footer class="status-bar"><span>第 1 页，共 1 页 · 75 字</span><span id="feedback">设计预览 · 点击标签查看分组</span></footer>
+</div></div></div>
+<section class="notes"><div class="note"><b>Markdown 常用命令</b><p>“开始”包含字符格式、列表、引用、标题 1–6；“插入”包含链接、图片、表格和结构元素。</p></div><div class="note"><b>主题可配置</b><p>默认白色、经典蓝色、森林绿、暮光紫与自选主色均可配合亮色或暗色。</p></div><div class="note"><b>屏幕纸张</b><p>暗色模式只降低纸张在屏幕上的亮度，文档和导出的纸张仍保留原色。</p></div></section>
+<script>
+  const icons = {
+    left: '<svg viewBox="0 0 24 24"><path d="M3 5h18M3 9h12M3 13h18M3 17h12"/></svg>',
+    center: '<svg viewBox="0 0 24 24"><path d="M3 5h18M6 9h12M3 13h18M6 17h12"/></svg>',
+    right: '<svg viewBox="0 0 24 24"><path d="M3 5h18M9 9h12M3 13h18M9 17h12"/></svg>',
+    justify: '<svg viewBox="0 0 24 24"><path d="M3 5h18M3 9h18M3 13h18M3 17h18"/></svg>',
+    bullets: '<svg viewBox="0 0 24 24"><path d="M8 5h13M8 12h13M8 19h13"/><circle cx="3" cy="5" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="19" r="1"/></svg>',
+    numbers: '<svg viewBox="0 0 24 24"><path d="M9 5h12M9 12h12M9 19h12M3 5h2v3M3 12h2l-2 3h2M3 19h2l-2 3h2"/></svg>',
+    link: '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 .4l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7-.4l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
+    image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 18 6-6 4 4 2-2 4 4"/></svg>',
+    table: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M9 9v11M15 9v11"/></svg>',
+    undo: '<svg viewBox="0 0 24 24"><path d="M9 5 4 10l5 5M4 10h9a6 6 0 0 1 0 12"/></svg>',
+    redo: '<svg viewBox="0 0 24 24"><path d="m15 5 5 5-5 5m5-5h-9a6 6 0 0 0 0 12"/></svg>'
+  };
+  const glyph = (content, klass = '') => `<span class="glyph ${klass}" aria-hidden="true">${icons[content] || content}</span>`;
+  const small = (label, icon, klass = '') => `<button class="small-command" type="button" data-command="${label}" title="${label}" aria-label="${label}">${glyph(icon, klass)}<span class="label">${label}</span></button>`;
+  const large = (label, icon) => `<button class="large-command" type="button" data-command="${label}" title="${label}">${glyph(icon)}<span>${label}</span></button>`;
+  const actions = (items, columns = 2) => `<div class="group-actions ${columns === 4 ? 'paragraph-actions' : ''}">${items.map(([label, icon, klass]) => small(label, icon, klass)).join('')}</div>`;
+  const group = (title, content, klass = '') => `<div class="ribbon-group ${klass}" role="group" aria-label="${title}"><div class="group-main">${content}</div><span class="group-title">${title}</span></div>`;
+  const home =
+    group('剪贴板', '<div class="clipboard-preview">' + large('粘贴', '▣') + actions([['剪切', '✂'], ['复制', '▢']]) + '</div>') +
+    group('字符格式', actions([['加粗', 'B'], ['斜体', 'I', 'italic'], ['删除线', 'S̶'], ['行内代码', '&lt;/&gt;']])) +
+    group('段落', actions([['左对齐', 'left'], ['居中', 'center'], ['右对齐', 'right'], ['两端对齐', 'justify'], ['项目符号', 'bullets'], ['编号', 'numbers'], ['任务列表', '☑'], ['引用', '❞']], 4)) +
+    group('样式', actions([['标题 1', 'H₁'], ['标题 2', 'H₂'], ['标题 3', 'H₃'], ['标题 4', 'H₄'], ['标题 5', 'H₅'], ['标题 6', 'H₆'], ['正文', '¶']], 4));
+  const insert =
+    group('链接与媒体', actions([['链接', 'link'], ['图片', 'image']])) +
+    group('Markdown 结构', actions([['表格', 'table'], ['代码块', '{ }'], ['分隔线', '―'], ['硬换行', '↵']])) +
+    group('页面', actions([['分页符', '▤'], ['页眉页脚', '▣']]));
+  const layout = group('纸张与分页', '<div class="paper-modes">' + [['A4', '▯'], ['A5', '▭'], ['自定义', '↔'], ['无缝', '∞']].map(([name, icon]) => small(name, icon)).join('') + '</div><div class="paper-size"><label>宽(mm) <input type="number" value="210" disabled></label><label>高(mm) <input type="number" value="297" disabled></label></div>', 'paper-group');
+  const view =
+    group('视图', large('阅读', '▣') + actions([['页面视图', '▤'], ['大纲', '☷'], ['草稿', '≡']])) +
+    group('显示', large('隐藏标尺', '▥') + actions([['网格线', '▦'], ['导航窗格', '☷']])) +
+    group('缩放', large('100%', '⌕'));
+  const placeholder = title => group('功能区', large(title, '▦') + actions([['常用操作', '☰'], ['布局选项', '▤'], ['更多设置', '⋯']]));
+  const panels = { home, insert, draw: placeholder('绘图'), layout, references: placeholder('引用'), review: placeholder('审阅'), view };
+  const names = { file: '文件', home: '开始', insert: '插入', draw: '绘图', layout: '布局', references: '引用', review: '审阅', view: '视图' };
+  const ribbon = document.getElementById('ribbon');
+  const canvas = document.getElementById('canvas');
+  const backstage = document.getElementById('backstage');
+  const feedback = document.getElementById('feedback');
+  function showTab(tab) {
+    document.querySelectorAll('.tabs-row .tab').forEach(button => button.setAttribute('aria-selected', String(button.dataset.tab === tab)));
+    const isFile = tab === 'file';
+    ribbon.hidden = isFile;
+    canvas.hidden = isFile;
+    backstage.hidden = !isFile;
+    if (!isFile) {
+      ribbon.innerHTML = panels[tab];
+      ribbon.setAttribute('aria-label', names[tab] + '功能区');
+      if (tab === 'home') ribbon.querySelector('[data-command="左对齐"]')?.setAttribute('aria-pressed', 'true');
+      if (tab === 'layout') ribbon.querySelector('[data-command="A4"]')?.setAttribute('aria-pressed', 'true');
+      if (tab === 'view') ribbon.querySelector('[data-command="隐藏标尺"]')?.setAttribute('aria-pressed', 'true');
+    }
+    feedback.textContent = isFile ? '文件后台预览' : names[tab] + '功能区预览';
+  }
+  document.querySelector('.tabs-row').addEventListener('click', event => { const tab = event.target.closest('[data-tab]'); if (tab) showTab(tab.dataset.tab); });
+  backstage.addEventListener('click', event => { if (event.target.closest('[data-tab="home"]')) showTab('home'); });
+  document.querySelector('.auto-save').addEventListener('click', event => {
+    const button = event.currentTarget;
+    button.setAttribute('aria-checked', String(button.getAttribute('aria-checked') !== 'true'));
+  });
+  ribbon.addEventListener('click', event => {
+    const button = event.target.closest('[data-command]');
+    if (!button) return;
+    feedback.textContent = '预览命令：' + button.dataset.command;
+    if (['A4', 'A5', '自定义', '无缝'].includes(button.dataset.command)) {
+      ribbon.querySelectorAll('.paper-modes button').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      ribbon.querySelectorAll('.paper-size input').forEach(input => { input.disabled = button.dataset.command !== '自定义'; });
+    }
+    if (['左对齐', '居中', '右对齐', '两端对齐'].includes(button.dataset.command)) {
+      ribbon.querySelectorAll('.paragraph-actions button').forEach(item => {
+        if (['左对齐', '居中', '右对齐', '两端对齐'].includes(item.dataset.command)) item.setAttribute('aria-pressed', String(item === button));
+      });
+    }
+  });
+  document.querySelector('.title-actions').addEventListener('click', event => { const button = event.target.closest('[data-command]'); if (button) feedback.textContent = '预览命令：' + button.dataset.command; });
+  document.querySelectorAll('[data-theme-choice]').forEach(button => button.addEventListener('click', () => {
+    document.body.dataset.theme = button.dataset.themeChoice;
+    document.querySelectorAll('[data-theme-choice]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+  }));
+  document.querySelectorAll('[data-preset-choice]').forEach(button => button.addEventListener('click', () => {
+    document.body.dataset.preset = button.dataset.presetChoice;
+    document.querySelectorAll('[data-preset-choice]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+  }));
+  document.getElementById('preview-color').addEventListener('input', event => {
+    document.body.style.setProperty('--custom-color', event.target.value);
+    document.body.dataset.preset = 'custom';
+    document.querySelectorAll('[data-preset-choice]').forEach(item => item.setAttribute('aria-pressed', 'false'));
+  });
+  document.getElementById('reset-theme').addEventListener('click', () => {
+    document.body.dataset.theme = 'light';
+    document.body.dataset.preset = 'office';
+    document.body.style.setProperty('--custom-color', '#3978ad');
+    document.getElementById('preview-color').value = '#3978ad';
+    document.querySelectorAll('[data-theme-choice]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.themeChoice === 'light')));
+    document.querySelectorAll('[data-preset-choice]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.presetChoice === 'office')));
+  });
+  document.querySelectorAll('[data-width-choice]').forEach(button => button.addEventListener('click', () => {
+    document.getElementById('frame').dataset.width = button.dataset.widthChoice;
+    document.querySelectorAll('[data-width-choice]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+  }));
+  showTab('home');
+</script>
+</body>
+</html>

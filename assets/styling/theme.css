@@ -1,21 +1,123 @@
-/* Application chrome only. Document typography and paper colors stay in the
-   document styles so exported PDFs do not depend on the UI theme. */
+/* Application chrome tokens. Document paper and PDF typography stay independent. */
 .word-shell {
-    --ie-shell-background: #f3f4f6;
-    --ie-shell-text: #111827;
-    --ie-shell-border: #1f4e78;
+    --ie-shell-background: #f1f3f6;
+    --ie-shell-text: #263442;
+    --ie-shell-border: #c9d3dd;
+    --ie-title-background: #f2f4f7;
+    --ie-title-text: #263442;
+    --ie-tabs-background: #f8fafc;
+    --ie-panel-background: #fff;
+    --ie-panel-border: #d5dde5;
+    --ie-canvas-background: #e9edf2;
+    --ie-file-background: #fff;
+    --ie-file-nav-background: #f5f7f9;
+    --ie-file-nav-active-background: #e5eff8;
+    --ie-file-nav-active-text: #235b89;
+    --ie-accent: #3978ad;
+    --ie-accent-background: #e5f0f9;
+    --ie-accent-text: #235b89;
+    --ie-status-background: #f8fafc;
+    --ie-chrome-text: #263442;
+    --ie-muted-text: #687789;
+    --ie-chrome-hover: #e9f0f6;
+    --ie-control-background: #fff;
+    --ie-ruler-background: #f4f5f6;
+    --ie-ruler-border: #cbd2d9;
+    --ie-ruler-tick: #9ba5af;
+    --ie-ruler-major: #687481;
+    --ie-ruler-label: #5d6976;
+    --ie-ruler-handle: #596674;
+    --ie-custom-color: #3978ad;
+}
+
+.word-shell.theme-light.theme-classic-blue {
+    --ie-shell-background: #e6eef6;
+    --ie-shell-border: #94b3ce;
     --ie-title-background: #244f77;
     --ie-title-text: #eef3f7;
-    --ie-tabs-background: #f8fafc;
-    --ie-panel-background: #ffffff;
-    --ie-panel-border: #d1d5db;
-    --ie-canvas-background: #eef2f7;
-    --ie-file-background: #ffffff;
-    --ie-file-nav-background: #f5f6f8;
-    --ie-file-nav-active-background: #dce8f5;
+    --ie-tabs-background: #eaf2f9;
+    --ie-panel-background: #f4f8fc;
+    --ie-panel-border: #bfd2e2;
+    --ie-canvas-background: #e2ebf3;
+    --ie-file-background: #f4f8fc;
+    --ie-file-nav-background: #eaf2f9;
+    --ie-file-nav-active-background: #d6e8f6;
     --ie-file-nav-active-text: #174f7e;
-    --ie-accent: #2563eb;
-    --ie-accent-background: #dbeafe;
-    --ie-accent-text: #1e40af;
-    --ie-status-background: #f8fafc;
+    --ie-accent: #286da3;
+    --ie-accent-background: #dcecf9;
+    --ie-accent-text: #174f7e;
+    --ie-status-background: #eaf2f9;
+    --ie-chrome-hover: #dcebf6;
+    --ie-control-background: #fff;
+}
+.word-shell.theme-forest {
+    --ie-title-background: #2d7057;
+    --ie-title-text: #f5faf7;
+    --ie-accent: #2d7057;
+    --ie-accent-background: #e1f1e8;
+    --ie-accent-text: #205c43;
+}
+.word-shell.theme-plum {
+    --ie-title-background: #70548d;
+    --ie-title-text: #faf7fd;
+    --ie-accent: #70548d;
+    --ie-accent-background: #efe8f6;
+    --ie-accent-text: #584071;
+}
+.word-shell.theme-custom {
+    --ie-title-background: var(--ie-custom-color);
+    --ie-title-text: var(--ie-custom-on-color);
+    --ie-accent: var(--ie-custom-accent);
+    --ie-accent-background: var(--ie-custom-soft);
+    --ie-accent-text: var(--ie-custom-strong);
+}
+
+.word-shell.theme-dark {
+    --ie-shell-background: #1b232d;
+    --ie-shell-text: #e7edf3;
+    --ie-shell-border: #3d4b59;
+    --ie-title-background: #252e39;
+    --ie-title-text: #edf3f8;
+    --ie-tabs-background: #293440;
+    --ie-panel-background: #303b47;
+    --ie-panel-border: #4b5a68;
+    --ie-canvas-background: #1c2530;
+    --ie-file-background: #252e38;
+    --ie-file-nav-background: #222b35;
+    --ie-file-nav-active-background: #354c60;
+    --ie-file-nav-active-text: #dceaf6;
+    --ie-accent-background: #284b69;
+    --ie-accent-text: #d7eaff;
+    --ie-status-background: #28323d;
+    --ie-chrome-text: #e7edf3;
+    --ie-muted-text: #aab8c6;
+    --ie-chrome-hover: #3d4c5b;
+    --ie-control-background: #29343f;
+    --ie-ruler-background: #2e3945;
+    --ie-ruler-border: #536271;
+    --ie-ruler-tick: #82919f;
+    --ie-ruler-major: #b5c0ca;
+    --ie-ruler-label: #c3ccd5;
+    --ie-ruler-handle: #d3dbe2;
+}
+.word-shell.theme-dark.theme-office { --ie-accent: #79b9ea; }
+.word-shell.theme-dark.theme-classic-blue {
+    --ie-shell-border: #47647d;
+    --ie-title-background: #203e58;
+    --ie-tabs-background: #263a4d;
+    --ie-panel-background: #2d4050;
+    --ie-panel-border: #4c6275;
+    --ie-file-background: #263746;
+    --ie-file-nav-background: #223344;
+    --ie-status-background: #263a4d;
+    --ie-control-background: #283b4c;
+    --ie-accent: #76b5e4;
+}
+.word-shell.theme-dark.theme-forest { --ie-title-background: #244236; --ie-accent: #80cba8; --ie-accent-background: #244d3f; }
+.word-shell.theme-dark.theme-plum { --ie-title-background: #3b3049; --ie-accent: #c4a6e2; --ie-accent-background: #4c3a5c; }
+.word-shell.theme-dark.theme-custom {
+    --ie-accent: var(--ie-custom-dark-accent);
+    --ie-accent-background: var(--ie-custom-dark-soft);
+    --ie-title-background: var(--ie-custom-dark-title);
+    --ie-title-text: #fff;
 }

@@ -36,6 +36,7 @@ globalThis.navigator = dom.window.navigator;
 globalThis.Node = dom.window.Node;
 globalThis.NodeFilter = dom.window.NodeFilter;
 globalThis.HTMLElement = dom.window.HTMLElement;
+globalThis.Element = dom.window.Element;
 globalThis.MutationObserver = dom.window.MutationObserver;
 globalThis.DOMParser = dom.window.DOMParser;
 globalThis.Event = dom.window.Event;
@@ -661,6 +662,47 @@ test("production toolbar block commands toggle without trapping the selection", 
   assert.equal(session.editor.getMarkdown(), "* 段落");
   assert.equal(session.command("unordered_list").changed, true);
   assert.equal(session.editor.getMarkdown(), "段落");
+});
+
+test("Markdown ribbon commands cover heading six, task lists, and tables", () => {
+  const session = new WysiwygBridgeSession({
+    host: document.getElementById("host"),
+    ast: remarkReferenceBackend.parse("段落"),
+    markdown: "段落",
+    documentRevision: 14,
+  });
+  activeEditor = session.editor;
+  assert.equal(session.command("heading6").changed, true);
+  assert.equal(session.editor.getMarkdown(), "###### 段落");
+  assert.equal(session.command("paragraph").changed, true);
+  assert.equal(session.command("task_list").changed, true);
+  assert.match(session.editor.getMarkdown(), /\[[ ]\] 段落/u);
+  assert.equal(session.command("table").changed, true);
+  assert.match(session.editor.getMarkdown(), /\|/u);
+});
+
+test("rich-text ribbon inserts a link and image using supplied URLs", () => {
+  const session = new WysiwygBridgeSession({
+    host: document.getElementById("host"),
+    ast: remarkReferenceBackend.parse("段落"),
+    markdown: "段落",
+    documentRevision: 15,
+  });
+  activeEditor = session.editor;
+  const originalPrompt = window.prompt;
+  window.prompt = () => "https://example.com/image.png";
+  try {
+    const position = textPosition(session.editor.state.doc, "段落");
+    session.editor.view.dispatch(session.editor.state.tr.setSelection(
+      TextSelection.create(session.editor.state.doc, position, position + 2),
+    ));
+    assert.equal(session.command("link").changed, true);
+    assert.match(session.editor.getMarkdown(), /\[段落\]\(https:\/\/example\.com\/image\.png\)/u);
+    assert.equal(session.command("image").changed, true);
+    assert.match(session.editor.getMarkdown(), /!\[图片\]\(https:\/\/example\.com\/image\.png\)/u);
+  } finally {
+    window.prompt = originalPrompt;
+  }
 });
 
 test("Markdown input rules create structural heading and list nodes", () => {
@@ -1302,6 +1344,27 @@ test("outline navigation distinguishes duplicate headings without changing conte
     assert.equal(selection.anchorNode.parentElement.closest("h2")?.textContent, "Same");
     assert.equal(host.querySelectorAll("h1, h2").length, 2);
     assert.equal(api.navigateHeading(host.id, 8), false);
+  } finally {
+    api.destroy(host.id);
+    host.remove();
+    bridge.remove();
+  }
+});
+
+test("toolbar clipboard insertion replaces the editor selection and serializes images", () => {
+  const host = document.createElement("div");
+  host.id = "clipboard-toolbar-host";
+  const bridge = document.createElement("textarea");
+  bridge.id = "clipboard-toolbar-bridge";
+  document.body.append(host, bridge);
+  const api = installWysiwygBridge({ dispatchEvent() {} });
+  try {
+    assert.equal(api.mount({ host_id: host.id, bridge_id: bridge.id, ast: remarkReferenceBackend.parse("前后"), markdown: "前后", document_revision: 1 }).ok, true);
+    assert.equal(api.search(host.id, "后").total, 1);
+    assert.equal(api.insertText(host.id, "中文").ok, true);
+    assert.equal(api.search(host.id, "中文").total, 1);
+    assert.equal(api.insertImage(host.id, "document.assets/pasted.png").ok, true);
+    assert.equal(api.prepareModeSwitch(host.id).markdown, "前![粘贴的图片](document.assets/pasted.png)");
   } finally {
     api.destroy(host.id);
     host.remove();

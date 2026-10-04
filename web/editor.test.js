@@ -241,6 +241,41 @@ test("toggles quote prefixes from the Markdown source toolbar", () => {
   assert.equal(api.getValue(), "第一行\n第二行");
 });
 
+test("source ribbon applies headings, tasks, code, and tables", () => {
+  api.mount("host", "bridge", "段落", 30);
+  assert.equal(api.command("heading6").changed, true);
+  assert.equal(api.getValue(), "###### 段落");
+  assert.equal(api.command("paragraph").changed, true);
+  assert.equal(api.getValue(), "段落");
+  assert.equal(api.command("task_list").changed, true);
+  assert.equal(api.getValue(), "- [ ] 段落");
+  assert.equal(api.command("task_list").changed, true);
+  assert.equal(api.getValue(), "段落");
+  api.setSelection("host", 0, 2);
+  assert.equal(api.command("inline_code").changed, true);
+  assert.equal(api.getValue(), "`段落`");
+  assert.equal(api.command("table").changed, true);
+  assert.match(api.getValue(), /\| 列 1 \| 列 2 \|/u);
+});
+
+test("source ribbon inserts links, images, and a screen-independent code fence", () => {
+  api.mount("host", "bridge", "示例", 31);
+  const originalPrompt = window.prompt;
+  window.prompt = () => "https://example.com/a.png";
+  try {
+    api.setSelection("host", 0, 2);
+    assert.equal(api.command("link").changed, true);
+    assert.equal(api.getValue(), "[示例](https://example.com/a.png)");
+    api.setSelection("host", api.getValue().length);
+    assert.equal(api.command("image").changed, true);
+    assert.match(api.getValue(), /!\[图片\]\(https:\/\/example\.com\/a\.png\)/u);
+    assert.equal(api.command("code_block").changed, true);
+    assert.match(api.getValue(), /```/u);
+  } finally {
+    window.prompt = originalPrompt;
+  }
+});
+
 test("closes bold markers independently inside each selected list item", () => {
   const first = "- 这是一个基于 Markdown 扩展 的富文本引擎原型。";
   const second = "- 这是一个基于 Markdown 扩展 的富文本引擎原型。这是";

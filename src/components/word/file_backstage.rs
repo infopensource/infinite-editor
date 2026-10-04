@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_primitives::dialog::{DialogContent, DialogRoot, DialogTitle};
+use crate::theme::{ThemeMode, ThemePreset, ThemeSettings};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ExportTarget {
@@ -78,7 +79,9 @@ pub fn FileBackstage(
     status_hint: String,
     has_location: bool,
     dialog_style_b: bool,
+    theme: ThemeSettings,
     on_dialog_style_change: EventHandler<bool>,
+    on_theme_change: EventHandler<ThemeSettings>,
     on_back: EventHandler<()>,
     on_new: EventHandler<()>,
     on_open: EventHandler<()>,
@@ -282,6 +285,7 @@ pub fn FileBackstage(
                             h1 { "编辑器设置" }
                             p { "设置此设备上的界面偏好。" }
                         }
+                        ThemeSettingsPanel { theme: theme.clone(), on_change: on_theme_change }
                         section { class: "file-settings-group",
                             h2 { "对话框样式" }
                             p { "用于保存确认、打开文档和其他编辑器对话框。选择后立即生效。" }
@@ -351,6 +355,81 @@ pub fn FileBackstage(
                     },
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn ThemeSettingsPanel(theme: ThemeSettings, on_change: EventHandler<ThemeSettings>) -> Element {
+    let color_theme = theme.clone();
+    rsx! {
+        section { class: "file-settings-group theme-settings-group",
+            h2 { "外观主题" }
+            p { "选择界面明暗和主色。修改后立即生效，并保存在此设备上。" }
+            div { class: "theme-setting-label", "显示模式" }
+            div { class: "theme-mode-choices", role: "radiogroup", aria_label: "显示模式",
+                for mode in [ThemeMode::Light, ThemeMode::Dark] {
+                    ThemeModeButton { mode, theme: theme.clone(), on_change }
+                }
+            }
+            div { class: "theme-setting-label", "预设主题" }
+            div { class: "theme-preset-choices", role: "radiogroup", aria_label: "预设主题",
+                for preset in ThemePreset::PRESETS {
+                    ThemePresetButton { preset, theme: theme.clone(), on_change }
+                }
+            }
+            div { class: "theme-custom-row",
+                label { class: "theme-color-label", r#for: "theme-custom-color", "自选主色" }
+                input { id: "theme-custom-color", r#type: "color", value: theme.custom_color.clone(),
+                    aria_label: "选择自定义主色",
+                    oninput: move |event| {
+                        let color = event.value();
+                        if ThemeSettings::valid_color(&color) {
+                            let mut next = color_theme.clone();
+                            next.custom_color = color;
+                            next.preset = ThemePreset::Custom;
+                            on_change.call(next);
+                        }
+                    }
+                }
+                span { class: "theme-color-value", "{theme.custom_color}" }
+                if theme.preset == ThemePreset::Custom { span { class: "theme-custom-active", "正在使用" } }
+            }
+            button { class: "theme-reset-button", r#type: "button",
+                onclick: move |_| on_change.call(ThemeSettings::default()),
+                "恢复默认（白色 · 亮色）"
+            }
+        }
+    }
+}
+
+#[component]
+fn ThemeModeButton(mode: ThemeMode, theme: ThemeSettings, on_change: EventHandler<ThemeSettings>) -> Element {
+    rsx! {
+        button { r#type: "button", role: "radio", aria_checked: theme.mode == mode,
+            class: if theme.mode == mode { "theme-mode-choice selected" } else { "theme-mode-choice" },
+            onclick: move |_| {
+                let mut next = theme.clone();
+                next.mode = mode;
+                on_change.call(next);
+            },
+            if mode == ThemeMode::Light { "亮色" } else { "暗色" }
+        }
+    }
+}
+
+#[component]
+fn ThemePresetButton(preset: ThemePreset, theme: ThemeSettings, on_change: EventHandler<ThemeSettings>) -> Element {
+    rsx! {
+        button { r#type: "button", role: "radio", aria_checked: theme.preset == preset,
+            class: if theme.preset == preset { "theme-preset-choice selected" } else { "theme-preset-choice" },
+            onclick: move |_| {
+                let mut next = theme.clone();
+                next.preset = preset;
+                on_change.call(next);
+            },
+            span { class: "theme-preset-swatch", style: "--theme-swatch: {preset.color()}", aria_hidden: "true" }
+            span { "{preset.label()}" }
         }
     }
 }

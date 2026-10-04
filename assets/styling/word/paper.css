@@ -11,8 +11,8 @@
     width: var(--page-width);
     height: 26px;
     border: 0;
-    box-shadow: inset 0 0 0 1px #d1d5db;
-    background: #ffffff;
+    box-shadow: inset 0 0 0 1px var(--ie-ruler-border, #cbd2d9);
+    background: var(--ie-ruler-background, #f4f5f6);
     margin: 0 auto;
 }
 
@@ -27,13 +27,13 @@
     position: absolute;
     bottom: 0;
     width: 1px;
-    background: #94a3b8;
+    background: var(--ie-ruler-tick, #9ba5af);
     transform: translateX(-0.5px);
 }
 
 .ruler-tick.major {
     height: 11px;
-    background: #64748b;
+    background: var(--ie-ruler-major, #687481);
 }
 
 .ruler-tick.mid {
@@ -50,7 +50,7 @@
     top: 2px;
     transform: translateX(-50%);
     font-size: 10px;
-    color: #64748b;
+    color: var(--ie-ruler-label, #5d6976);
     line-height: 1;
     font-variant-numeric: tabular-nums;
 }
@@ -108,7 +108,7 @@
     height: 0;
     border-left: 6px solid transparent;
     border-right: 6px solid transparent;
-    border-top: 10px solid #2563eb;
+    border-top: 10px solid var(--ie-ruler-handle, #596674);
     margin-top: 0;
     cursor: ew-resize;
     pointer-events: auto;
@@ -119,22 +119,12 @@
     height: 0;
     border-left: 6px solid transparent;
     border-right: 6px solid transparent;
-    border-top: 10px solid #2563eb;
+    border-top: 10px solid var(--ie-ruler-handle, #596674);
     border-bottom: none;
     border-radius: 0;
     background: transparent;
     cursor: ew-resize;
     pointer-events: auto;
-}
-
-.ruler-slider.left::-webkit-slider-thumb,
-.ruler-slider.left::-moz-range-thumb {
-    border-top-color: #2563eb;
-}
-
-.ruler-slider.right::-webkit-slider-thumb,
-.ruler-slider.right::-moz-range-thumb {
-    border-top-color: #1d4ed8;
 }
 
 .document-page {
@@ -232,6 +222,11 @@
     font-size: 28px;
     color: #111827;
 }
+
+.document-page h3 { margin: 16px 0 9px; font-size: 18px; color: #172334; }
+.document-page h4 { margin: 14px 0 8px; font-size: 16px; color: #172334; }
+.document-page h5 { margin: 12px 0 7px; font-size: 14px; color: #172334; }
+.document-page h6 { margin: 10px 0 6px; font-size: 13px; color: #172334; }
 
 .document-page p {
     margin: 0 0 14px;

@@ -104,6 +104,29 @@ export function installWysiwygBridge(target = window) {
       return sessions.get(hostId)?.command(name)
         ?? { ok: false, changed: false, error: "WYSIWYG 会话不存在" };
     },
+    insertText(hostId, text) {
+      const session = sessions.get(hostId);
+      if (!session || typeof text !== "string") return { ok: false, error: "WYSIWYG 会话不存在" };
+      const editor = session.editor;
+      if (editor.compositionActive || editor.view.composing) return { ok: false, deferred: true };
+      session.flushChange("wysiwyg-before-command");
+      editor.view.dispatch(editor.state.tr.insertText(text).scrollIntoView());
+      session.flushChange("wysiwyg-command", "input", true);
+      editor.focus();
+      return { ok: true };
+    },
+    insertImage(hostId, src) {
+      const session = sessions.get(hostId);
+      if (!session || typeof src !== "string") return { ok: false, error: "WYSIWYG 会话不存在" };
+      const editor = session.editor;
+      if (editor.compositionActive || editor.view.composing) return { ok: false, deferred: true };
+      session.flushChange("wysiwyg-before-command");
+      const image = editor.state.schema.nodes.image.create({ src, alt: "粘贴的图片", title: null });
+      editor.view.dispatch(editor.state.tr.replaceSelectionWith(image, false).scrollIntoView());
+      session.flushChange("wysiwyg-command", "input", true);
+      editor.focus();
+      return { ok: true };
+    },
     setResources(hostId, resources) {
       return sessions.get(hostId)?.setResources(resources)
         ?? { ok: false, error: "WYSIWYG 会话不存在" };

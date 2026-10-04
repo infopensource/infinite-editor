@@ -16,6 +16,7 @@ mod export;
 mod import;
 mod storage;
 mod styling;
+mod theme;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
 mod views;
 

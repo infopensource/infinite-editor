@@ -210,6 +210,13 @@ body.markdown-split-resizing * {
     line-height: 1.35;
 }
 
+.markdown-rendered-html h4,
+.markdown-preview-pane h4 { margin: 14px 0 8px; font-size: 16px; line-height: 1.4; }
+.markdown-rendered-html h5,
+.markdown-preview-pane h5 { margin: 12px 0 7px; font-size: 14px; line-height: 1.4; }
+.markdown-rendered-html h6,
+.markdown-preview-pane h6 { margin: 10px 0 6px; font-size: 13px; line-height: 1.4; }
+
 .markdown-rendered-html p,
 .markdown-preview-pane p {
     margin: 0 0 12px;

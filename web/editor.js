@@ -583,10 +583,11 @@ function toggleLinePrefix(kind) {
     quote: /^(\s*)>\s?/,
     unordered_list: /^(\s*)[-+*]\s+/,
     ordered_list: /^(\s*)\d+[.)]\s+/,
+    task_list: /^(\s*)[-+*]\s+\[[ xX]\]\s+/,
   };
-  const prefixes = { quote: "> ", unordered_list: "- ", ordered_list: "1. " };
+  const prefixes = { quote: "> ", unordered_list: "- ", ordered_list: "1. ", task_list: "- [ ] " };
   const pattern = patterns[kind];
-  const anyListPattern = /^(\s*)(?:(?:[-+*])|(?:\d+[.)]))\s+/;
+  const anyListPattern = /^(\s*)(?:(?:[-+*])|(?:\d+[.)]))\s+(?:\[[ xX]\]\s+)?/;
   const remove = lines.filter((line) => line.text.trim()).every((line) => pattern.test(line.text));
   const changes = lines.map((line, index) => {
     if (!remove) {
@@ -608,6 +609,61 @@ function toggleLinePrefix(kind) {
   return applySourceTransaction({ changes });
 }
 
+function setHeading(level) {
+  if (!controller) return { ok: false, changed: false, error: "Markdown 文档控制器尚未初始化" };
+  const lines = selectedLines();
+  const heading = /^(\s*)(#{1,6})\s+/;
+  const remove = level > 0 && lines.every(line => heading.exec(line.text)?.[2].length === level);
+  return applySourceTransaction({ changes: lines.map(line => {
+    const match = heading.exec(line.text);
+    const prefix = level === 0 || remove ? "" : `${"#".repeat(level)} `;
+    return {
+      from: line.from + (match?.[1].length ?? 0),
+      to: line.from + (match?.[0].length ?? 0),
+      insert: prefix,
+    };
+  }) });
+}
+
+function toggleCodeBlock() {
+  if (!controller) return { ok: false, changed: false, error: "Markdown 文档控制器尚未初始化" };
+  const lines = selectedLines();
+  const first = lines[0];
+  const last = lines.at(-1);
+  const before = first.number > 1 ? controller.state.doc.line(first.number - 1) : null;
+  const after = last.number < controller.state.doc.lines ? controller.state.doc.line(last.number + 1) : null;
+  if (before?.text.trim() === "```" && after?.text.trim() === "```") {
+    return applySourceTransaction({ changes: [
+      { from: before.from, to: first.from, insert: "" },
+      { from: after.from - 1, to: after.to, insert: "" },
+    ] });
+  }
+  return applySourceTransaction({ changes: [
+    { from: first.from, insert: "```\n" },
+    { from: last.to, insert: "\n```" },
+  ] });
+}
+
+function insertMarkdownBlock(content) {
+  if (!controller) return { ok: false, changed: false, error: "Markdown 文档控制器尚未初始化" };
+  const line = controller.state.doc.lineAt(controller.state.selection.main.from);
+  const before = line.from === 0 ? "" : "\n";
+  return applySourceTransaction({ changes: {
+    from: line.from, insert: `${before}${content}\n\n`,
+  } });
+}
+
+function insertMarkdownLink(image = false) {
+  if (!controller) return { ok: false, changed: false, error: "Markdown 文档控制器尚未初始化" };
+  const href = window.prompt(image ? "图片地址" : "链接地址")?.trim();
+  if (!href) return { ok: true, changed: false, revision: controller.editRevision };
+  const { from, to } = controller.state.selection.main;
+  const text = controller.state.doc.sliceString(from, to) || (image ? "图片" : "链接文本");
+  return applySourceTransaction({ changes: {
+    from, to, insert: `${image ? "!" : ""}[${text}](${href})`,
+  } });
+}
+
 function sourceCommand(name) {
   if (name === "undo" || name === "redo") {
     const changed = historyCommand(name === "undo" ? undo : redo, name);
@@ -616,9 +672,19 @@ function sourceCommand(name) {
   if (name === "bold") return toggleInlineMark("**");
   if (name === "italic") return toggleInlineMark("*");
   if (name === "strike") return toggleInlineMark("~~");
-  if (name === "quote" || name === "unordered_list" || name === "ordered_list") {
+  if (name === "inline_code") return toggleInlineMark("`");
+  if (name === "quote" || name === "unordered_list" || name === "ordered_list" || name === "task_list") {
     return toggleLinePrefix(name);
   }
+  if (/^heading[1-6]$/.test(name)) return setHeading(Number(name.at(-1)));
+  if (name === "paragraph") return setHeading(0);
+  if (name === "code_block") return toggleCodeBlock();
+  if (name === "horizontal_rule") return insertMarkdownBlock("---");
+  if (name === "table") return insertMarkdownBlock("| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |");
+  if (name === "page_break") return insertMarkdownBlock("<!-- infinite-editor:page-break -->");
+  if (name === "hard_break") return applySourceTransaction({ changes: { from: controller.state.selection.main.from, insert: "  " + controller.state.lineBreak } });
+  if (name === "link") return insertMarkdownLink();
+  if (name === "image") return insertMarkdownLink(true);
   return { ok: false, changed: false, error: `源码模式暂不支持命令：${name}` };
 }
 

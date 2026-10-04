@@ -9,22 +9,24 @@
 
 .tab-item {
     padding: 0 12px;
-    border-radius: 6px 6px 0 0;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
     font-size: 13px;
-    color: #334155;
+    color: var(--ie-chrome-text, #334155);
 }
 
 .tab-item.active {
-    background: var(--ie-panel-background, #ffffff);
-    border: 1px solid var(--ie-panel-border, #d1d5db);
-    border-bottom-color: var(--ie-panel-background, #ffffff);
+    background: transparent;
+    border-bottom-color: var(--ie-accent, #2563eb);
+    color: var(--ie-accent, #2563eb);
     font-weight: 600;
 }
 
 .ribbon-panel {
     display: flex;
-    gap: 8px;
-    padding: 8px;
+    align-items: stretch;
+    gap: 0;
+    padding: 8px 7px 5px;
     background: var(--ie-panel-background, #ffffff);
     border-bottom: 1px solid var(--ie-panel-border, #d1d5db);
     overflow-x: auto;
@@ -33,13 +35,13 @@
 .ribbon-group {
     width: max-content;
     flex: 0 0 auto;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    padding: 8px;
+    border-right: 1px solid var(--ie-panel-border, #d1d5db);
+    padding: 1px 12px 0;
     display: grid;
-    grid-template-rows: 1fr auto;
-    background: #f9fafb;
+    grid-template-rows: minmax(0, 1fr) 16px;
+    background: transparent;
 }
+.ribbon-group:last-child { border-right: 0; }
 
 .group-main {
     display: grid;
@@ -48,9 +50,9 @@
 }
 
 .ribbon-large {
-    border: 1px solid var(--ie-panel-border, #d1d5db);
-    border-radius: 6px;
-    background: var(--ie-panel-background, #ffffff);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
     font-weight: 600;
 }
 
@@ -63,7 +65,8 @@
 .group-actions {
     display: grid;
     grid-template-columns: repeat(2, max-content);
-    gap: 6px;
+    align-content: center;
+    gap: 4px;
 }
 
 .paragraph-actions {
@@ -71,13 +74,28 @@
 }
 
 .ribbon-small {
-    border: 1px solid var(--ie-panel-border, #d1d5db);
-    border-radius: 6px;
-    background: var(--ie-panel-background, #ffffff);
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
     font-size: 12px;
-    padding: 6px;
+    padding: 5px 8px;
     white-space: nowrap;
 }
+
+.ribbon-command-icon {
+    width: 20px;
+    flex: none;
+    color: var(--ie-accent, #3978ad);
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 1;
+    text-align: center;
+}
+.ribbon-command-icon svg { width: 18px; height: 18px; display: block; }
 
 .ribbon-small.active {
     border-color: var(--ie-accent, #2563eb);
@@ -153,11 +171,28 @@
 }
 
 .group-title {
-    margin-top: 8px;
+    align-self: end;
     text-align: center;
     font-size: 11px;
-    color: #6b7280;
+    color: var(--ie-muted-text, #6b7280);
 }
+
+.clipboard-main { display: flex; align-items: center; gap: 3px; }
+.clipboard-paste, .clipboard-small {
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ie-chrome-text, #263442);
+    cursor: pointer;
+    font: inherit;
+}
+.clipboard-paste { width: 70px; height: 76px; display: grid; place-content: center; justify-items: center; gap: 5px; font-size: 12px; }
+.clipboard-paste svg { width: 30px; height: 30px; color: var(--ie-accent, #3978ad); }
+.clipboard-secondary { display: grid; align-content: center; gap: 3px; }
+.clipboard-small { width: 70px; height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 5px; text-align: left; font-size: 12px; }
+.clipboard-symbol { width: 17px; color: var(--ie-accent, #3978ad); font-size: 17px; text-align: center; }
+.clipboard-paste:hover, .clipboard-small:hover { background: var(--ie-chrome-hover, #e9f0f6); border-color: var(--ie-panel-border, #d1d5db); }
+.clipboard-paste:focus-visible, .clipboard-small:focus-visible { outline: 2px solid var(--ie-accent, #3978ad); outline-offset: 1px; }
 
 .editor-surface {
     display: block;
