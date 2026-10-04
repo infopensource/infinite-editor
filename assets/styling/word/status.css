@@ -2,6 +2,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    white-space: nowrap;
     background: var(--ie-status-background, #f8fafc);
     border-top: 1px solid var(--ie-panel-border, #d1d5db);
     padding: 0 12px;
@@ -16,6 +19,26 @@
     gap: 8px;
 }
 
+.status-left > *,
+.status-right > * {
+    white-space: nowrap;
+}
+
+.status-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.status-right,
+.status-left > :not(.status-state):not(.status-file) {
+    flex: 0 0 auto;
+}
+
+.status-right > * {
+    flex: 0 0 auto;
+}
+
 .status-dot {
     color: #cbd5e1;
 }
@@ -23,11 +46,14 @@
 .status-state {
     color: #334155;
     font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .status-file {
+    min-width: 0;
     max-width: 280px;
-    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }

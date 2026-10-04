@@ -1,10 +1,14 @@
 use dioxus::prelude::*;
 use dioxus_primitives::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
 
-/// Closing the presentation does not cancel or complete its underlying job.
+/// The progress dialog follows the job state and cannot be dismissed while it runs.
 #[component]
-pub fn LoadingDialog(active: ReadSignal<bool>, title: String, description: String) -> Element {
-    let mut dismissed = use_signal(|| false);
+pub fn LoadingDialog(
+    active: ReadSignal<bool>,
+    title: String,
+    description: String,
+    #[props(default)] immediate: bool,
+) -> Element {
     let mut delay_elapsed = use_signal(|| false);
     let mut delay_generation = use_signal(|| 0_u64);
     // The official primitive inserts its focus script asynchronously. Opening
@@ -32,7 +36,10 @@ pub fn LoadingDialog(active: ReadSignal<bool>, title: String, description: Strin
         let generation = delay_generation();
         delay_elapsed.set(false);
         if !active() {
-            dismissed.set(false);
+            return;
+        }
+        if immediate {
+            delay_elapsed.set(true);
             return;
         }
         spawn(async move {
@@ -46,24 +53,31 @@ pub fn LoadingDialog(active: ReadSignal<bool>, title: String, description: Strin
             }
         });
     });
+    use_effect(move || {
+        if active() && delay_elapsed() && focus_ready() == Some(true) {
+            // The primitive's focus trap only seeks interactive descendants.
+            // Progress has no action, so focus its dialog container instead.
+            let _ = document::eval(
+                r#"requestAnimationFrame(() => {
+                    document.querySelector('.editor-progress-backdrop[data-state="open"] [role="dialog"]')?.focus();
+                });"#,
+            );
+        }
+    });
 
     rsx! {
         DialogRoot {
-            open: active() && delay_elapsed() && !dismissed(),
+            open: active() && delay_elapsed(),
             is_modal: focus_ready().unwrap_or(false),
-            on_open_change: move |open: bool| { if !open { dismissed.set(true); } },
+            on_open_change: move |_: bool| {},
             class: "editor-progress-backdrop",
             DialogContent {
                 class: "editor-progress-dialog",
+                tabindex: 0,
                 div { class: "editor-progress-spinner", aria_hidden: "true" }
                 DialogTitle { "{title}" }
                 DialogDescription { "{description}" }
-                p { class: "editor-progress-note", "关闭此提示后，任务会继续在后台处理。" }
-                button {
-                    class: "dialog-btn ghost",
-                    onclick: move |_| dismissed.set(true),
-                    "后台继续"
-                }
+                p { class: "editor-progress-note", "完成后会自动关闭，请稍候。" }
             }
         }
     }

@@ -1,5 +1,6 @@
 import { MinimalWysiwygEditor } from './editor.js';
 import { paginationKey, getPaginationMetrics } from './plugins/pagination.js';
+import { MeasurementWorkspace } from './measurement_snapshot.js';
 
 if (new URL(location.href).searchParams.get('case') === 'page-furniture') {
   import('./page_furniture_browser.js');
@@ -20,6 +21,28 @@ const markdown = scenario === 'table-long-header'
       + '\n\n' + ('硬换行与 $x^2$、**粗体**  \n'.repeat(100))
     : '# 嵌套分页回归\n\n- 外层列表\n  - 子项目\n    - ' + paragraph
     + '\n\n> 引用\n>\n> ' + paragraph + '\n\n- [ ] ' + paragraph;
+const progressObserved = [];
+let slowEdit = false;
+let slowStatusVisible = false;
+if (scenario === 'progress') {
+  const snapshot = MeasurementWorkspace.prototype.snapshot;
+  MeasurementWorkspace.prototype.snapshot = async function(signal) {
+    const page = document.querySelector('.infinite-pm-page');
+    const status = document.querySelector('.editor-layout-status[aria-live]');
+    progressObserved.push({
+      working: page?.dataset.paginationState === 'working'
+        && page.getAttribute('aria-busy') === 'true' && status && !status.hidden,
+      delayed: status?.classList.contains('editor-layout-status-delayed'),
+      opacity: Number.parseFloat(getComputedStyle(status).opacity),
+    });
+    if (slowEdit) {
+      slowEdit = false;
+      await new Promise(resolve => setTimeout(resolve, 950));
+      slowStatusVisible = !status.hidden && Number.parseFloat(getComputedStyle(status).opacity) > 0.95;
+    }
+    return snapshot.call(this, signal);
+  };
+}
 let editor = new MinimalWysiwygEditor(document.getElementById('host'), markdown);
 const before = editor.state.doc;
 const initialWidths = [...editor.view.dom.querySelectorAll('th')].map(cell => cell.getBoundingClientRect().width);
@@ -109,6 +132,32 @@ function verify() {
       return;
     }
     await delay();
+    if (scenario === 'progress') {
+      assert(progressObserved.length === 1 && progressObserved[0].working
+        && !progressObserved[0].delayed, 'Initial layout began without visible progress');
+      const status = document.querySelector('.editor-layout-status[aria-live]');
+      assert(status.parentElement === document.body, 'Progress was trapped inside the zoomed editor');
+      assert(status.hidden, 'Progress remained after layout');
+      assert(!page.hasAttribute('aria-busy'), 'Editor remained busy after layout');
+      page.style.setProperty('--page-height', '160mm');
+      await delay();
+      assert(progressObserved.length === 2 && progressObserved[1].working
+        && !progressObserved[1].delayed, 'Reflow began without visible progress');
+      editor.view.dispatch(editor.state.tr.insertText('字'));
+      await delay();
+      assert(progressObserved.length === 3 && progressObserved[2].working
+        && progressObserved[2].delayed && progressObserved[2].opacity === 0,
+      'Ordinary typing showed a layout notification');
+      assert(status.hidden, 'Typing notification remained after layout');
+      slowEdit = true;
+      editor.view.dispatch(editor.state.tr.insertText('字'));
+      await delay();
+      assert(progressObserved.length === 4 && progressObserved[3].delayed && slowStatusVisible,
+        'Slow typing layout never revealed progress');
+      assert(status.hidden, 'Slow typing notification remained after layout');
+      document.getElementById('result').textContent = JSON.stringify({ ok: true, initial: true, reflow: true, quietTyping: true, slowProgress: true });
+      return;
+    }
     const pages = verify();
     const stableUpdates = updates;
     const layouts = getPaginationMetrics(editor.view).started;

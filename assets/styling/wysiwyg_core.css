@@ -615,6 +615,12 @@
   pointer-events: none;
 }
 .editor-layout-status[hidden] { display: none; }
+.editor-layout-status-delayed {
+  opacity: 0;
+  will-change: opacity;
+  animation: editor-layout-status-reveal 1ms linear 800ms forwards;
+}
+@keyframes editor-layout-status-reveal { to { opacity: 1; } }
 .editor-progress-spinner {
   display: block;
   width: 18px;

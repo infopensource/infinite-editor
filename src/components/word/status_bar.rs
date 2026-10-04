@@ -59,9 +59,9 @@ pub fn StatusBar(
     rsx! {
         footer { class: "status-bar",
             div { class: "status-left",
-                span { class: "status-state", "{status_hint}" }
+                span { class: "status-state", title: status_hint.clone(), "{status_hint}" }
                 span { class: "status-dot", "•" }
-                span { class: "status-file", "{file_label}" }
+                span { class: "status-file", title: file_label.clone(), "{file_label}" }
                 span { class: "status-dot", "•" }
                 if selection_active {
                     if let Some(selected_count) = selected_character_count {
@@ -74,7 +74,7 @@ pub fn StatusBar(
                 }
                 if editor_mode == EditorMode::Wysiwyg {
                     span { class: "status-dot", "•" }
-                    span { class: "status-count", "第 {current_page} 页 / 共 {total_pages} 页" }
+                    span { class: "status-count status-page-count", "第 {current_page} 页 / 共 {total_pages} 页" }
                 }
                 span { class: "status-dot", "•" }
                 span { "中文(简体)" }

@@ -219,6 +219,7 @@ pub fn EditorSurface(
 ) -> Element {
     let editor_error = use_signal(|| None::<String>);
     let source_loading = use_signal(|| true);
+    let rich_loading = use_signal(|| true);
 
     let preview_source = use_memo(move || document.read().markdown.clone());
     let preview_html = use_resource(use_reactive!(|(editor_mode, markdown_preview_open)| {
@@ -263,6 +264,11 @@ pub fn EditorSurface(
         };
 
         return rsx! {
+            LoadingDialog {
+                active: source_loading,
+                title: "正在准备源码编辑器",
+                description: "正在恢复文档内容和编辑位置…",
+            }
             textarea {
                 id: MARKDOWN_DOCUMENT_BRIDGE_ID,
                 class: "markdown-editor-bridge",
@@ -290,11 +296,6 @@ pub fn EditorSurface(
                     class: markdown_layout_class,
                     section { class: "markdown-editor-pane",
                         div { class: "markdown-editor-stack",
-                            LoadingDialog {
-                                active: source_loading,
-                                title: "正在准备源码编辑器",
-                                description: "正在恢复文档内容和编辑位置…",
-                            }
                             div {
                                 id: MARKDOWN_EDITOR_HOST_ID,
                                 key: document_revision().to_string(),
@@ -388,6 +389,12 @@ pub fn EditorSurface(
         };
 
     rsx! {
+        LoadingDialog {
+            active: rich_loading,
+            title: "正在准备文档",
+            description: "正在解析内容并准备编辑视图…",
+            immediate: true,
+        }
         textarea {
             id: MARKDOWN_DOCUMENT_BRIDGE_ID,
             class: "markdown-editor-bridge",
@@ -480,6 +487,7 @@ pub fn EditorSurface(
                 editor_revision,
                 page_style,
                 seamless,
+                loading: rich_loading,
             }
         }
     }

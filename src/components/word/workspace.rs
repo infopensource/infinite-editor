@@ -101,7 +101,7 @@ pub fn WordWorkspace() -> Element {
     let mut auto_save_error = use_signal(|| None::<String>);
     let mut open_pending = use_signal(|| false);
     let mut import_pending = use_signal(|| false);
-    let mut pending_import = use_signal(|| None::<(String, ProjectDocument)>);
+    let mut pending_import = use_signal(|| None::<ProjectDocument>);
     let mut open_generation = use_signal(|| 0u64);
     let mut open_dialog_visible = use_signal(|| false);
     let mut warning_alert = use_signal(|| None::<String>);
@@ -284,7 +284,7 @@ pub fn WordWorkspace() -> Element {
     };
 
     let mut finish_import = move || {
-        let Some((name, imported)) = pending_import.write().take() else { return; };
+        let Some(imported) = pending_import.write().take() else { return; };
         open_generation.with_mut(|value| *value = value.wrapping_add(1));
         document.set(imported);
         saved_document.set(ProjectDocument::new(String::new()));
@@ -299,7 +299,7 @@ pub fn WordWorkspace() -> Element {
         auto_save_error.set(None);
         auto_save_enabled.set(false);
         new_dialog_visible.set(false);
-        status_hint.set(format!("已导入 {name}，请另存为 .md 或 .infdoc"));
+        status_hint.set("已导入，请另存为 .md 或 .infdoc".into());
         active_tab.set(RibbonTab::Home);
     };
 
@@ -503,7 +503,7 @@ pub fn WordWorkspace() -> Element {
                                             Ok(markdown) => {
                                                 if document_revision() != revision { return; }
                                                 if let Some(markdown) = markdown { document.write().markdown = markdown; }
-                                                pending_import.set(Some((file_name_or(&path, "文档"), imported)));
+                                                pending_import.set(Some(imported));
                                                 if *document.peek() != *saved_document.peek() {
                                                     new_save_feedback.set(String::new());
                                                     new_dialog_visible.set(true);

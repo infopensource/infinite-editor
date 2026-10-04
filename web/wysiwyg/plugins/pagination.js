@@ -480,13 +480,13 @@ export function paginationPlugin(options = {}) {
     view(view) {
       const metrics = { started: 0, committed: 0, cancelled: 0, maxMeasureSliceMs: 0, maxCommitMs: 0, maxPaintMs: 0 };
       metricsByView.set(view, metrics);
-      let statusTimer = 0;
       let paintFrame = 0;
       let frame = 0;
       let compositionTimer = 0;
       let editTimer = 0;
       let editBatchStarted = null;
       let editDeadline = 0;
+      let editPending = false;
       let activeJob = null;
       let destroyed = false;
       const workspace = new MeasurementWorkspace(view);
@@ -522,7 +522,14 @@ export function paginationPlugin(options = {}) {
       status.setAttribute("aria-live", "polite");
       status.textContent = "正在调整页面…";
       status.hidden = true;
-      page?.parentElement.appendChild(status);
+      status.addEventListener("animationend", () => {
+        if (!status.hidden && status.classList.contains("editor-layout-status-delayed")) {
+          status.removeAttribute("aria-hidden");
+        }
+      });
+      // The editor viewport is transformed for zoom. A fixed child there is
+      // scaled and clipped, so keep user feedback at the document level.
+      document.body.appendChild(status);
       const paint = () => {
         if (destroyed || !page) return;
         const start = performance.now();
@@ -579,11 +586,24 @@ export function paginationPlugin(options = {}) {
           const controller = new AbortController();
           activeJob = controller;
           metrics.started++;
+          const quietForTyping = editPending;
+          editPending = false;
           status.textContent = "正在调整页面…";
-          statusTimer = setTimeout(() => { if (!destroyed) status.hidden = false; }, 150);
+          status.classList.toggle("editor-layout-status-delayed", quietForTyping);
+          if (quietForTyping) status.setAttribute("aria-hidden", "true");
+          else status.removeAttribute("aria-hidden");
+          status.hidden = false;
           const documentNode = view.state.doc;
-          if (page) page.dataset.paginationState = "working";
+          if (page) {
+            page.dataset.paginationState = "working";
+            page.setAttribute("aria-busy", "true");
+          }
           try {
+            // Paint the status layer before measuring. Typing jobs reveal it
+            // only after the CSS delay, so quick edits stay visually quiet;
+            // the prepared layer can still appear during a long layout task.
+            await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+            checkCancelled(controller.signal);
             await cancellable(mathRenderingSettled(), controller.signal);
             checkCancelled(controller.signal);
             const layout = await measuredLayout(view, measurementCache, controller.signal, workspace, metrics);
@@ -601,6 +621,7 @@ export function paginationPlugin(options = {}) {
             if (page) {
               paint();
               page.dataset.paginationState = "idle";
+              page.removeAttribute("aria-busy");
             }
           } catch (error) {
             if (error.name === "AbortError") metrics.cancelled++;
@@ -608,13 +629,18 @@ export function paginationPlugin(options = {}) {
               lastDocument = documentNode;
               lastSignature = signature;
               if (page) page.dataset.paginationState = "error";
+              page?.removeAttribute("aria-busy");
               status.textContent = "页面排版失败，请调整页面设置后重试";
+              status.classList.remove("editor-layout-status-delayed");
+              status.removeAttribute("aria-hidden");
               status.hidden = false;
               console.error("Pagination failed", error);
             }
           } finally {
-            clearTimeout(statusTimer);
-            if (page?.dataset.paginationState !== "error") status.hidden = true;
+            if (page?.dataset.paginationState !== "error") {
+              status.hidden = true;
+              status.setAttribute("aria-hidden", "true");
+            }
             activeJob = null;
             if (!destroyed && (lastDocument !== view.state.doc || lastSignature !== layoutSignature(view, page))) schedule();
           }
@@ -651,6 +677,7 @@ export function paginationPlugin(options = {}) {
           // content. Neither should launch another full-document layout pass.
           if (nextView.state.doc !== previousState.doc) {
             activeJob?.abort();
+            editPending = true;
             const now = performance.now();
             editBatchStarted ??= now;
             editDeadline = Math.min(now + 80, editBatchStarted + 250);
@@ -666,7 +693,7 @@ export function paginationPlugin(options = {}) {
           if (paintFrame) cancelAnimationFrame(paintFrame);
           clearTimeout(compositionTimer);
           clearTimeout(editTimer);
-          clearTimeout(statusTimer);
+          page?.removeAttribute("aria-busy");
           status.remove();
           setFinalPageTail(view, 0);
           observer.disconnect();

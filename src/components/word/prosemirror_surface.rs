@@ -1,4 +1,3 @@
-use crate::components::ui::loading_dialog::LoadingDialog;
 use crate::document::{ProjectDocument, ResourceBundle};
 use crate::engine::ParserGateway;
 use dioxus::prelude::*;
@@ -80,21 +79,35 @@ fn mount_editor(
             r#"
                 // Allow the loading state to paint before mounting the editable DOM.
                 await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
-                const mount = () => {{
-                    return window.InfiniteWysiwygEditor.mount({config});
+                const mount = async () => {{
+                    const result = window.InfiniteWysiwygEditor.mount({config});
+                    if (!result?.ok) return result;
+                    const page = document.getElementById('{PROSEMIRROR_HOST_ID}')?.closest('.infinite-pm-page');
+                    if (!page) return {{ ok: false, error: '找不到编辑页面，无法确认排版结果' }};
+                    return await new Promise(resolve => {{
+                        const finish = () => {{
+                            const state = page.dataset.paginationState;
+                            if (state !== 'idle' && state !== 'error') return;
+                            observer.disconnect();
+                            resolve(state === 'idle' ? result : {{ ok: false, error: '页面排版失败，请检查文档内容或页面设置' }});
+                        }};
+                        const observer = new MutationObserver(finish);
+                        observer.observe(page, {{ attributes: true, attributeFilter: ['data-pagination-state'] }});
+                        finish();
+                    }});
                 }};
                 const isReady = () => window.InfiniteWysiwygEditor && window.InfiniteMarkdownEditor;
-                if (isReady()) return JSON.stringify(mount());
+                if (isReady()) return JSON.stringify(await mount());
                 return await new Promise((resolve) => {{
                     const events = ['infinite-wysiwyg-editor-ready', 'infinite-markdown-editor-ready'];
                     const cleanup = () => {{
                         clearTimeout(timeout);
                         for (const event of events) window.removeEventListener(event, ready);
                     }};
-                    const ready = () => {{
+                    const ready = async () => {{
                         if (!isReady()) return;
                         cleanup();
-                        resolve(JSON.stringify(mount()));
+                        resolve(JSON.stringify(await mount()));
                     }};
                     const timeout = setTimeout(() => {{
                         cleanup();
@@ -135,9 +148,9 @@ pub(super) fn ProseMirrorSurface(
     editor_revision: ReadSignal<u64>,
     page_style: String,
     seamless: bool,
+    loading: Signal<bool>,
 ) -> Element {
     let error = use_signal(|| None::<String>);
-    let loading = use_signal(|| true);
     let mut synchronized_document = use_signal(|| Some(document_revision()));
     let current = document.read();
     let markdown = current.markdown.clone();
@@ -187,11 +200,6 @@ pub(super) fn ProseMirrorSurface(
             style: surface_style,
             if !font_css.is_empty() {
                 style { "{font_css}" }
-            }
-            LoadingDialog {
-                active: loading,
-                title: "正在准备文档",
-                description: "正在解析内容并准备编辑视图…",
             }
             article {
                 class: if seamless { "document-page seamless-page infinite-pm-page" } else { "document-page infinite-pm-page" },

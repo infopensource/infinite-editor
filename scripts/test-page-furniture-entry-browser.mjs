@@ -83,17 +83,52 @@ try {
   for (const delayed of ['editor.bundle', 'wysiwyg.bundle']) {
     delayedBundle = delayed;
     await send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` }, sessionId);
+    await until(`!!document.querySelector('.editor-progress-backdrop[data-state="open"]')`, 'Initial progress did not appear');
+    const progressPlacement = await evaluate(`(() => {
+      const overlay = document.querySelector('.editor-progress-backdrop[data-state="open"]');
+      const bounds = overlay.getBoundingClientRect();
+      return !overlay.closest('.editor-surface') && Math.abs(bounds.x) < 1
+        && Math.abs(bounds.y) < 1 && Math.abs(bounds.width - innerWidth) < 1
+        && Math.abs(bounds.height - innerHeight) < 1;
+    })()`);
+    if (!progressPlacement) throw new Error('Initial progress was clipped by the zoomed editor');
     await until(`window.InfiniteMarkdownEditor?.getSnapshot()?.documentRevision != null`, 'Document did not initialize');
+    await evaluate(`(() => {
+      document.querySelector('.status-state').textContent = '已导入 超级惊悚直播（字文长写）(z-library.sk, 1lib.sk, z-lib.sk).epub，请另存为 .md 或 .infdoc';
+      document.querySelector('.status-file').textContent = '超级惊悚直播（字文长写）(z-library.sk, 1lib.sk, z-lib.sk).epub';
+    })()`);
+    for (const width of [1996, 1280, 1000]) {
+      await send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: false }, sessionId);
+      const singleLine = await evaluate(`(() => {
+        const bar = document.querySelector('.status-bar');
+        const page = document.querySelector('.status-page-count');
+        const left = document.querySelector('.status-left').getBoundingClientRect();
+        const right = document.querySelector('.status-right').getBoundingClientRect();
+        const range = document.createRange();
+        const itemDetails = [...bar.querySelectorAll('.status-left > span, .status-right > button')]
+          .map(item => {
+            range.selectNodeContents(item);
+            const rects = [...range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0);
+            return { text: item.textContent, whiteSpace: getComputedStyle(item).whiteSpace,
+              wrapped: rects.some(rect => Math.abs(rect.top - rects[0].top) > 2) };
+          });
+        return { ok: itemDetails.every(item => item.whiteSpace === 'nowrap' && !item.wrapped)
+          && page.getBoundingClientRect().right <= left.right + 1
+          && left.right <= right.left + 1 && right.right <= innerWidth,
+          items: itemDetails, leftRight: left.right, rightLeft: right.left };
+      })()`);
+      if (!singleLine.ok) throw new Error(`Status bar wrapped or was clipped at ${width}px: ${JSON.stringify(singleLine)}`);
+    }
     const firstReady = await evaluate(`window.editorReadyOrder[0]`);
     if (firstReady !== (delayed === 'editor.bundle' ? 'wysiwyg' : 'markdown')) throw new Error('Test did not exercise the intended load order');
     await evaluate(`[...document.querySelectorAll('.tabs-row button')].find(button => button.textContent === '插入').click()`);
-    await until(`[...document.querySelectorAll('button')].some(button => button.textContent.trim() === '页眉页脚')`, 'Insert ribbon did not mount');
-    await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent.trim() === '页眉页脚').click()`);
+    await until(`[...document.querySelectorAll('button')].some(button => button.textContent.includes('页眉页脚'))`, 'Insert ribbon did not mount');
+    await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent.includes('页眉页脚')).click()`);
     await until(`!!document.querySelector('#page-furniture-dialog[open]')`, 'Page furniture entry did not open');
     if (!await evaluate(`document.querySelectorAll('#page-furniture-dialog .page-furniture-text-editor').length === 6`)) throw new Error('Missing text editors');
     await evaluate(`document.querySelector('#page-furniture-dialog .page-furniture-cancel').click()`);
     await until(`!document.getElementById('page-furniture-dialog')`, 'Cancel did not close');
-    await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent.trim() === '页眉页脚').click()`);
+    await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent.includes('页眉页脚')).click()`);
     await until(`!!document.querySelector('#page-furniture-dialog[open]')`, 'Reopening failed');
     if (exceptions.length || missing.length) throw new Error(JSON.stringify({ exceptions, missing }));
     const screenshot = await send('Page.captureScreenshot', { format: 'png' }, sessionId);

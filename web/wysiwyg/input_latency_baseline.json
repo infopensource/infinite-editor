@@ -1,0 +1,1028 @@
+{
+  "scope": "isolated editor, native GDK key events, no Dioxus IPC or Rust workspace; encoding test stubs XHR",
+  "engine": "WebKitGTK 2.52.6, Broadway, compositing disabled",
+  "input_samples_per_case": 24,
+  "input_interval_ms": 80,
+  "editor": [
+    {
+      "type": "report",
+      "characters": 32768,
+      "mode": "paged",
+      "atEnd": false,
+      "document": {
+        "characters": 32898,
+        "bytes": 97378,
+        "blocks": 320,
+        "domElements": 656
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 9,
+        "p95": 10.000000000000227,
+        "max": 19,
+        "total": 219.99999999999966
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0.9999999999997726,
+          "p95": 1,
+          "max": 1,
+          "total": 13.99999999999909
+        },
+        "viewUpdate": {
+          "count": 30,
+          "p50": 1,
+          "p95": 2,
+          "max": 2,
+          "total": 27.999999999999545
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 0,
+          "max": 1,
+          "total": 1
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 1,
+          "p95": 2,
+          "max": 2,
+          "total": 7.000000000000227
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 1,
+          "p95": 2.0000000000002274,
+          "max": 4,
+          "total": 28.999999999999545
+        },
+        "snapshot": {
+          "count": 35,
+          "p50": 0,
+          "p95": 1,
+          "max": 6,
+          "total": 7.999999999999886
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 3,
+          "p95": 12,
+          "max": 12,
+          "total": 42.00000000000068
+        },
+        "measurementSnapshot": {
+          "count": 6,
+          "p50": 2,
+          "p95": 2,
+          "max": 2,
+          "total": 9.000000000000455
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 32768,
+      "mode": "paged",
+      "atEnd": true,
+      "document": {
+        "characters": 32898,
+        "bytes": 97378,
+        "blocks": 320,
+        "domElements": 656
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 10,
+        "p95": 11.00000000000091,
+        "max": 12,
+        "total": 235.00000000000045
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0.9999999999995453,
+          "p95": 1,
+          "max": 1.0000000000004547,
+          "total": 12.99999999999909
+        },
+        "viewUpdate": {
+          "count": 30,
+          "p50": 1,
+          "p95": 2,
+          "max": 3,
+          "total": 25.99999999999727
+        },
+        "snapshot": {
+          "count": 36,
+          "p50": 0,
+          "p95": 0.9999999999990905,
+          "max": 1,
+          "total": 1.9999999999990905
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 0,
+          "max": 1,
+          "total": 1
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 1,
+          "p95": 1.0000000000004547,
+          "max": 1.0000000000004547,
+          "total": 7.000000000000455
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 1,
+          "p95": 1.9999999999990905,
+          "max": 2.0000000000004547,
+          "total": 23.999999999996817
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 2,
+          "p95": 3,
+          "max": 3,
+          "total": 26
+        },
+        "measurementSnapshot": {
+          "count": 6,
+          "p50": 2.9999999999990905,
+          "p95": 3,
+          "max": 3,
+          "total": 14.999999999998181
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 32768,
+      "mode": "seamless",
+      "atEnd": false,
+      "document": {
+        "characters": 32898,
+        "bytes": 97378,
+        "blocks": 320,
+        "domElements": 335
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 8,
+        "p95": 9,
+        "max": 9.00000000000091,
+        "total": 192.9999999999991
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1.0000000000009095,
+          "total": 10.99999999999909
+        },
+        "viewUpdate": {
+          "count": 24,
+          "p50": 1,
+          "p95": 1.0000000000009095,
+          "max": 1.000000000001819,
+          "total": 16.000000000004547
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 0,
+          "max": 1,
+          "total": 1
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 0.9999999999990905,
+          "p95": 1.000000000001819,
+          "max": 1.000000000001819,
+          "total": 6.0000000000009095
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 1,
+          "p95": 2,
+          "max": 2,
+          "total": 23.000000000006366
+        },
+        "snapshot": {
+          "count": 35,
+          "p50": 0,
+          "p95": 1.0000000000009095,
+          "max": 2,
+          "total": 5
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 2.0000000000009095,
+          "p95": 4,
+          "max": 4,
+          "total": 27.00000000000091
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 32768,
+      "mode": "seamless",
+      "atEnd": true,
+      "document": {
+        "characters": 32898,
+        "bytes": 97378,
+        "blocks": 320,
+        "domElements": 335
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 9,
+        "p95": 10,
+        "max": 11,
+        "total": 214.99999999999636
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1,
+          "total": 10.999999999996362
+        },
+        "viewUpdate": {
+          "count": 24,
+          "p50": 1,
+          "p95": 1,
+          "max": 1,
+          "total": 15.999999999992724
+        },
+        "snapshot": {
+          "count": 36,
+          "p50": 0,
+          "p95": 1,
+          "max": 1.000000000001819,
+          "total": 5.999999999998181
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 0.999999999998181,
+          "max": 1,
+          "total": 1.999999999998181
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 0,
+          "p95": 1,
+          "max": 1,
+          "total": 4.999999999998181
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 1,
+          "p95": 2,
+          "max": 2,
+          "total": 20.999999999990905
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 2,
+          "p95": 3,
+          "max": 3,
+          "total": 29
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 131072,
+      "mode": "paged",
+      "atEnd": false,
+      "document": {
+        "characters": 131263,
+        "bytes": 388559,
+        "blocks": 1274,
+        "domElements": 2564
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 12,
+        "p95": 13,
+        "max": 14,
+        "total": 270.9999999999909
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0.999999999998181,
+          "p95": 1.000000000001819,
+          "max": 1.000000000001819,
+          "total": 12.000000000003638
+        },
+        "viewUpdate": {
+          "count": 30,
+          "p50": 1,
+          "p95": 3,
+          "max": 3,
+          "total": 37.00000000000546
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1,
+          "total": 2
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 0,
+          "p95": 1,
+          "max": 1,
+          "total": 3.999999999998181
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 1,
+          "p95": 2,
+          "max": 2,
+          "total": 27.000000000005457
+        },
+        "snapshot": {
+          "count": 35,
+          "p50": 0,
+          "p95": 1.000000000001819,
+          "max": 6.999999999998181,
+          "total": 13.999999999996362
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 3.999999999998181,
+          "p95": 10.999999999998181,
+          "max": 10.999999999998181,
+          "total": 48.999999999992724
+        },
+        "measurementSnapshot": {
+          "count": 6,
+          "p50": 3,
+          "p95": 3.000000000001819,
+          "max": 3.000000000001819,
+          "total": 18
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 131072,
+      "mode": "paged",
+      "atEnd": true,
+      "document": {
+        "characters": 131263,
+        "bytes": 388559,
+        "blocks": 1274,
+        "domElements": 2564
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 10.999999999996362,
+        "p95": 14,
+        "max": 15.000000000001819,
+        "total": 252.99999999999636
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1.000000000001819,
+          "max": 4,
+          "total": 12
+        },
+        "viewUpdate": {
+          "count": 30,
+          "p50": 1,
+          "p95": 3,
+          "max": 4,
+          "total": 29.00000000000182
+        },
+        "snapshot": {
+          "count": 36,
+          "p50": 0,
+          "p95": 1.000000000001819,
+          "max": 1.000000000001819,
+          "total": 6.000000000003638
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1.000000000003638,
+          "total": 3.000000000003638
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 0.999999999998181,
+          "p95": 1.000000000003638,
+          "max": 1.000000000003638,
+          "total": 5.999999999998181
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 1,
+          "p95": 2,
+          "max": 2,
+          "total": 20.000000000003638
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 4,
+          "p95": 4.000000000001819,
+          "max": 4.000000000001819,
+          "total": 36.00000000000364
+        },
+        "measurementSnapshot": {
+          "count": 6,
+          "p50": 3,
+          "p95": 4,
+          "max": 4,
+          "total": 17.99999999999818
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 131072,
+      "mode": "seamless",
+      "atEnd": false,
+      "document": {
+        "characters": 131263,
+        "bytes": 388559,
+        "blocks": 1274,
+        "domElements": 1289
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 12,
+        "p95": 13.000000000003638,
+        "max": 14,
+        "total": 273
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0.999999999996362,
+          "p95": 1,
+          "max": 1,
+          "total": 12.999999999992724
+        },
+        "viewUpdate": {
+          "count": 24,
+          "p50": 1,
+          "p95": 2,
+          "max": 2,
+          "total": 26.999999999996362
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1,
+          "total": 2
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 0,
+          "p95": 1,
+          "max": 1,
+          "total": 3
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 1,
+          "p95": 2,
+          "max": 2.000000000003638,
+          "total": 32
+        },
+        "snapshot": {
+          "count": 35,
+          "p50": 0,
+          "p95": 1,
+          "max": 6,
+          "total": 14.999999999996362
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 4,
+          "p95": 10,
+          "max": 10,
+          "total": 59.99999999999636
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 131072,
+      "mode": "seamless",
+      "atEnd": true,
+      "document": {
+        "characters": 131263,
+        "bytes": 388559,
+        "blocks": 1274,
+        "domElements": 1289
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 12,
+        "p95": 14,
+        "max": 14,
+        "total": 277.0000000000109
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1.000000000003638,
+          "total": 9.000000000003638
+        },
+        "viewUpdate": {
+          "count": 24,
+          "p50": 1,
+          "p95": 1,
+          "max": 1.000000000003638,
+          "total": 14
+        },
+        "snapshot": {
+          "count": 36,
+          "p50": 0,
+          "p95": 1.000000000003638,
+          "max": 1.000000000003638,
+          "total": 9.000000000007276
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1,
+          "total": 4.999999999996362
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 1,
+          "p95": 1,
+          "max": 1,
+          "total": 8.999999999992724
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 1,
+          "p95": 2,
+          "max": 2,
+          "total": 23.999999999992724
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 4,
+          "p95": 5,
+          "max": 5,
+          "total": 46.000000000007276
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 524288,
+      "mode": "paged",
+      "atEnd": false,
+      "document": {
+        "characters": 524867,
+        "bytes": 1553639,
+        "blocks": 5093,
+        "domElements": 10202
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 20.999999999996362,
+        "p95": 22.000000000003638,
+        "max": 24.999999999996362,
+        "total": 457.9999999999927
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0.999999999996362,
+          "p95": 2,
+          "max": 2,
+          "total": 15.999999999985448
+        },
+        "viewUpdate": {
+          "count": 30,
+          "p50": 2,
+          "p95": 6,
+          "max": 6,
+          "total": 59.99999999999636
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1.000000000003638,
+          "total": 9
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 1,
+          "p95": 1.000000000003638,
+          "max": 1.000000000003638,
+          "total": 9
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 2,
+          "p95": 3,
+          "max": 3,
+          "total": 43
+        },
+        "snapshot": {
+          "count": 35,
+          "p50": 0,
+          "p95": 4.000000000003638,
+          "max": 15,
+          "total": 32.000000000007276
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 6.999999999996362,
+          "p95": 19,
+          "max": 19,
+          "total": 89.99999999999636
+        },
+        "measurementSnapshot": {
+          "count": 6,
+          "p50": 5.999999999996362,
+          "p95": 7,
+          "max": 7,
+          "total": 31.999999999996362
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 524288,
+      "mode": "paged",
+      "atEnd": true,
+      "document": {
+        "characters": 524867,
+        "bytes": 1553639,
+        "blocks": 5093,
+        "domElements": 10202
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 20,
+        "p95": 22,
+        "max": 22.000000000003638,
+        "total": 434.9999999999891
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 2,
+          "total": 11.999999999985448
+        },
+        "viewUpdate": {
+          "count": 30,
+          "p50": 1,
+          "p95": 6,
+          "max": 7,
+          "total": 65.99999999998545
+        },
+        "snapshot": {
+          "count": 36,
+          "p50": 0,
+          "p95": 3,
+          "max": 3.000000000003638,
+          "total": 22.000000000025466
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1.000000000003638,
+          "total": 3.999999999996362
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 1,
+          "p95": 1.000000000003638,
+          "max": 1.000000000003638,
+          "total": 8.000000000007276
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 1.999999999996362,
+          "p95": 2.000000000003638,
+          "max": 3,
+          "total": 36.99999999999636
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 9,
+          "p95": 11,
+          "max": 11,
+          "total": 90
+        },
+        "measurementSnapshot": {
+          "count": 6,
+          "p50": 6.999999999996362,
+          "p95": 8,
+          "max": 8,
+          "total": 42.99999999998545
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 524288,
+      "mode": "seamless",
+      "atEnd": false,
+      "document": {
+        "characters": 524867,
+        "bytes": 1553639,
+        "blocks": 5093,
+        "domElements": 5108
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 20,
+        "p95": 22,
+        "max": 26,
+        "total": 453.99999999998545
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1.000000000007276,
+          "max": 9,
+          "total": 19.000000000021828
+        },
+        "viewUpdate": {
+          "count": 24,
+          "p50": 2,
+          "p95": 3,
+          "max": 3,
+          "total": 41.000000000007276
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1,
+          "max": 1,
+          "total": 4
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 1,
+          "p95": 3,
+          "max": 3,
+          "total": 11
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 2,
+          "p95": 3,
+          "max": 5,
+          "total": 52.000000000007276
+        },
+        "snapshot": {
+          "count": 35,
+          "p50": 0,
+          "p95": 8,
+          "max": 11,
+          "total": 40.000000000007276
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 10,
+          "p95": 14,
+          "max": 14,
+          "total": 115.00000000000728
+        }
+      }
+    },
+    {
+      "type": "report",
+      "characters": 524288,
+      "mode": "seamless",
+      "atEnd": true,
+      "document": {
+        "characters": 524867,
+        "bytes": 1553639,
+        "blocks": 5093,
+        "domElements": 5108
+      },
+      "inputToPaint": {
+        "count": 24,
+        "p50": 18,
+        "p95": 20,
+        "max": 20.000000000007276,
+        "total": 428.00000000001455
+      },
+      "longTasksSupported": false,
+      "longTasks": {
+        "count": 0,
+        "p50": 0,
+        "p95": 0,
+        "max": 0,
+        "total": 0
+      },
+      "timings": {
+        "eventQueue": {
+          "count": 24,
+          "p50": 1,
+          "p95": 1.000000000007276,
+          "max": 1.000000000007276,
+          "total": 12.000000000014552
+        },
+        "viewUpdate": {
+          "count": 24,
+          "p50": 1,
+          "p95": 2,
+          "max": 2.000000000007276,
+          "total": 28.000000000014552
+        },
+        "snapshot": {
+          "count": 36,
+          "p50": 0,
+          "p95": 3,
+          "max": 3,
+          "total": 28.999999999992724
+        },
+        "sourceMapper": {
+          "count": 24,
+          "p50": 0,
+          "p95": 1.000000000007276,
+          "max": 1.000000000007276,
+          "total": 7.000000000014552
+        },
+        "captureHistoryStart": {
+          "count": 12,
+          "p50": 1,
+          "p95": 2.000000000007276,
+          "max": 2.000000000007276,
+          "total": 13.000000000007276
+        },
+        "inputTransaction": {
+          "count": 24,
+          "p50": 2,
+          "p95": 3,
+          "max": 3.000000000007276,
+          "total": 44.00000000002183
+        },
+        "flushChange": {
+          "count": 12,
+          "p50": 9,
+          "p95": 11.000000000007276,
+          "max": 11.000000000007276,
+          "total": 109.00000000001455
+        }
+      }
+    }
+  ],
+  "dioxus_0_7_3_encoding": [
+    {
+      "type": "report",
+      "characters": 1024,
+      "bytes": 3223,
+      "p50": 0,
+      "max": 0,
+      "error": null
+    },
+    {
+      "type": "report",
+      "characters": 32768,
+      "bytes": 98455,
+      "p50": 1,
+      "max": 1.000000000000007,
+      "error": null
+    },
+    {
+      "type": "report",
+      "characters": 65536,
+      "bytes": 196759,
+      "p50": 1,
+      "max": 1.000000000000007,
+      "error": null
+    },
+    {
+      "type": "report",
+      "characters": 131072,
+      "bytes": 393367,
+      "p50": 2,
+      "max": 3,
+      "error": null
+    },
+    {
+      "type": "report",
+      "characters": 524288,
+      "bytes": 1573015,
+      "p50": 1,
+      "max": 2,
+      "error": "RangeError: Maximum call stack size exceeded."
+    }
+  ]
+}
