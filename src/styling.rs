@@ -22,6 +22,7 @@ macro_rules! word_css {
     };
 }
 
+#[cfg(feature = "desktop")]
 pub(crate) const DOCUMENT_CSS: &str = word_css!();
 
 pub(crate) const APP_CSS: &str = concat!(

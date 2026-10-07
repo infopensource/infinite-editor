@@ -2784,6 +2784,8 @@ dependencies = [
  "futures-channel",
  "gtk",
  "markdown",
+ "objc2-app-kit",
+ "objc2-foundation",
  "png",
  "quick-xml",
  "rfd 0.15.4",
@@ -2794,6 +2796,7 @@ dependencies = [
  "toml",
  "tungstenite",
  "url",
+ "windows-sys 0.61.2",
  "zip 2.4.2",
 ]
 

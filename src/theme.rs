@@ -13,6 +13,7 @@ impl ThemeMode {
         }
     }
 
+    #[cfg(feature = "desktop")]
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "light" => Some(Self::Light),
@@ -65,6 +66,7 @@ impl ThemePreset {
         }
     }
 
+    #[cfg(feature = "desktop")]
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "office" => Some(Self::Office),
@@ -151,8 +153,10 @@ mod tests {
     fn custom_colors_are_validated_and_keep_title_text_readable() {
         assert!(ThemeSettings::valid_color("#ffffff"));
         assert!(!ThemeSettings::valid_color("red"));
-        let mut theme = ThemeSettings::default();
-        theme.custom_color = "#ffffff".into();
+        let mut theme = ThemeSettings {
+            custom_color: "#ffffff".into(),
+            ..Default::default()
+        };
         assert!(theme.style().contains("--ie-custom-on-color: #182635"));
         theme.custom_color = "#203040".into();
         assert!(theme.style().contains("--ie-custom-on-color: #ffffff"));

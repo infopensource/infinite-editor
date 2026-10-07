@@ -2,7 +2,7 @@
 //! Wait for the actual renderer instead of Chromium's virtual-time heuristic.
 use serde_json::{json, Value};
 use std::net::{SocketAddr, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
@@ -20,17 +20,35 @@ impl Browser {
         let endpoint = profile.join("DevToolsActivePort");
         let log = directory.join("browser.log");
         let mut failure = "未找到 Chromium、Google Chrome 或 Microsoft Edge".to_string();
-        for candidate in [
+        #[allow(unused_mut)] // Windows adds browser install paths below.
+        let mut candidates: Vec<PathBuf> = [
             "chromium",
             "chromium-browser",
             "google-chrome",
             "google-chrome-stable",
             "chrome",
             "msedge",
+        ]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+        #[cfg(windows)]
+        for root in [
+            "PROGRAMFILES",
+            "ProgramW6432",
+            "PROGRAMFILES(X86)",
+            "LOCALAPPDATA",
         ] {
+            if let Some(directory) = std::env::var_os(root) {
+                let directory = PathBuf::from(directory);
+                candidates.push(directory.join("Microsoft/Edge/Application/msedge.exe"));
+                candidates.push(directory.join("Google/Chrome/Application/chrome.exe"));
+            }
+        }
+        for candidate in candidates {
             let stderr = std::fs::File::create(&log).map_err(|error| error.to_string())?;
             let _ = std::fs::remove_file(&endpoint);
-            let mut child = match Command::new(candidate)
+            let mut child = match Command::new(&candidate)
                 .args([
                     "--headless=new",
                     "--disable-gpu",
@@ -52,7 +70,7 @@ impl Browser {
                 Ok(child) => child,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(error) => {
-                    failure = format!("启动 {candidate} 失败：{error}");
+                    failure = format!("启动 {} 失败：{error}", candidate.display());
                     continue;
                 }
             };
@@ -99,7 +117,8 @@ impl Browser {
             let _ = child.wait();
             let details = std::fs::read_to_string(&log).unwrap_or_default();
             failure = format!(
-                "{candidate} 启动失败：{}",
+                "{} 启动失败：{}",
+                candidate.display(),
                 details.lines().last().unwrap_or("无法连接浏览器")
             );
         }

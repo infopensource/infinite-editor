@@ -56,26 +56,6 @@ struct ClipboardPasteRequest {
     request_id: u64,
 }
 
-#[cfg(feature = "desktop")]
-fn read_clipboard_png() -> Result<String, String> {
-    use base64::Engine as _;
-
-    let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
-    let image = clipboard
-        .wait_for_image()
-        .ok_or_else(|| "剪贴板中没有可读取的图片".to_string())?;
-    let png = image
-        .save_to_bufferv("png", &[])
-        .map_err(|error| format!("编码剪贴板图片失败：{error}"))?;
-    if png.len() > 128 * 1024 * 1024 {
-        return Err("剪贴板图片超过 128 MiB 限制".to_string());
-    }
-    Ok(format!(
-        "data:image/png;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(png)
-    ))
-}
-
 #[component]
 pub fn WordWorkspace() -> Element {
     let mut active_tab = use_signal(|| RibbonTab::Home);
@@ -100,6 +80,7 @@ pub fn WordWorkspace() -> Element {
     let mut auto_save_start_pending = use_signal(|| false);
     let mut auto_save_error = use_signal(|| None::<String>);
     let mut open_pending = use_signal(|| false);
+    #[allow(unused_mut)] // Web builds only read this signal.
     let mut import_pending = use_signal(|| false);
     let export_pending = use_signal(|| false);
     let mut pending_import = use_signal(|| None::<ProjectDocument>);
@@ -383,11 +364,10 @@ pub fn WordWorkspace() -> Element {
                         if action == "paste" {
                             #[cfg(feature = "desktop")]
                             {
-                                let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
-                                if clipboard.wait_for_image().is_some() {
+                                if super::clipboard::has_image() {
                                     let _ = document::eval("window.InfiniteToolbarClipboard?.pasteImage();");
-                                } else if let Some(text) = clipboard.wait_for_text() {
-                                    if let Ok(value) = serde_json::to_string(&text.as_str()) {
+                                } else if let Some(text) = super::clipboard::read_text() {
+                                    if let Ok(value) = serde_json::to_string(&text) {
                                         let _ = document::eval(&format!("window.InfiniteToolbarClipboard?.insertText({value});"));
                                     }
                                 } else {
@@ -586,7 +566,7 @@ pub fn WordWorkspace() -> Element {
                     on_clipboard_paste: move |payload: String| {
                         #[cfg(feature = "desktop")]
                         if let Ok(request) = serde_json::from_str::<ClipboardPasteRequest>(&payload) {
-                            match read_clipboard_png() {
+                            match super::clipboard::read_png() {
                                 Ok(data_url) => {
                                     let configured_root = document.read().layout.resources.root.clone();
                                     let resource_root = if configured_root.is_empty() {

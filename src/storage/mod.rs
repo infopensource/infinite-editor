@@ -95,9 +95,13 @@ pub fn save_document(
         DocumentLocation::Loose { markdown_path } => {
             save_loose_with_resources(markdown_path, document, resources)
         }
-        DocumentLocation::Package { package_path } => {
-            save_package(package_path, document, Some(resources), None, Some(package_path))
-        }
+        DocumentLocation::Package { package_path } => save_package(
+            package_path,
+            document,
+            Some(resources),
+            None,
+            Some(package_path),
+        ),
     }
 }
 
@@ -510,18 +514,34 @@ pub(crate) fn replace_file(temporary: &Path, destination: &Path) -> Result<(), S
 
 #[cfg(windows)]
 pub(crate) fn replace_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::ReplaceFileW;
+
     if !destination.exists() {
         return std::fs::rename(temporary, destination)
             .map_err(|error| format!("提交文件失败: {error}"));
     }
-    let backup = destination.with_extension("infinite-editor-backup");
-    std::fs::rename(destination, &backup).map_err(|error| format!("备份旧文件失败: {error}"))?;
-    if let Err(error) = std::fs::rename(temporary, destination) {
-        let _ = std::fs::rename(&backup, destination);
-        return Err(format!("提交文件失败: {error}"));
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+    if unsafe {
+        ReplaceFileW(
+            destination.as_ptr(),
+            temporary.as_ptr(),
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    } == 0
+    {
+        Err(format!("提交文件失败: {}", std::io::Error::last_os_error()))
+    } else {
+        Ok(())
     }
-    let _ = std::fs::remove_file(backup);
-    Ok(())
 }
 
 fn write_zip_entry<W: Write + Seek>(
@@ -694,7 +714,10 @@ mod tests {
             .resources
             .entries()
             .contains_key("proposal.assets/cover.png"));
-        assert_eq!(loaded.document.layout.page_furniture, document.layout.page_furniture);
+        assert_eq!(
+            loaded.document.layout.page_furniture,
+            document.layout.page_furniture
+        );
         assert!(sidecar_path(&path).exists());
         std::fs::remove_dir_all(directory).expect("应清理测试目录");
     }
@@ -706,9 +729,8 @@ mod tests {
         let location = DocumentLocation::Loose {
             markdown_path: path.clone(),
         };
-        let mut document = ProjectDocument::new(
-            "![粘贴的图片](document.assets/pasted-image.png)".to_string(),
-        );
+        let mut document =
+            ProjectDocument::new("![粘贴的图片](document.assets/pasted-image.png)".to_string());
         document.layout.resources.root = "document.assets".to_string();
         let mut resources = ResourceBundle::default();
         resources.insert(
@@ -730,9 +752,8 @@ mod tests {
     fn package_save_includes_in_memory_resources() {
         let directory = test_directory();
         let package_path = directory.join("notes.infdoc");
-        let mut document = ProjectDocument::new(
-            "![粘贴的图片](document.assets/pasted-image.png)".to_string(),
-        );
+        let mut document =
+            ProjectDocument::new("![粘贴的图片](document.assets/pasted-image.png)".to_string());
         document.layout.resources.root = "document.assets".to_string();
         let mut resources = ResourceBundle::default();
         resources.insert(
@@ -745,9 +766,7 @@ mod tests {
 
         let loaded = open_document(&package_path).expect("应重新打开 INFDoc");
         assert_eq!(
-            loaded
-                .resources
-                .get("document.assets/pasted-image.png"),
+            loaded.resources.get("document.assets/pasted-image.png"),
             Some("data:image/png;base64,AQID"),
         );
         std::fs::remove_dir_all(directory).expect("应清理测试目录");
@@ -775,7 +794,10 @@ mod tests {
 
         assert_eq!(loaded.document.markdown, document.markdown);
         assert_eq!(loaded.document.layout.paper, document.layout.paper);
-        assert_eq!(loaded.document.layout.page_furniture, document.layout.page_furniture);
+        assert_eq!(
+            loaded.document.layout.page_furniture,
+            document.layout.page_furniture
+        );
         assert!(loaded
             .resources
             .entries()

@@ -128,56 +128,66 @@ Seamless mode also produces a long image. Export doesn't change the editor's
 paper mode. PDF requires a fixed paper size; image export no longer needs
 Poppler or an image-conversion executable.
 
-Your new jumpstart project includes basic organization with an organized `assets` folder and a `components` folder.
-If you chose to develop with the router feature, you will also have a `views` folder.
+## Build
 
-```
-project/
-├─ assets/ # Any assets that are used by the app should be placed here
-├─ src/
-│  ├─ main.rs # The entrypoint for the app. It also defines the routes for the app.
-│  ├─ components/
-│  │  ├─ mod.rs # Defines the components module
-│  │  ├─ hero.rs # The Hero component for use in the home page
-│  ├─ views/ # The views each route will render in the app.
-│  │  ├─ mod.rs # Defines the module for the views route and re-exports the components for each route
-│  │  ├─ blog.rs # The component that will render at the /blog/:id route
-│  │  ├─ home.rs # The component that will render at the / route
-├─ Cargo.toml # The Cargo.toml file defines the dependencies and feature flags for your project
+Install the Rust toolchain and Dioxus CLI 0.7. The committed files in `assets/`
+already contain the browser editor bundles. If you edit `web/editor.js`, run
+`npm ci` once and `npm run build:editor` before building the application.
+
+### Linux desktop
+
+Install GTK 3 and WebKit2GTK 4.1 development libraries, then run:
+
+```sh
+dx serve --linux
+dx build --linux --release
 ```
 
-### Serving Your App
+### Windows x64 from Linux
 
-Run the following command in the root of your project to start developing with the default platform:
+Install MinGW-w64, `zip`, and the Windows GNU Rust target, then run:
 
-```bash
-dx serve
+```sh
+rustup target add x86_64-pc-windows-gnu
+scripts/build-windows-x64.sh
 ```
 
-To run for a different platform, use the `--platform platform` flag. E.g.
-```bash
-dx serve --platform desktop
+The script builds in release mode, includes the x64 `WebView2Loader.dll`, and
+creates `target/dx/infinite-editor/release/windows/InfiniteEditor-0.1.0-windows-x64.zip`.
+Extract the archive on Windows and run `app/infinite-editor.exe`. Microsoft Edge
+WebView2 Runtime must be installed on that computer. The MinGW linker wrapper in
+`scripts/mingw-dx-linker.sh` translates the Windows subsystem flags emitted by
+Dioxus CLI for this target.
+
+### macOS desktop
+
+On macOS with the Apple command line tools installed, run:
+
+```sh
+dx build --macos --release
 ```
+
+### Web
+
+Install the WebAssembly Rust target and build without the default desktop
+feature:
+
+```sh
+rustup target add wasm32-unknown-unknown
+dx build --web --no-default-features --features web
+dx build --web --release --no-default-features --features web
+```
+
+The Web build does not include native file dialogs, local filesystem actions,
+or desktop export tools. Release builds also need a writable Dioxus CLI tool
+cache for its `wasm-opt` executable.
 
 ## Tests
 
-Install the locked JavaScript dependencies once:
-
 ```sh
 npm ci
-```
-
-Run the CodeMirror DOM tests and Rust unit tests together:
-
-```sh
 npm test
-```
-
-After changing `web/editor.js`, rebuild the offline browser bundle and verify the
-desktop package:
-
-```sh
-npm run build:editor
 cargo clippy --all-targets --features desktop -- -D warnings
-dx build --platform desktop
+cargo check --target x86_64-pc-windows-gnu --features desktop
+cargo check --target wasm32-unknown-unknown --no-default-features --features web
 ```
