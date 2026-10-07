@@ -101,6 +101,7 @@ pub fn WordWorkspace() -> Element {
     let mut auto_save_error = use_signal(|| None::<String>);
     let mut open_pending = use_signal(|| false);
     let mut import_pending = use_signal(|| false);
+    let export_pending = use_signal(|| false);
     let mut pending_import = use_signal(|| None::<ProjectDocument>);
     let mut open_generation = use_signal(|| 0u64);
     let mut open_dialog_visible = use_signal(|| false);
@@ -401,6 +402,7 @@ pub fn WordWorkspace() -> Element {
                 FileBackstage {
                     current_file: current_location().map(|location| location.path().display().to_string()),
                     status_hint: status_hint(),
+                    export_pending: export_pending(),
                     has_location: current_location().is_some(),
                     dialog_style_b: dialog_style_b(),
                     theme: theme_settings.clone(),
@@ -538,7 +540,7 @@ pub fn WordWorkspace() -> Element {
                         );
                     },
                     on_export: move |target| {
-                        handle_export_document(target, document, resources, status_hint);
+                        handle_export_document(target, document, resources, status_hint, export_pending);
                     },
                 }
             } else {

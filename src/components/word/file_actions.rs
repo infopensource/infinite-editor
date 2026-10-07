@@ -130,6 +130,7 @@ async fn export_dialog(target: ExportTarget) -> Result<Option<PathBuf>, String> 
         ExportTarget::Word => ("document.docx", &["docx"]),
         ExportTarget::Png => ("document.png", &["png"]),
         ExportTarget::Jpeg => ("document.jpg", &["jpg", "jpeg"]),
+        ExportTarget::LongPng => ("document-long.png", &["png"]),
     };
 
     let picked = rfd::AsyncFileDialog::new()
@@ -149,6 +150,7 @@ async fn export_dialog(target: ExportTarget) -> Result<Option<PathBuf>, String> 
         ExportTarget::Word => "docx",
         ExportTarget::Png => "png",
         ExportTarget::Jpeg => "jpg",
+        ExportTarget::LongPng => "png",
     };
     path.set_extension(extension);
 
@@ -451,40 +453,87 @@ pub(super) fn handle_export_document(
     document: Signal<ProjectDocument>,
     resources: Signal<ResourceBundle>,
     mut status_hint: Signal<String>,
+    #[allow(unused_mut)] mut export_pending: Signal<bool>,
 ) {
     #[cfg(feature = "desktop")]
     {
+        if export_pending() {
+            return;
+        }
+        export_pending.set(true);
         let current_document = document.read().clone();
         let current_resources = resources.read().clone();
         status_hint.set("请选择导出位置".to_string());
         spawn(async move {
             match export_dialog(target).await {
                 Ok(Some(path)) => {
-                    let result = match target {
-                        ExportTarget::Markdown => std::fs::write(&path, &current_document.markdown)
-                            .map_err(|error| format!("导出 Markdown 失败: {error}")),
-                        ExportTarget::Pdf => {
-                            status_hint.set("正在排版并生成 PDF".to_string());
-                            let (sender, receiver) = futures_channel::oneshot::channel();
-                            let export_path = path.clone();
-                            std::thread::spawn(move || {
-                                let result = crate::export::export_pdf(
+                    status_hint.set(format!("正在生成 {}…", target.label()));
+                    let export_path = path.clone();
+                    let result = super::background::run(move || -> Result<usize, String> {
+                        match target {
+                            ExportTarget::Markdown => {
+                                std::fs::write(&export_path, &current_document.markdown)
+                                    .map_err(|error| format!("导出 Markdown 失败：{error}"))?;
+                                Ok(1)
+                            }
+                            ExportTarget::Pdf => {
+                                crate::export::export_pdf(
                                     &export_path,
                                     &current_document,
                                     &current_resources,
-                                );
-                                let _ = sender.send(result);
-                            });
-                            receiver
-                                .await
-                                .unwrap_or_else(|_| Err("PDF 导出任务意外终止".to_string()))
+                                )?;
+                                Ok(1)
+                            }
+                            ExportTarget::Word => {
+                                crate::export::export_office(
+                                    &export_path,
+                                    &current_document,
+                                    &current_resources,
+                                    crate::export::OfficeFormat::Docx,
+                                )?;
+                                Ok(1)
+                            }
+                            ExportTarget::Odt => {
+                                crate::export::export_office(
+                                    &export_path,
+                                    &current_document,
+                                    &current_resources,
+                                    crate::export::OfficeFormat::Odt,
+                                )?;
+                                Ok(1)
+                            }
+                            ExportTarget::Png | ExportTarget::Jpeg => crate::export::export_images(
+                                &export_path,
+                                &current_document,
+                                &current_resources,
+                                if target == ExportTarget::Png {
+                                    crate::export::ImageFormat::Png
+                                } else {
+                                    crate::export::ImageFormat::Jpeg
+                                },
+                            ),
+                            ExportTarget::LongPng => {
+                                crate::export::export_long_image(
+                                    &export_path,
+                                    &current_document,
+                                    &current_resources,
+                                )?;
+                                Ok(1)
+                            }
                         }
-                        _ => Err(format!("{} 导出引擎尚未接入", target.label())),
-                    };
+                    })
+                    .await
+                    .and_then(|result| result);
 
                     match result {
-                        Ok(()) => {
-                            status_hint.set(format!("已导出 {}", file_name_or(&path, "文件")))
+                        Ok(pages) => {
+                            if matches!(target, ExportTarget::Png | ExportTarget::Jpeg) && pages > 1 {
+                                let stem = path.file_stem().and_then(|stem| stem.to_str()).unwrap_or("document");
+                                let extension = path.extension().and_then(|extension| extension.to_str()).unwrap_or("png");
+                                status_hint.set(format!("已导出 {pages} 页图片：{stem}-1.{extension} 至 {stem}-{pages}.{extension}"));
+                            } else {
+                                status_hint.set(format!("已导出 {}", file_name_or(&path, "文件")));
+                            }
                         }
                         Err(error) => status_hint.set(error),
                     }
@@ -492,6 +541,7 @@ pub(super) fn handle_export_document(
                 Ok(None) => status_hint.set("已取消导出".to_string()),
                 Err(err) => status_hint.set(err),
             }
+            export_pending.set(false);
         });
     }
 
@@ -500,6 +550,7 @@ pub(super) fn handle_export_document(
         let _ = target;
         let _ = document;
         let _ = resources;
+        let _ = export_pending;
         status_hint.set("当前平台暂不支持系统文件对话框".to_string());
     }
 }

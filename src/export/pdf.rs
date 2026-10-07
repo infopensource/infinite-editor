@@ -1,9 +1,6 @@
 use crate::components::{embedded_font_css, escape_css_string, render_html_with_page_breaks};
 use crate::document::{ProjectDocument, ResourceBundle};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
-use url::Url;
+use std::path::Path;
 
 use crate::styling::DOCUMENT_CSS;
 const MATH_CSS: &str = include_str!("../../assets/math.bundle.css");
@@ -15,52 +12,34 @@ pub fn export_pdf(
     document: &ProjectDocument,
     resources: &ResourceBundle,
 ) -> Result<(), String> {
-    let width = document
-        .layout
-        .paper
-        .resolved_width_mm()
-        .ok_or_else(|| "无缝纸张不能直接导出 PDF，请先选择 A4、A5 或自定义纸张".to_string())?;
-    let height = document
-        .layout
-        .paper
-        .resolved_height_mm()
-        .ok_or_else(|| "无法确定 PDF 纸张高度".to_string())?;
-    let html = build_print_html(document, resources, width, height)?;
-    let temporary_directory = temporary_export_directory()?;
-    let html_path = temporary_directory.join("document.html");
-    let temporary_pdf = crate::storage::temporary_sibling(target);
-    std::fs::write(&html_path, html).map_err(|error| format!("写入打印页面失败: {error}"))?;
-
-    let result = print_with_chromium(&html_path, &temporary_pdf);
-    let _ = std::fs::remove_dir_all(&temporary_directory);
-    if let Err(error) = result {
-        let _ = std::fs::remove_file(&temporary_pdf);
-        return Err(error);
+    let mut rendered = super::render::RenderedDocument::new(document, resources, false)?;
+    let staged = crate::storage::temporary_sibling(target);
+    let result = rendered
+        .pdf(&staged)
+        .and_then(|_| crate::storage::replace_file(&staged, target));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&staged);
     }
-
-    let metadata =
-        std::fs::metadata(&temporary_pdf).map_err(|error| format!("PDF 未生成: {error}"))?;
-    if metadata.len() == 0 {
-        let _ = std::fs::remove_file(&temporary_pdf);
-        return Err("PDF 文件为空".to_string());
-    }
-    crate::storage::replace_file(&temporary_pdf, target)
+    result
 }
 
-fn build_print_html(
+pub(super) fn build_print_html(
     document: &ProjectDocument,
     resources: &ResourceBundle,
     width_mm: f32,
     height_mm: f32,
+    seamless: bool,
 ) -> Result<String, String> {
     let content = render_html_with_page_breaks(&document.markdown)?;
     let layout = &document.layout;
-    layout.page_furniture.validate(&layout.margins)?;
+    if !seamless {
+        layout.page_furniture.validate(&layout.margins)?;
+    }
     let furniture = json_for_inline_script(&layout.page_furniture)?;
     let font_css = embedded_font_css(layout, resources);
     let resources = json_for_inline_script(resources.entries())?;
     let typography = &layout.typography;
-    let style = format!(
+    let mut style = format!(
         "--page-width:{width_mm:.3}mm;--page-height:{height_mm:.3}mm;--page-padding-left:{:.3}mm;--page-padding-right:{:.3}mm;--page-padding-top:{:.3}mm;--page-padding-bottom:{:.3}mm;--document-font-family:\"{}\";--document-font-size:{:.3}pt;--document-line-height:{:.3};--document-paragraph-spacing:{:.3}pt;",
         layout.margins.left_mm,
         layout.margins.right_mm,
@@ -71,6 +50,17 @@ fn build_print_html(
         typography.line_height,
         typography.paragraph_spacing_pt,
     );
+
+    if seamless {
+        style.push_str("--page-width:1120px;--page-height:auto;--page-padding-left:88px;--page-padding-right:88px;--page-padding-top:72px;--page-padding-bottom:72px;");
+    }
+    // CSS font names contain quotes; escape the containing HTML attribute.
+    let style = style
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let mode = if seamless { "seamless" } else { "paged" };
 
     Ok(format!(
         r#"<!doctype html>
@@ -90,26 +80,33 @@ html, body {{ margin: 0; padding: 0; background: #fff; }}
 </style>
 </head>
 <body>
-<section id="infinite-document-renderer" class="document-renderer paged" style="{style}">
+<section id="infinite-document-renderer" class="document-renderer {mode}" style="{style}">
   <div class="document-pagination-source markdown-rendered-html" aria-hidden="true">{content}</div>
-  <div class="document-flow paged" data-document-pages="true"></div>
+  <div class="document-flow {mode}" data-document-pages="true"></div>
 </section>
 <script>{MATH_JS}</script>
 <script>{PAGINATION_JS}</script>
 <script>
 const resources = {resources};
 window.addEventListener('load', async () => {{
-  const root = document.getElementById('infinite-document-renderer');
-  root.dataset.pageFurniture = JSON.stringify({furniture});
-  window.InfiniteDocumentRenderer.mount('infinite-document-renderer', false, resources);
-  const images = [...root.querySelectorAll('.document-pagination-source img')];
-  await Promise.all(images.map(image => image.complete
-    ? Promise.resolve()
-    : new Promise(resolve => {{ image.addEventListener('load', resolve, {{ once: true }}); image.addEventListener('error', resolve, {{ once: true }}); }})));
-  if (document.fonts?.ready) await document.fonts.ready;
-  window.InfiniteDocumentRenderer.paginate(root, false);
-  await Promise.all([...root.querySelectorAll('.document-page-furniture img')].map(image => image.decode()));
-  document.documentElement.dataset.infiniteEditorReady = 'true';
+  try {{
+    const root = document.getElementById('infinite-document-renderer');
+    root.dataset.pageFurniture = JSON.stringify({furniture});
+    window.InfiniteDocumentRenderer.hydrateResources(root, resources);
+    window.InfiniteMathRenderer?.render(root);
+    await Promise.all([...root.querySelectorAll('img')].map(image => image.decode()));
+    if (document.fonts?.ready) await document.fonts.ready;
+    const result = window.InfiniteDocumentRenderer.paginate(root, {seamless});
+    if (!result?.ok) throw new Error(result?.error || '分页失败');
+    await Promise.all([...root.querySelectorAll('.document-page img')].map(image => image.decode()));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const pages = [...root.querySelectorAll('.document-page')].map(page => {{
+      const rect = page.getBoundingClientRect();
+      return {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }};
+    }});
+    window.InfiniteExport = {{ ready: true, pages }};
+    document.documentElement.dataset.infiniteEditorReady = 'true';
+  }} catch (error) {{ window.InfiniteExport = {{ error: String(error) }}; }}
 }});
 </script>
 </body>
@@ -127,81 +124,6 @@ fn json_for_inline_script<T: serde::Serialize>(value: &T) -> Result<String, Stri
                 .replace('\u{2029}', "\\u2029")
         })
         .map_err(|error| format!("序列化打印资源失败: {error}"))
-}
-
-fn temporary_export_directory() -> Result<PathBuf, String> {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("系统时间异常: {error}"))?
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "infinite-editor-pdf-{}-{timestamp}",
-        std::process::id()
-    ));
-    std::fs::create_dir(&path).map_err(|error| format!("创建 PDF 临时目录失败: {error}"))?;
-    Ok(path)
-}
-
-fn print_with_chromium(html_path: &Path, target: &Path) -> Result<(), String> {
-    let page_url = Url::from_file_path(html_path)
-        .map_err(|_| "无法生成打印页面 URL".to_string())?
-        .to_string();
-    let target = target
-        .canonicalize()
-        .unwrap_or_else(|_| target.to_path_buf());
-    let print_argument = format!("--print-to-pdf={}", target.display());
-    let candidates = [
-        "chromium",
-        "chromium-browser",
-        "google-chrome",
-        "google-chrome-stable",
-        "chrome",
-        "msedge",
-    ];
-    let mut last_failure = None;
-
-    for candidate in candidates {
-        let output = Command::new(candidate)
-            .args([
-                "--headless=new",
-                "--disable-gpu",
-                "--dump-dom",
-                "--no-pdf-header-footer",
-                "--print-to-pdf-no-header",
-                "--run-all-compositor-stages-before-draw",
-                "--virtual-time-budget=5000",
-                &print_argument,
-                &page_url,
-            ])
-            .output();
-
-        match output {
-            Ok(output) if output.status.success() => {
-                // The renderer may reject a template after fonts load (for
-                // example after a narrower paper size was selected). Never
-                // publish a PDF with silently missing page regions.
-                if String::from_utf8_lossy(&output.stdout)
-                    .contains("data-infinite-editor-ready=\"true\"")
-                {
-                    return Ok(());
-                }
-                return Err("打印排版未完成，请检查页眉页脚是否超出页边距或三栏宽度".into());
-            }
-            Ok(output) => last_failure = Some(browser_failure(candidate, &output)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => last_failure = Some(format!("启动 {candidate} 失败: {error}")),
-        }
-    }
-
-    Err(last_failure.unwrap_or_else(|| {
-        "未找到 Chromium、Google Chrome 或 Microsoft Edge，无法生成 PDF".to_string()
-    }))
-}
-
-fn browser_failure(browser: &str, output: &Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let detail = stderr.lines().last().unwrap_or("未知错误");
-    format!("{browser} 生成 PDF 失败: {detail}")
 }
 
 #[cfg(test)]
@@ -224,7 +146,8 @@ mod tests {
             "data:image/png;base64,AA==".into(),
         );
 
-        let html = build_print_html(&document, &resources, 180.0, 260.0).expect("应生成打印 HTML");
+        let html =
+            build_print_html(&document, &resources, 180.0, 260.0, false).expect("应生成打印 HTML");
 
         assert!(html.contains("@page { size: 180.000mm 260.000mm"));
         assert!(html.contains("data:image/png;base64,AA=="));

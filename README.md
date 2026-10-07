@@ -85,7 +85,7 @@ by placing this comment on its own line:
 Other Markdown readers ignore the comment, while Infinite Editor starts the next
 block on a new page. Seamless mode intentionally ignores explicit page breaks.
 
-### Images, fonts, and PDF
+### Images, fonts, and export
 
 Relative Markdown images are resolved from the layout's resource root in both
 loose projects and `.infdoc` packages. A layout can also declare embedded fonts:
@@ -107,6 +107,26 @@ self-contained print page, waits for images and fonts, applies the configured
 physical page size, and prints it with an installed Chromium, Google Chrome, or
 Microsoft Edge browser. The PDF is created as a temporary sibling and only
 replaces the selected destination after successful validation.
+
+DOCX and ODT export require Pandoc and the browser above. The browser first
+lays out the document; Pandoc converts the resulting page fragments into
+editable paragraphs, tables, images, and native math. The exporter writes
+physical paper size, margins, typography, native three-column headers and
+footers, first-page visibility, and dynamic page-number/total-page fields into
+the Office package. Automatic and explicit browser page boundaries become
+native page breaks. Fonts and line metrics can still vary between office
+applications; the **PDF 精确版式** option preserves the rendered layout with
+selectable text. Seamless documents use A4 for editable Office output.
+
+PNG and JPEG export use the same browser layout at 150 DPI. One page uses the
+selected filename; multiple pages use `proposal-1.png`, `proposal-2.png`, etc.
+The **长图 PNG** option always uses the WYSIWYG editor's Seamless layout:
+1120 CSS pixels wide, rendered at 2× resolution, without page gaps, header/footer
+repetition, or page-break markers. Vertical tiles are streamed into one PNG
+to avoid a full-document screenshot buffer. Choosing PNG while already in
+Seamless mode also produces a long image. Export doesn't change the editor's
+paper mode. PDF requires a fixed paper size; image export no longer needs
+Poppler or an image-conversion executable.
 
 Your new jumpstart project includes basic organization with an organized `assets` folder and a `components` folder.
 If you chose to develop with the router feature, you will also have a `views` folder.

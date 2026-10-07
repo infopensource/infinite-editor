@@ -10,17 +10,19 @@ pub enum ExportTarget {
     Word,
     Png,
     Jpeg,
+    LongPng,
 }
 
 impl ExportTarget {
     pub fn label(self) -> &'static str {
         match self {
             ExportTarget::Markdown => "Markdown (.md)",
-            ExportTarget::Pdf => "PDF (.pdf)",
+            ExportTarget::Pdf => "PDF 精确版式 (.pdf)",
             ExportTarget::Odt => "OpenDocument (.odt)",
             ExportTarget::Word => "Word (.docx)",
             ExportTarget::Png => "图片 PNG (.png)",
             ExportTarget::Jpeg => "图片 JPEG (.jpg)",
+            ExportTarget::LongPng => "长图 PNG (.png)",
         }
     }
 
@@ -29,33 +31,23 @@ impl ExportTarget {
             ExportTarget::Markdown => "MD",
             ExportTarget::Pdf => "PDF",
             ExportTarget::Odt => "ODT",
-            ExportTarget::Word => "DOC",
+            ExportTarget::Word => "DOCX",
             ExportTarget::Png => "PNG",
             ExportTarget::Jpeg => "JPG",
+            ExportTarget::LongPng => "长图",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
             ExportTarget::Markdown => "导出不包含布局信息的标准 Markdown 文件",
-            ExportTarget::Pdf => "保留纸张尺寸和排版的发布文档",
-            ExportTarget::Odt => "用于 LibreOffice 等办公软件",
-            ExportTarget::Word => "用于 Microsoft Word 等办公软件",
-            ExportTarget::Png => "逐页导出为无损图片",
-            ExportTarget::Jpeg => "逐页导出为较小的有损图片",
+            ExportTarget::Pdf => "精确保留纸张、页眉页脚和分页；文字仍可选择",
+            ExportTarget::Odt => "可编辑正文、原生页眉页脚与分页；尽量保持版式",
+            ExportTarget::Word => "可编辑正文、原生页眉页脚与分页；尽量保持版式",
+            ExportTarget::Png => "按 PDF 版式逐页导出无损图片",
+            ExportTarget::Jpeg => "按 PDF 版式逐页导出较小的图片",
+            ExportTarget::LongPng => "按 Seamless 连续布局导出一张长图",
         }
-    }
-
-    pub fn availability_label(self) -> &'static str {
-        if self.available() {
-            "导出"
-        } else {
-            "尚未接入"
-        }
-    }
-
-    pub fn available(self) -> bool {
-        matches!(self, ExportTarget::Markdown | ExportTarget::Pdf)
     }
 }
 
@@ -77,6 +69,7 @@ enum BackstageSection {
 pub fn FileBackstage(
     current_file: Option<String>,
     status_hint: String,
+    export_pending: bool,
     has_location: bool,
     dialog_style_b: bool,
     theme: ThemeSettings,
@@ -265,17 +258,18 @@ pub fn FileBackstage(
                                 ExportTarget::Odt,
                                 ExportTarget::Png,
                                 ExportTarget::Jpeg,
+                                ExportTarget::LongPng,
                             ] {
                                 button {
-                                    class: if target.available() { "file-choice-row compact" } else { "file-choice-row compact unavailable" },
-                                    disabled: !target.available(),
+                                    class: "file-choice-row compact",
+                                    disabled: export_pending,
                                     onclick: move |_| on_export.call(target),
                                     span { class: "file-type-mark small", "{target.short_label()}" }
                                     span { class: "file-choice-copy",
                                         strong { "{target.label()}" }
                                         span { "{target.description()}" }
                                     }
-                                    span { class: "file-choice-action", "{target.availability_label()}" }
+                                    span { class: "file-choice-action", if export_pending { "处理中" } else { "导出" } }
                                 }
                             }
                         }
