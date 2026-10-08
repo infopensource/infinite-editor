@@ -14,6 +14,8 @@ use crate::document::{ProjectDocument, ResourceBundle};
 use crate::engine::{EditorMode, ParserGateway};
 use crate::storage::DocumentLocation;
 use crate::theme::ThemeSettings;
+#[cfg(feature = "desktop")]
+use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 
 #[derive(Debug, serde::Deserialize)]
@@ -84,6 +86,10 @@ pub fn WordWorkspace() -> Element {
     let mut import_pending = use_signal(|| false);
     let export_pending = use_signal(|| false);
     let mut pending_import = use_signal(|| None::<ProjectDocument>);
+    #[cfg(feature = "desktop")]
+    let mut pending_drop = use_signal(|| None::<crate::import::StartupDocument>);
+    #[cfg(feature = "desktop")]
+    let mut drop_pending = use_signal(|| false);
     let mut open_generation = use_signal(|| 0u64);
     let mut open_dialog_visible = use_signal(|| false);
     let mut warning_alert = use_signal(|| None::<String>);
@@ -92,6 +98,8 @@ pub fn WordWorkspace() -> Element {
     let mut open_auto_detect_encoding = use_signal(|| true);
     let mut dialog_style_b = use_signal(|| false);
     let mut theme = use_signal(ThemeSettings::default);
+    #[cfg(feature = "desktop")]
+    let mut startup_request = use_signal(|| Some(crate::import::startup_document()));
     use_effect(move || {
         spawn(async move {
             let script = "try { return localStorage.getItem('infinite-editor.dialog-style') === 'b'; } catch (_) { return false; }";
@@ -285,12 +293,158 @@ pub fn WordWorkspace() -> Element {
         active_tab.set(RibbonTab::Home);
     };
 
+    #[cfg(feature = "desktop")]
+    let mut open_external = move |request: crate::import::StartupDocument| {
+        match request {
+            crate::import::StartupDocument::Open(path) => {
+                handle_open_document_from_path(
+                    path.to_string_lossy().into_owned(),
+                    false,
+                    true,
+                    OpenDocumentState {
+                        active_tab,
+                        document,
+                        saved_document,
+                        resources,
+                        document_revision,
+                        editor_revision,
+                        current_location,
+                        status_hint,
+                        open_dialog_visible,
+                        open_pending,
+                        open_generation,
+                        warning_alert,
+                    },
+                );
+            }
+            crate::import::StartupDocument::Import(path) => {
+                import_pending.set(true);
+                status_hint.set("正在导入文档…".into());
+                let revision = document_revision();
+                spawn(async move {
+                    let converted =
+                        super::background::run(move || crate::import::import_document(&path))
+                            .await
+                            .and_then(|result| result);
+                    match converted {
+                        Ok(imported) => {
+                            let script = format!("const snapshot = window.InfiniteMarkdownEditor?.getSnapshot(); return snapshot?.documentRevision === {revision} ? snapshot.markdown : null;");
+                            let snapshot = super::javascript::eval_reply::<Option<String>>(&script).await;
+                            import_pending.set(false);
+                            if document_revision() != revision { return; }
+                            match snapshot {
+                                Ok(Some(markdown)) => document.write().markdown = markdown,
+                                Ok(None) => {}
+                                Err(error) => {
+                                    status_hint.set(format!("同步文档失败：{error}"));
+                                    return;
+                                }
+                            }
+                            pending_import.set(Some(imported));
+                            if *document.peek() != *saved_document.peek() {
+                                new_save_feedback.set(String::new());
+                                new_dialog_visible.set(true);
+                            } else {
+                                finish_import();
+                            }
+                        }
+                        Err(error) => {
+                            import_pending.set(false);
+                            if document_revision() == revision { status_hint.set(error); }
+                        }
+                    }
+                });
+            }
+        }
+    };
+
+    #[cfg(feature = "desktop")]
+    use_effect(move || {
+        let Some(request) = startup_request.write().take() else {
+            return;
+        };
+        match request {
+            Ok(Some(request)) => open_external(request),
+            Ok(None) => {}
+            Err(error) => status_hint.set(error),
+        }
+    });
+
     let theme_settings = theme();
     let mut shell_class = format!("word-shell {}", theme_settings.class());
     if active_tab() == RibbonTab::File { shell_class.push_str(" file-mode"); }
     if dialog_style_b() { shell_class.push_str(" dialog-style-b"); }
+    #[cfg(feature = "desktop")]
+    let drop_is_import = matches!(pending_drop(), Some(crate::import::StartupDocument::Import(_)));
+    #[cfg(feature = "desktop")]
+    let drop_is_open = matches!(pending_drop(), Some(crate::import::StartupDocument::Open(_)));
+    #[cfg(not(feature = "desktop"))]
+    let (drop_is_import, drop_is_open) = (false, false);
     rsx! {
         div { class: shell_class, style: theme_settings.style(),
+            ondragover: move |event| {
+                #[cfg(feature = "desktop")]
+                if !event.data().data_transfer().files().is_empty() {
+                    event.prevent_default();
+                }
+                #[cfg(not(feature = "desktop"))]
+                let _ = event;
+            },
+            ondrop: move |event| {
+                #[cfg(feature = "desktop")]
+                {
+                    // Dioxus retains the last native hover paths after a drag leaves.
+                    // Check the current DOM transfer before using those paths.
+                    if event.data().data_transfer().files().is_empty() { return; }
+                    let files = event.data().files();
+                    if files.is_empty() { return; }
+                    event.prevent_default();
+                    event.stop_propagation();
+                    if files.len() != 1 {
+                        status_hint.set("请一次只拖入一个文件".into());
+                        return;
+                    }
+                    if drop_pending() || open_pending() || import_pending() || new_request_pending()
+                        || new_saving() || new_dialog_visible() {
+                        status_hint.set("请先完成当前文件操作".into());
+                        return;
+                    }
+                    let path = files[0].path();
+                    let request = match crate::import::classify_startup_path(path) {
+                        Ok(request) => request,
+                        Err(error) => { status_hint.set(error); return; }
+                    };
+                    drop_pending.set(true);
+                    let revision = document_revision();
+                    spawn(async move {
+                        let script = format!("const snapshot = window.InfiniteMarkdownEditor?.getSnapshot(); return snapshot?.documentRevision === {revision} ? snapshot.markdown : null;");
+                        let snapshot = super::javascript::eval_reply::<Option<String>>(&script).await;
+                        drop_pending.set(false);
+                        if document_revision() != revision { return; }
+                        match snapshot {
+                            Ok(Some(markdown)) => document.write().markdown = markdown,
+                            Ok(None) if active_tab() != RibbonTab::File => {
+                                status_hint.set("编辑器尚未准备好，请稍后重新拖入文件".into());
+                                return;
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                status_hint.set(format!("同步文档失败：{error}"));
+                                return;
+                            }
+                        }
+                        if *document.peek() != *saved_document.peek() {
+                            pending_drop.set(Some(request));
+                            new_save_feedback.set(String::new());
+                            new_dialog_visible.set(true);
+                        } else {
+                            open_external(request);
+                        }
+                    });
+                }
+                #[cfg(not(feature = "desktop"))]
+                let _ = event;
+            },
             "data-page-furniture": serde_json::to_string(&current_document.layout.page_furniture).unwrap_or_default(),
             "data-page-layout": serde_json::to_string(&current_document.layout).unwrap_or_default(),
             ResizeHandles {}
@@ -647,12 +801,21 @@ pub fn WordWorkspace() -> Element {
                 visible: new_dialog_visible(),
                 saving: new_saving(),
                 status: new_save_feedback(),
-                importing: pending_import().is_some(),
+                importing: pending_import().is_some() || drop_is_import,
+                opening: drop_is_open,
                 on_cancel: move |_| {
                     pending_import.set(None);
+                    #[cfg(feature = "desktop")]
+                    pending_drop.set(None);
                     new_dialog_visible.set(false);
                 },
                 on_discard: move |_| {
+                    #[cfg(feature = "desktop")]
+                    if let Some(request) = pending_drop.write().take() {
+                        new_dialog_visible.set(false);
+                        open_external(request);
+                        return;
+                    }
                     if pending_import().is_some() { finish_import(); } else { create_document(); }
                 },
                 on_save: move |_| {
@@ -665,6 +828,12 @@ pub fn WordWorkspace() -> Element {
                         new_saving.set(false);
                         if document_revision() != revision { return; }
                         if saved && *document.peek() == *saved_document.peek() {
+                            #[cfg(feature = "desktop")]
+                            if let Some(request) = pending_drop.write().take() {
+                                new_dialog_visible.set(false);
+                                open_external(request);
+                                return;
+                            }
                             if pending_import().is_some() { finish_import(); } else { create_document(); }
                         } else if saved {
                             new_save_feedback.set("保存期间文档有新修改，请再次保存或取消新建。".into());

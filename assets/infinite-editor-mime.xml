@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-infinite-editor-document">
+    <comment>Infinite Editor document</comment>
+    <glob pattern="*.infdoc"/>
+    <glob pattern="*.idoc"/>
+  </mime-type>
+  <mime-type type="text/markdown">
+    <glob pattern="*.mdown"/>
+  </mime-type>
+</mime-info>

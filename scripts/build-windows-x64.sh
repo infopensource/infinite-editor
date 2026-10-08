@@ -23,7 +23,8 @@ fi
 
 windows_dir="$target_dir/dx/infinite-editor/release/windows"
 cp "$loader" "$windows_dir/app/WebView2Loader.dll"
+cp "$project_dir/scripts/register-windows-context-menu.ps1" "$windows_dir/register-windows-context-menu.ps1"
 archive="$windows_dir/InfiniteEditor-$version-windows-x64.zip"
 rm -f "$archive"
-(cd "$windows_dir" && zip -q -r -9 "$(basename "$archive")" app)
+(cd "$windows_dir" && zip -q -r -9 "$(basename "$archive")" app register-windows-context-menu.ps1)
 echo "$archive"

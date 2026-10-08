@@ -198,6 +198,9 @@ pub(super) fn handle_open_document_from_path(
             .open_generation
             .with_mut(|value| *value = value.wrapping_add(1));
         let generation = (state.open_generation)();
+        let document_revision = (state.document_revision)();
+        let editor_revision = (state.editor_revision)();
+        let initial_document = state.document.peek().clone();
         spawn(async move {
             let load_path = path.clone();
             let loaded = super::background::run(move || storage::open_document(&load_path))
@@ -207,6 +210,13 @@ pub(super) fn handle_open_document_from_path(
                 return;
             }
             state.open_pending.set(false);
+            if (state.document_revision)() != document_revision
+                || (state.editor_revision)() != editor_revision
+                || *state.document.peek() != initial_document
+            {
+                state.status_hint.set("文档在读取期间发生更改，请重新打开文件".into());
+                return;
+            }
             match loaded {
                 Ok(loaded) => {
                     let mut warnings = loaded.warnings.clone();

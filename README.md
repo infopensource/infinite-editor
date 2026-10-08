@@ -33,6 +33,11 @@ proposal.assets/
 Opening `proposal.md` automatically loads `proposal.layout.toml` when it is
 present and otherwise uses the default A4 layout. Saving a loose document writes
 both files. Markdown-only export remains available for interoperability.
+On desktop, dropping one supported file onto the editor opens it through the
+same path as **Open With**. Markdown and `.infdoc` retain their file location;
+PDF and Office documents are imported as unsaved documents. If the current
+document has unsaved changes, the editor asks whether to save, discard, or
+cancel before replacing it.
 
 Portable `.infdoc` files are ZIP containers with a fixed manifest:
 
@@ -143,6 +148,18 @@ dx serve --linux
 dx build --linux --release
 ```
 
+To appear in the file manager's **Open With** menu for Markdown, `.infdoc`,
+PDF, Word, and other supported documents, register the desktop build for your
+user account:
+
+```sh
+scripts/install-desktop-entry.sh target/dx/infinite-editor/release/linux/app/infinite-editor
+```
+
+This adds a desktop entry and a MIME definition for `.infdoc` without changing
+the default application for existing document types. Rerun it after moving or
+rebuilding the app at a different path.
+
 ### Windows x64 from Linux
 
 Install MinGW-w64, `zip`, and the Windows GNU Rust target, then run:
@@ -158,6 +175,22 @@ Extract the archive on Windows and run `app/infinite-editor.exe`. Microsoft Edge
 WebView2 Runtime must be installed on that computer. The MinGW linker wrapper in
 `scripts/mingw-dx-linker.sh` translates the Windows subsystem flags emitted by
 Dioxus CLI for this target.
+
+To add **使用 Infinite Editor 打开** to the file context menu, keep the extracted
+`app/` directory in a permanent location, then run the bundled
+`register-windows-context-menu.ps1` in PowerShell. It registers supported
+Markdown, `.infdoc`, PDF, Office, and other import formats for the current user.
+From the extracted archive directory, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\register-windows-context-menu.ps1
+```
+
+Windows 11 may show the command under **显示更多选项**. Run the same script with
+`-Unregister` to remove the entries, or rerun it after moving the `app/` directory.
+Choosing `infinite-editor.exe` from **打开方式** also opens the selected file without
+registering the context menu. Imported formats open as unsaved documents; save
+them as `.md` or `.infdoc` to keep edits.
 
 ### macOS desktop
 

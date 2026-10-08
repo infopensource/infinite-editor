@@ -636,6 +636,7 @@ pub fn NewDocumentDialog(
     saving: bool,
     status: String,
     importing: bool,
+    opening: bool,
     on_cancel: EventHandler<()>,
     on_discard: EventHandler<()>,
     on_save: EventHandler<()>,
@@ -650,7 +651,11 @@ pub fn NewDocumentDialog(
                 class: "dialog-card new-document-dialog",
                 header { class: "dialog-header",
                     DialogTitle { class: "new-document-title", "保存对当前文档的更改吗？" }
-                    p { if importing { "导入文件前，可以保存当前文档中的修改。" } else { "新建文档前，可以保存当前文档中的修改。" } }
+                    p {
+                        if opening { "打开文件前，可以保存当前文档中的修改。" }
+                        else if importing { "导入文件前，可以保存当前文档中的修改。" }
+                        else { "新建文档前，可以保存当前文档中的修改。" }
+                    }
                 }
                 if !status.is_empty() {
                     p { class: "new-document-feedback", role: "status", "{status}" }
@@ -659,7 +664,10 @@ pub fn NewDocumentDialog(
                     button { id: "new-discard", class: "dialog-btn discard", disabled: saving, onclick: move |_| on_discard.call(()), "不保存" }
                     button { id: "new-cancel", class: "dialog-btn ghost", disabled: saving, onclick: move |_| on_cancel.call(()), "取消" }
                     button { id: "new-save", class: "dialog-btn primary", disabled: saving, onclick: move |_| on_save.call(()),
-                        if saving { "正在保存…" } else if importing { "保存并导入" } else { "保存并新建" }
+                        if saving { "正在保存…" }
+                        else if opening { "保存并打开" }
+                        else if importing { "保存并导入" }
+                        else { "保存并新建" }
                     }
                 }
             }
