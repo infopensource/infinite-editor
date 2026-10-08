@@ -162,6 +162,14 @@
   body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .doc-name,
   body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .auto-save,
   body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .window-actions button { color: #fff; }
+  body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .switch-track,
+  body[data-theme="dark"] .title-bar .switch-track { border: 1px solid #fff; background: transparent; }
+  body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .switch-thumb,
+  body[data-theme="dark"] .title-bar .switch-thumb { background: #fff; }
+  body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .auto-save[aria-checked="true"] .switch-track,
+  body[data-theme="dark"] .title-bar .auto-save[aria-checked="true"] .switch-track { background: #fff; }
+  body[data-theme="light"][data-preset]:not([data-preset="office"]) .title-bar .auto-save[aria-checked="true"] .switch-thumb,
+  body[data-theme="dark"] .title-bar .auto-save[aria-checked="true"] .switch-thumb { background: var(--chrome); }
   .paper-group .group-main { display: grid; align-content: center; gap: 5px; }
   .paper-modes { display: flex; gap: 4px; }
   .paper-modes .small-command { min-width: 70px; justify-content: center; }
@@ -243,6 +251,7 @@
     justify: '<svg viewBox="0 0 24 24"><path d="M3 5h18M3 9h18M3 13h18M3 17h18"/></svg>',
     bullets: '<svg viewBox="0 0 24 24"><path d="M8 5h13M8 12h13M8 19h13"/><circle cx="3" cy="5" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="19" r="1"/></svg>',
     numbers: '<svg viewBox="0 0 24 24"><path d="M9 5h12M9 12h12M9 19h12M3 5h2v3M3 12h2l-2 3h2M3 19h2l-2 3h2"/></svg>',
+    copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
     link: '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 .4l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7-.4l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
     image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m4 18 6-6 4 4 2-2 4 4"/></svg>',
     table: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M9 9v11M15 9v11"/></svg>',
@@ -255,10 +264,10 @@
   const actions = (items, columns = 2) => `<div class="group-actions ${columns === 4 ? 'paragraph-actions' : ''}">${items.map(([label, icon, klass]) => small(label, icon, klass)).join('')}</div>`;
   const group = (title, content, klass = '') => `<div class="ribbon-group ${klass}" role="group" aria-label="${title}"><div class="group-main">${content}</div><span class="group-title">${title}</span></div>`;
   const home =
-    group('剪贴板', '<div class="clipboard-preview">' + large('粘贴', '▣') + actions([['剪切', '✂'], ['复制', '▢']]) + '</div>') +
+    group('剪贴板', '<div class="clipboard-preview">' + large('粘贴', '▣') + actions([['剪切', '✂'], ['复制', 'copy']]) + '</div>') +
     group('字符格式', actions([['加粗', 'B'], ['斜体', 'I', 'italic'], ['删除线', 'S̶'], ['行内代码', '&lt;/&gt;']])) +
-    group('段落', actions([['左对齐', 'left'], ['居中', 'center'], ['右对齐', 'right'], ['两端对齐', 'justify'], ['项目符号', 'bullets'], ['编号', 'numbers'], ['任务列表', '☑'], ['引用', '❞']], 4)) +
-    group('样式', actions([['标题 1', 'H₁'], ['标题 2', 'H₂'], ['标题 3', 'H₃'], ['标题 4', 'H₄'], ['标题 5', 'H₅'], ['标题 6', 'H₆'], ['正文', '¶']], 4));
+    group('段落', actions([['左对齐', 'left'], ['居中', 'center'], ['右对齐', 'right'], ['两端对齐', 'justify'], ['无序列表', 'bullets'], ['有序列表', 'numbers'], ['任务列表', '☑'], ['引用', '❞']], 4)) +
+    group('样式', actions([['标题 1', 'H₁'], ['标题 2', 'H₂'], ['标题 3', 'H₃'], ['标题 4', 'H₄'], ['标题 5', 'H₅'], ['标题 6', 'H₆'], ['正文', 'Aa']], 4));
   const insert =
     group('链接与媒体', actions([['链接', 'link'], ['图片', 'image']])) +
     group('Markdown 结构', actions([['表格', 'table'], ['代码块', '{ }'], ['分隔线', '―'], ['硬换行', '↵']])) +

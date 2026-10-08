@@ -45,8 +45,8 @@ pub fn RibbonPanel(
                             ("居中", "align_center"),
                             ("右对齐", "align_right"),
                             ("两端对齐", "align_justify"),
-                            ("项目符号", "unordered_list"),
-                            ("编号", "ordered_list"),
+                            ("无序列表", "unordered_list"),
+                            ("有序列表", "ordered_list"),
                             ("任务列表", "task_list"),
                             ("引用", "quote"),
                         ],
@@ -201,7 +201,12 @@ fn ClipboardGroup(on_action: EventHandler<String>) -> Element {
                         onmousedown: move |event| event.prevent_default(),
                         onauxclick: move |event| event.prevent_default(),
                         "data-clipboard-action": "copy",
-                        span { class: "clipboard-symbol", aria_hidden: "true", "▢" }
+                        span { class: "clipboard-symbol", aria_hidden: "true",
+                            svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", stroke_linecap: "round", stroke_linejoin: "round",
+                                rect { x: "8", y: "8", width: "12", height: "12", rx: "2" }
+                                path { d: "M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" }
+                            }
+                        }
                         "复制"
                     }
                 }
@@ -294,7 +299,7 @@ fn command_icon(command: &str) -> Element {
                 "task_list" => "☑", "quote" => "❞", "code_block" => "{ }",
                 "horizontal_rule" => "―", "hard_break" => "↵",
                 "heading1" => "H₁", "heading2" => "H₂", "heading3" => "H₃",
-                "heading4" => "H₄", "heading5" => "H₅", "heading6" => "H₆", "paragraph" => "¶",
+                "heading4" => "H₄", "heading5" => "H₅", "heading6" => "H₆", "paragraph" => "Aa",
                 "page_break" => "▤", "page_furniture" => "▣", _ => "·",
             };
             rsx! { "{glyph}" }

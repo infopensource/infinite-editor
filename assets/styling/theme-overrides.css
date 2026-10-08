@@ -16,6 +16,10 @@
 .word-shell .auto-save-thumb { background: var(--ie-muted-text); }
 .word-shell .title-auto-save[aria-checked="true"] .auto-save-track { background: var(--ie-accent); border-color: var(--ie-accent); }
 .word-shell .title-auto-save[aria-checked="true"] .auto-save-thumb { background: var(--ie-panel-background); }
+.word-shell:is(.theme-dark, .theme-forest, .theme-plum, .theme-custom, .theme-classic-blue) .auto-save-track { border-color: var(--ie-title-text); }
+.word-shell:is(.theme-dark, .theme-forest, .theme-plum, .theme-custom, .theme-classic-blue) .auto-save-thumb { background: var(--ie-title-text); }
+.word-shell:is(.theme-dark, .theme-forest, .theme-plum, .theme-custom, .theme-classic-blue) .title-auto-save[aria-checked="true"] .auto-save-track { background: var(--ie-title-text); border-color: var(--ie-title-text); }
+.word-shell:is(.theme-dark, .theme-forest, .theme-plum, .theme-custom, .theme-classic-blue) .title-auto-save[aria-checked="true"] .auto-save-thumb { background: var(--ie-title-background); }
 .word-shell .tab-item:hover,
 .word-shell .ribbon-small:hover,
 .word-shell .ribbon-large:hover,
