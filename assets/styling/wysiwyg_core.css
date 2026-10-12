@@ -188,6 +188,16 @@
     min-width: 0;
 }
 
+/* A split list keeps its original ancestry without repeating its heading. */
+.infinite-pm-host li[data-list-continuation] {
+    list-style: none;
+}
+
+.infinite-pm-host li[data-list-continuation] > .infinite-task-content > p:first-child,
+.infinite-pm-host li[data-list-continuation] > p:first-child {
+    display: none;
+}
+
 .infinite-pm-image {
     max-width: 100%;
     height: auto;

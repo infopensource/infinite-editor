@@ -45,6 +45,7 @@ globalThis.CompositionEvent = dom.window.CompositionEvent;
 globalThis.InputEvent = dom.window.InputEvent;
 globalThis.CustomEvent = dom.window.CustomEvent;
 globalThis.getComputedStyle = dom.window.getComputedStyle;
+globalThis.innerHeight = dom.window.innerHeight;
 globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
 globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
 
@@ -1007,8 +1008,9 @@ test("Enter splits a nested non-empty list item without changing its siblings", 
   assert.equal(listDepth(editor.state.doc, "B"), 1);
 });
 
-test("Enter on an empty nested item exits exactly one list level", () => {
+test("Enter on an empty nested marker returns to the parent list", () => {
   const editor = harness("- 父项\n  - 临时\n  - 后续\n- B");
+  editor.select("临时");
   const temporary = textPosition(editor.state.doc, "临时");
   editor.dispatch(
     editor.state.tr
@@ -1019,19 +1021,263 @@ test("Enter on an empty nested item exits exactly one list level", () => {
 
   assert.equal(editor.run(commands.enter), true);
   assert.equal(selectionListDepth(editor.state), 1);
+  assert.equal(editor.state.selection.$from.node(-1).type.name, "list_item");
+  assert.equal(editor.state.selection.$from.index(-1), 0);
   assert.equal(listDepth(editor.state.doc, "后续"), 2);
   assert.equal(listDepth(editor.state.doc, "B"), 1);
 });
 
-test("Backspace at a nested item start changes one structural boundary", () => {
+test("Backspace removes a list marker before deleting the paragraph boundary", () => {
   const editor = harness("- 父项\n  - 子项\n  - 后续\n- B");
   const commands = listCommands(wysiwygSchema);
   editor.select("子项");
 
   assert.equal(editor.run(commands.backspace), true);
   assert.equal(serializeMarkdown(editor.state.doc), "* 父项\n\n  子项\n  * 后续\n* B");
+  assert.equal(editor.state.selection.$from.parent.textContent, "子项");
+  assert.equal(editor.state.selection.$from.parentOffset, 0);
   assert.equal(listDepth(editor.state.doc, "后续"), 2);
   assert.equal(listDepth(editor.state.doc, "B"), 1);
+  assert.equal(editor.run(commands.backspace), true);
+  assert.equal(serializeMarkdown(editor.state.doc), "* 父项子项\n  * 后续\n* B");
+  assert.equal(editor.state.selection.$from.parentOffset, 2);
+});
+
+test("Backspace on the blank body after a sublist exits its list before deleting the blank", () => {
+  const source = "- a) 引用\n  - No idea in Westlaw\n\n  &nbsp;\n- b) 下一案例\n  - What were the issues?";
+  const editor = harness(source);
+  const before = editor.state.doc;
+  const blank = nodePosition(before, "paragraph", node => node.content.size === 0) + 1;
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(before, blank)));
+  assert.equal(editor.run(listCommands(wysiwygSchema).backspace), true);
+  assert.equal(editor.state.selection.$from.parent.textContent, "");
+  assert.equal(selectionListDepth(editor.state), 0);
+  assert.equal(listDepth(editor.state.doc, "b) 下一案例"), 1);
+  assert.equal(listDepth(editor.state.doc, "What were the issues?"), 2);
+  assert.equal(serializeMarkdown(editor.state.doc), "* a) 引用\n  * No idea in Westlaw\n\n&nbsp;\n\n* b) 下一案例\n  * What were the issues?");
+  assert.equal(editor.run(undo), true);
+  assert.ok(editor.state.doc.eq(before));
+  assert.equal(editor.state.selection.from, blank);
+  assert.equal(editor.run(redo), true);
+  assert.equal(editor.state.selection.$from.parent.textContent, "");
+  assert.equal(editor.run(listCommands(wysiwygSchema).backspace), true);
+  assert.equal(editor.state.selection.$from.parent.textContent, "No idea in Westlaw");
+  assert.equal(editor.state.selection.$from.parentOffset, 18);
+});
+
+const caseAnalysisSource = (blankIndent = "       ") => `1. Only a small part of the following case citations are provided.
+   - a) [2024] UKSC 0158
+     - No idea in Westlaw
+
+${blankIndent}&nbsp;
+   - b) [2025] UKUT 00305
+     - What were the issues within the case?
+       - The main issue was whether counsel should be referred to the BSB.`;
+
+function followingListItems(doc) {
+  return ["b) [2025] UKUT 00305", "What were the issues within the case?", "The main issue was whether counsel should be referred to the BSB."].map(text => {
+    const pos = listItemPosition(doc, text);
+    const $pos = doc.resolve(pos + 1);
+    return { text, depth: listDepth(doc, text), attrs: $pos.parent.attrs,
+      listType: $pos.node(-1).type.name, listAttrs: $pos.node(-1).attrs };
+  });
+}
+
+test("case analysis blank body Enter creates the parent bullet then the parent number, one level per press", () => {
+  for (const blankIndent of ["       ", "     "]) {
+    const editor = harness(caseAnalysisSource(blankIndent));
+    const blank = nodePosition(editor.state.doc, "paragraph", node => node.content.size === 0) + 1;
+    editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, blank)));
+    const before = editor.state.doc;
+    const text = before.textContent;
+    const following = followingListItems(before);
+    for (const [depth, type] of [[2, "bullet_list"], [1, "ordered_list"], [0, "doc"]]) {
+      assert.equal(editor.run(listCommands(wysiwygSchema).enter), true);
+      editor.state.doc.check();
+      assert.equal(editor.state.doc.textContent, text);
+      assert.deepEqual(followingListItems(editor.state.doc), following);
+      assert.equal(selectionListDepth(editor.state), depth);
+      assert.equal(editor.state.selection.$from.parent.textContent, "");
+      if (depth) {
+        assert.equal(editor.state.selection.$from.node(-2).type.name, type);
+        assert.equal(editor.state.selection.$from.index(-1), 0);
+      }
+      assert.ok(parseMarkdown(serializeMarkdown(editor.state.doc)).eq(editor.state.doc));
+    }
+    for (let index = 0; index < 3; index++) assert.equal(editor.run(undo), true);
+    assert.ok(editor.state.doc.eq(before));
+    assert.equal(editor.state.selection.from, blank);
+    for (let index = 0; index < 3; index++) assert.equal(editor.run(redo), true);
+    assert.equal(selectionListDepth(editor.state), 0);
+    assert.equal(editor.state.selection.$from.parent.textContent, "");
+  }
+});
+
+test("case analysis blank body Backspace preserves the blank while removing each remaining list level", () => {
+  for (const blankIndent of ["       ", "     "]) {
+    const editor = harness(caseAnalysisSource(blankIndent));
+    const blank = nodePosition(editor.state.doc, "paragraph", node => node.content.size === 0) + 1;
+    editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, blank)));
+    const before = editor.state.doc;
+    const text = before.textContent;
+    const following = followingListItems(before);
+    const initialDepth = selectionListDepth(editor.state);
+    for (let depth = initialDepth - 1; depth >= 0; depth--) {
+      assert.equal(editor.run(listCommands(wysiwygSchema).backspace), true);
+      editor.state.doc.check();
+      assert.equal(editor.state.doc.textContent, text);
+      assert.deepEqual(followingListItems(editor.state.doc), following);
+      assert.equal(selectionListDepth(editor.state), depth);
+      assert.equal(editor.state.selection.$from.parent.textContent, "");
+      assert.equal(editor.state.selection.$from.parent.content.size, 0);
+      assert.ok(parseMarkdown(serializeMarkdown(editor.state.doc)).eq(editor.state.doc));
+    }
+    assert.equal(editor.run(listCommands(wysiwygSchema).backspace), true);
+    assert.equal(editor.state.selection.$from.parent.textContent, "No idea in Westlaw");
+    assert.equal(editor.state.selection.$from.parentOffset, 18);
+    assert.equal(editor.state.doc.textContent, text);
+    assert.deepEqual(followingListItems(editor.state.doc), following);
+    assert.deepEqual(parseMarkdown(serializeMarkdown(editor.state.doc)).toJSON(), editor.state.doc.toJSON(), serializeMarkdown(editor.state.doc));
+    for (let index = 0; index <= initialDepth; index++) assert.equal(editor.run(undo), true);
+    assert.ok(editor.state.doc.eq(before));
+    assert.equal(editor.state.selection.from, blank);
+  }
+});
+
+test("Backspace preserves a following subtree in the same item, numbered starts, tasks and body attributes", () => {
+  const n = wysiwygSchema.nodes;
+  const p = (text = "", attrs) => n.paragraph.create(attrs, text ? wysiwygSchema.text(text) : null);
+  const li = (text, children = [], attrs) => n.list_item.create(attrs, [p(text), ...children]);
+  const original = n.doc.create(null, [n.ordered_list.create({ order: 7 }, [
+    li("主项", [n.bullet_list.create(null, [
+      li("深项", [p(), n.ordered_list.create({ order: 12 }, [
+        li("Dove J", [n.bullet_list.create(null, [li("子任务", [], { checked: false })])], { checked: true, indent: 1 }),
+        li("Judge Lindsley"),
+      ]), p("后续正文", { textAlign: "right", indent: 2 })]),
+      li("下一个问题", [n.bullet_list.create(null, [li("下一回答")])]),
+    ])]),
+    li("下一个编号"),
+  ])]);
+  const editor = harness(serializeMarkdown(original));
+  assert.deepEqual(editor.state.doc.toJSON(), original.toJSON());
+  const blank = nodePosition(original, "paragraph", node => !node.content.size) + 1;
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, blank)));
+  const snapshot = doc => {
+    const items = [];
+    doc.descendants((node, pos) => {
+      if (node.type.name !== "list_item" || !node.firstChild.textContent) return;
+      const $pos = doc.resolve(pos + 1);
+      const list = $pos.node(-1);
+      items.push({ text: node.firstChild.textContent, depth: listDepth(doc, node.firstChild.textContent),
+        attrs: node.attrs, type: list.type.name,
+        number: list.type.name === "ordered_list" ? list.attrs.order + $pos.index(-1) : null });
+    });
+    const $body = doc.resolve(textPosition(doc, "后续正文"));
+    let depth = 0;
+    for (let d = $body.depth; d > 0; d--) if ($body.node(d).type.name.endsWith("_list")) depth++;
+    return { items, body: { depth, attrs: $body.parent.attrs } };
+  };
+  const before = snapshot(original);
+  for (const depth of [1, 0]) {
+    assert.equal(editor.run(listCommands(wysiwygSchema).backspace), true);
+    assert.equal(selectionListDepth(editor.state), depth);
+    assert.equal(editor.state.selection.$from.parent.content.size, 0);
+    assert.deepEqual(snapshot(editor.state.doc), before);
+    assert.ok(parseMarkdown(serializeMarkdown(editor.state.doc)).eq(editor.state.doc));
+    editor.state.doc.check();
+  }
+  assert.equal(editor.run(listCommands(wysiwygSchema).backspace), true);
+  assert.equal(editor.state.selection.$from.parent.textContent, "深项");
+  assert.deepEqual(snapshot(editor.state.doc), before);
+  assert.ok(parseMarkdown(serializeMarkdown(editor.state.doc)).eq(editor.state.doc));
+  for (let i = 0; i < 3; i++) assert.equal(editor.run(undo), true);
+  assert.deepEqual(editor.state.doc.toJSON(), original.toJSON());
+  assert.equal(editor.state.selection.from, blank);
+});
+
+test("empty body Enter consumes visual indentation before exiting its containing list", () => {
+  activeEditor = new MinimalWysiwygEditor(document.getElementById("host"), "- 标题\n\n  &nbsp;<!-- infinite-editor:indent=2 -->\n- 后项");
+  const blank = nodePosition(activeEditor.state.doc, "paragraph", node => node.content.size === 0) + 1;
+  activeEditor.view.dispatch(activeEditor.state.tr.setSelection(TextSelection.create(activeEditor.state.doc, blank)));
+  for (const indent of [1, 0]) {
+    keydown(activeEditor, "Enter");
+    assert.equal(activeEditor.state.selection.$from.parent.attrs.indent, indent);
+    assert.equal(selectionListDepth(activeEditor.state), 1);
+    assert.equal(activeEditor.state.selection.$from.parent.content.size, 0);
+  }
+  keydown(activeEditor, "Enter");
+  assert.equal(selectionListDepth(activeEditor.state), 0);
+  assert.equal(activeEditor.state.selection.$from.parent.content.size, 0);
+});
+
+test("Backspace deletes a selection before considering indentation or list boundaries", () => {
+  const editor = harness("- 标题\n\n  前中后<!-- infinite-editor:indent=2 -->");
+  const pos = textPosition(editor.state.doc, "前中后", 1);
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos, pos + 1)));
+  assert.equal(editor.run(listCommands(wysiwygSchema).backspace), true);
+  assert.equal(editor.state.selection.$from.parent.textContent, "前后");
+  assert.equal(editor.state.selection.$from.parent.attrs.indent, 2);
+  assert.equal(selectionListDepth(editor.state), 1);
+});
+
+test("Backspace on an empty marker enters body text; empty body Enter exits its list", () => {
+  activeEditor = new MinimalWysiwygEditor(document.getElementById("host"), "- 标题\n- 后项");
+  activeEditor.view.dispatch(activeEditor.state.tr.setSelection(TextSelection.create(
+    activeEditor.state.doc, textPosition(activeEditor.state.doc, "标题", 2),
+  )));
+  keydown(activeEditor, "Enter");
+  assert.equal(activeEditor.state.doc.firstChild.childCount, 3);
+  keydown(activeEditor, "Backspace");
+  assert.equal(activeEditor.state.doc.firstChild.childCount, 2);
+  assert.equal(activeEditor.state.selection.$from.node(-1).firstChild.textContent, "标题");
+  activeEditor.view.dispatch(activeEditor.state.tr.insertText("正文"));
+  keydown(activeEditor, "Enter");
+  activeEditor.view.dispatch(activeEditor.state.tr.insertText("第二段"));
+  keydown(activeEditor, "Enter");
+  assert.equal(activeEditor.state.doc.firstChild.childCount, 2);
+  assert.deepEqual(activeEditor.state.doc.firstChild.firstChild.content.content.map(node => node.textContent), ["标题", "正文", "第二段", ""]);
+  assert.equal(listDepth(activeEditor.state.doc, "后项"), 1);
+  assert.ok(parseMarkdown(activeEditor.getMarkdown()).eq(activeEditor.state.doc));
+  const before = activeEditor.state.doc;
+  keydown(activeEditor, "Enter");
+  assert.equal(selectionListDepth(activeEditor.state), 0);
+  assert.equal(activeEditor.state.selection.$from.parent.textContent, "");
+  assert.equal(activeEditor.state.doc.firstChild.firstChild.childCount, 3);
+  assert.equal(undo(activeEditor.state, tr => activeEditor.view.dispatch(tr)), true);
+  assert.ok(activeEditor.state.doc.eq(before));
+});
+
+test("Enter splits selected body text inside the same item and Backspace rejoins it", () => {
+  const editor = harness("- 标题\n\n  前中后\n- 后项");
+  const from = textPosition(editor.state.doc, "前中后", 1);
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, from, from + 1)));
+  const commands = listCommands(wysiwygSchema);
+  assert.equal(editor.run(commands.enter), true);
+  assert.equal(editor.state.doc.firstChild.childCount, 2);
+  assert.deepEqual(editor.state.doc.firstChild.firstChild.content.content.map(node => node.textContent), ["标题", "前", "后"]);
+  assert.equal(editor.run(commands.backspace), true);
+  assert.deepEqual(editor.state.doc.firstChild.firstChild.content.content.map(node => node.textContent), ["标题", "前后"]);
+  assert.equal(editor.state.selection.$from.parentOffset, 1);
+});
+
+test("Backspace at paragraph start deletes visual indentation one level at a time", () => {
+  const editor = harness("正文");
+  editor.run(listCommands(wysiwygSchema).indent);
+  const before = editor.state.doc;
+  assert.equal(editor.run(listCommands(wysiwygSchema).backspace), true);
+  assert.equal(editor.state.doc.firstChild.attrs.indent, 0);
+  assert.equal(editor.state.doc.textContent, before.textContent);
+  assert.equal(editor.run(listCommands(wysiwygSchema).backspace), false);
+});
+
+test("Enter in a list item's fenced code body still inserts a code newline", () => {
+  activeEditor = new MinimalWysiwygEditor(document.getElementById("host"), "- 标题\n\n  ```rust\n  abc\n  ```");
+  activeEditor.view.dispatch(activeEditor.state.tr.setSelection(TextSelection.create(
+    activeEditor.state.doc, textPosition(activeEditor.state.doc, "abc", 1),
+  )));
+  keydown(activeEditor, "Enter");
+  assert.equal(activeEditor.state.doc.firstChild.firstChild.child(1).textContent, "a\nbc");
+  assert.equal(activeEditor.state.doc.firstChild.childCount, 1);
 });
 
 test("EditorView keydown routes Tab and Shift+Tab through list transactions", () => {
@@ -1051,6 +1297,204 @@ test("EditorView keydown routes Tab and Shift+Tab through list transactions", ()
   assert.equal(indent.event.defaultPrevented, true);
   assert.equal(listDepth(activeEditor.state.doc, "A.1.1"), 3);
   assert.equal(listDepth(activeEditor.state.doc, "A.1.2"), 4);
+});
+
+test("Tab indents ordinary paragraphs and headings, preserves a reverse selection, and undoes in one step", () => {
+  const editor = harness("甲段\n\n## 乙段\n\n丙段");
+  const before = editor.state.doc;
+  const anchor = textPosition(before, "乙段", 1);
+  const head = textPosition(before, "甲段", 1);
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(before, anchor, head)));
+  const commands = listCommands(wysiwygSchema);
+  assert.equal(editor.run(commands.indent), true);
+  assert.deepEqual(editor.state.doc.content.content.map(node => node.attrs.indent), [1, 1, 0]);
+  assert.equal(editor.state.selection.anchor, anchor);
+  assert.equal(editor.state.selection.head, head);
+  assert.ok(parseMarkdown(serializeMarkdown(editor.state.doc)).eq(editor.state.doc));
+  assert.equal(editor.run(undo), true);
+  assert.ok(editor.state.doc.eq(before));
+  assert.equal(editor.run(redo), true);
+  assert.equal(editor.run(commands.outdent), true);
+  assert.ok(editor.state.doc.eq(before));
+});
+
+test("Tab excludes an unselected paragraph at a selection endpoint", () => {
+  const editor = harness("甲\n\n乙\n\n丙");
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(
+    editor.state.doc, textPosition(editor.state.doc, "甲"), textPosition(editor.state.doc, "丙"),
+  )));
+  editor.run(listCommands(wysiwygSchema).indent);
+  assert.deepEqual(editor.state.doc.content.content.map(node => node.attrs.indent), [1, 1, 0]);
+});
+
+for (const marker of ["-", "1.", "- [x]"]) {
+  test(`Tab handles the first ${marker} item without losing its marker or focus`, () => {
+    activeEditor = new MinimalWysiwygEditor(document.getElementById("host"), `${marker} 甲\n${marker} 乙`);
+    activeEditor.view.focus();
+    activeEditor.view.dispatch(activeEditor.state.tr.setSelection(TextSelection.create(
+      activeEditor.state.doc, textPosition(activeEditor.state.doc, "甲"),
+    )));
+    assert.equal(keydown(activeEditor, "Tab").event.defaultPrevented, true);
+    assert.equal(activeEditor.state.doc.firstChild.firstChild.attrs.indent, 1);
+    assert.equal(activeEditor.state.doc.firstChild.lastChild.attrs.indent, 0);
+    assert.ok(activeEditor.view.hasFocus());
+    assert.equal(activeEditor.view.dom.querySelector("li").style.marginInlineStart, "2em");
+    assert.ok(parseMarkdown(activeEditor.getMarkdown()).eq(activeEditor.state.doc));
+    assert.equal(keydown(activeEditor, "Tab", { shiftKey: true }).event.defaultPrevented, true);
+    assert.equal(activeEditor.state.doc.firstChild.firstChild.attrs.indent, 0);
+  });
+}
+
+test("selected sibling list items indent together and keep their selection through repeated Tab", () => {
+  const editor = harness("- 父\n- 甲\n- 乙\n- 丙");
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(
+    editor.state.doc, textPosition(editor.state.doc, "甲"), textPosition(editor.state.doc, "乙", 1),
+  )));
+  const commands = listCommands(wysiwygSchema);
+  editor.run(commands.indent);
+  assert.equal(listDepth(editor.state.doc, "甲"), 2);
+  assert.equal(listDepth(editor.state.doc, "乙"), 2);
+  assert.equal(listDepth(editor.state.doc, "丙"), 1);
+  assert.equal(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, "|"), "甲|乙");
+  // These are now the first siblings: another Tab uses their visual indent.
+  editor.run(commands.indent);
+  for (const label of ["甲", "乙"]) assert.equal(editor.state.doc.nodeAt(listItemPosition(editor.state.doc, label)).attrs.indent, 1);
+  editor.run(commands.outdent);
+  editor.run(commands.outdent);
+  assert.equal(listDepth(editor.state.doc, "甲"), 1);
+  assert.equal(listDepth(editor.state.doc, "乙"), 1);
+  assert.equal(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, "|"), "甲|乙");
+});
+
+test("a selection spanning body text and different lists moves every selected block once", () => {
+  const editor = harness("正文\n\n- 父\n  - 子\n- 后\n\n结束\n\n1. 编号\n2. 下项");
+  const before = editor.state.doc;
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(
+    before, textPosition(before, "正文", 1), textPosition(before, "编号", 1),
+  )));
+  const commands = listCommands(wysiwygSchema);
+  editor.run(commands.indent);
+  assert.equal(editor.state.doc.firstChild.attrs.indent, 1);
+  assert.equal(editor.state.doc.child(2).attrs.indent, 1);
+  assert.equal(editor.state.doc.nodeAt(listItemPosition(editor.state.doc, "父")).attrs.indent, 1);
+  assert.equal(editor.state.doc.nodeAt(listItemPosition(editor.state.doc, "子")).attrs.indent, 0);
+  assert.equal(editor.state.doc.nodeAt(listItemPosition(editor.state.doc, "编号")).attrs.indent, 1);
+  assert.equal(editor.state.doc.nodeAt(listItemPosition(editor.state.doc, "下项")).attrs.indent, 0);
+  editor.run(commands.outdent);
+  assert.ok(editor.state.doc.eq(before));
+  editor.run(undo);
+  editor.run(undo);
+  assert.ok(editor.state.doc.eq(before));
+});
+
+test("Tab handles selected items from different nested list depths", () => {
+  const editor = harness(nestedListMarkdown);
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(
+    editor.state.doc, textPosition(editor.state.doc, "A.1.1"), textPosition(editor.state.doc, "A.2", 3),
+  )));
+  const commands = listCommands(wysiwygSchema);
+  editor.run(commands.indent);
+  assert.equal(listDepth(editor.state.doc, "A.2"), 3);
+  assert.equal(editor.state.doc.nodeAt(listItemPosition(editor.state.doc, "A.1.1")).attrs.indent, 1);
+  assert.equal(editor.state.doc.nodeAt(listItemPosition(editor.state.doc, "A.1.2")).attrs.indent, 1);
+  editor.run(undo);
+  assert.equal(serializeMarkdown(editor.state.doc), nestedListMarkdown);
+});
+
+test("Enter on an empty marker exits exactly one list level", () => {
+  for (const source of ["- 临时\n- 后", "- 前\n- 临时\n- 后", "- 前\n- 临时", "- 父\n  - 临时\n  - 后", "- 父\n  - 前\n  - 临时\n  - 后", "- 父\n  - 前\n  - 临时"]) {
+    const editor = harness(source);
+    editor.select("临时");
+    const depth = selectionListDepth(editor.state);
+    const pos = editor.state.selection.from;
+    editor.dispatch(editor.state.tr.delete(pos, pos + 2));
+    assert.equal(editor.run(listCommands(wysiwygSchema).enter), true, source);
+    assert.equal(editor.state.selection.$from.parent.content.size, 0, source);
+    assert.equal(selectionListDepth(editor.state), depth - 1, source);
+    if (depth > 1) assert.equal(editor.state.selection.$from.index(-1), 0, source);
+    if (source.includes("后")) assert.equal(listDepth(editor.state.doc, "后"), source.startsWith("- 父") ? 2 : 1);
+    assert.equal(editor.run(undo), true);
+  }
+});
+
+test("Backspace removes visual indent, then marker, then paragraph boundary in separate presses", () => {
+  const editor = harness("前\n\n- 项\n- 后");
+  const commands = listCommands(wysiwygSchema);
+  editor.select("项");
+  editor.run(commands.indent);
+  assert.equal(editor.state.doc.child(1).firstChild.attrs.indent, 1);
+  assert.equal(editor.run(commands.backspace), true);
+  assert.equal(editor.state.doc.child(1).firstChild.attrs.indent, 0);
+  assert.equal(editor.state.selection.$from.parent.textContent, "项");
+  assert.equal(editor.run(commands.backspace), true);
+  assert.equal(editor.state.doc.child(1).type.name, "paragraph");
+  assert.equal(editor.state.doc.child(1).textContent, "项");
+  assert.equal(editor.run(commands.backspace), true);
+  assert.equal(editor.state.doc.firstChild.type.name, "paragraph");
+  assert.equal(editor.state.doc.firstChild.textContent, "前项");
+  assert.equal(editor.state.selection.$from.parentOffset, 1);
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 1, 3)));
+  assert.equal(editor.run(commands.backspace), true);
+  assert.equal(editor.state.doc.firstChild.textContent, "");
+});
+
+test("Enter inherits body and task indentation while resetting the new task checkbox", () => {
+  for (const source of ["前后", "- [x] 前后"]) {
+    activeEditor?.destroy();
+    activeEditor = new MinimalWysiwygEditor(document.getElementById("host"), source);
+    activeEditor.view.dispatch(activeEditor.state.tr.setSelection(TextSelection.create(
+      activeEditor.state.doc, textPosition(activeEditor.state.doc, "前后", 1),
+    )));
+    keydown(activeEditor, "Tab");
+    keydown(activeEditor, "Enter");
+    const doc = activeEditor.state.doc;
+    if (source.startsWith("-")) {
+      assert.deepEqual(doc.firstChild.content.content.map(node => [node.attrs.indent, node.attrs.checked]), [[1, true], [1, false]]);
+    } else assert.deepEqual(doc.content.content.map(node => node.attrs.indent), [1, 1]);
+    assert.ok(parseMarkdown(activeEditor.getMarkdown()).eq(doc));
+  }
+});
+
+test("Shift+Tab at the body boundary is consumed without an empty history entry", () => {
+  activeEditor = new MinimalWysiwygEditor(document.getElementById("host"), "正文");
+  assert.equal(keydown(activeEditor, "Tab", { shiftKey: true }).event.defaultPrevented, true);
+  assert.equal(undo(activeEditor.state), false);
+  assert.equal(activeEditor.getMarkdown(), "正文");
+});
+
+test("code block Tab indents selected lines and Shift+Tab restores their text", () => {
+  const editor = harness("```rust\nfirst\nsecond\nthird\n```");
+  const before = editor.state.doc;
+  editor.dispatch(editor.state.tr.setSelection(TextSelection.create(before, 1, 14)));
+  const commands = listCommands(wysiwygSchema);
+  editor.run(commands.indent);
+  assert.equal(editor.state.doc.firstChild.textContent, "  first\n  second\nthird");
+  editor.run(commands.outdent);
+  assert.ok(editor.state.doc.eq(before));
+});
+
+test("combined alignment and indentation metadata preserves text and source position mappings", () => {
+  const source = "甲<!-- infinite-editor:align=center --><!-- infinite-editor:indent=2 -->\n\n* 乙<!-- infinite-editor:list-indent=1 -->\n\n丙";
+  const ast = remarkReferenceBackend.parse(source);
+  const doc = parseMarkdown(source);
+  assert.equal(doc.firstChild.attrs.indent, 2);
+  assert.equal(doc.firstChild.attrs.textAlign, "center");
+  assert.equal(doc.textContent, "甲乙丙");
+  const mapper = new MarkdownPositionMapper(ast, doc, source);
+  for (const text of ["甲", "乙", "丙"]) {
+    assert.equal(mapper.sourceToProseMirror(source.indexOf(text)), textPosition(doc, text));
+    assert.equal(mapper.proseMirrorToSource(textPosition(doc, text)), source.indexOf(text));
+  }
+  assert.ok(parseMarkdown(serializeMarkdown(doc)).eq(doc));
+});
+
+test("an empty indented paragraph does not steal the next paragraph's source mapping", () => {
+  const source = "&nbsp;<!-- infinite-editor:indent=1 -->\n\n后段";
+  const doc = parseMarkdown(source);
+  assert.equal(doc.firstChild.textContent, "");
+  const mapper = new MarkdownPositionMapper(remarkReferenceBackend.parse(source), doc, source);
+  assert.equal(mapper.sourceToProseMirror(source.indexOf("后段")), textPosition(doc, "后段"));
+  assert.equal(mapper.proseMirrorToSource(textPosition(doc, "后段")), source.indexOf("后段"));
 });
 
 test("EditorView keydown routes Enter and Backspace through structural transactions", () => {
@@ -1077,6 +1521,7 @@ test("EditorView keydown routes Enter and Backspace through structural transacti
   assert.equal(backspace.event.defaultPrevented, true);
   assert.equal(activeEditor.getMarkdown(), "* 父项\n  * 子\n\n    项\n  * 后续\n* B");
   assert.equal(activeEditor.state.selection.$from.parent.textContent, "项");
+  assert.equal(activeEditor.state.selection.$from.parentOffset, 0);
 });
 
 test("Shift+Enter inserts a hard break and Ctrl+Enter inserts a page break", () => {

@@ -62,6 +62,9 @@ export class WysiwygBridgeSession {
         redo: () => this.historyCommand("redo").changed,
       } : null,
       handlePaste: (view, event) => this.handlePaste(view, event),
+      onBeforeTransaction: transaction => {
+        if (transaction.getMeta("infinite-structural-command")) this.flushChange("wysiwyg-before-structure");
+      },
       onTransaction: ({ transaction, previousState }) => {
         if (transaction.selectionSet || transaction.docChanged) this.scheduleSelectionChange();
         if (!transaction.docChanged) return;
@@ -70,7 +73,8 @@ export class WysiwygBridgeSession {
         }
         if (!this.usesSharedHistory) this.editRevision += 1;
         this.dirty = true;
-        this.scheduleChange();
+        if (transaction.getMeta("infinite-structural-command")) this.flushChange("wysiwyg-structure", "input", true);
+        else this.scheduleChange();
       },
       onCompositionChange: (active) => {
         if (!active) this.schedulePendingDocument();
@@ -279,7 +283,12 @@ export class WysiwygBridgeSession {
     }
 
     const alreadyDisplayed = this.documentRevision === update.documentRevision
-      && this.editor.getMarkdown() === update.markdown;
+      && (this.editor.getMarkdown() === update.markdown
+        // A restored rich snapshot can preserve the original source spelling
+        // (e.g. '-' instead of '*'). Its document is already on screen; do not
+        // reparse an acknowledgement and remap a blank caret to the next item.
+        || (current?.markdown === update.markdown
+          && current.richSnapshot?.doc?.eq(this.editor.state.doc)));
     this.ast = update.ast;
     this.documentRevision = update.documentRevision;
     this.editRevision = update.editRevision;

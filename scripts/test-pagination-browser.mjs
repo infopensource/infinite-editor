@@ -25,7 +25,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const output = mkdtempSync(join(tmpdir(), 'infinite-pagination-'));
 const scenarios = process.argv.length > 2 ? process.argv.slice(2) : ['nested', 'table', 'table-long-cell', 'table-long-header', 'mixed', 'math-input', 'page-furniture'];
 const bundle = await build({
-  entryPoints: [resolve(root, scenarios.includes('links') ? 'web/wysiwyg/links_browser.js' : scenarios.includes('alignment') ? 'web/wysiwyg/alignment_browser.js' : scenarios.includes('zoom') ? 'web/zoom_browser.js' : scenarios.includes('tables-rendering') ? 'web/document_renderer/tables_browser.js' : scenarios.includes('lists') ? 'web/document_renderer/lists_browser.js' : scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
+  entryPoints: [resolve(root, scenarios.includes('list-editing') ? 'web/wysiwyg/list_editing_browser.js' : scenarios.includes('links') ? 'web/wysiwyg/links_browser.js' : scenarios.includes('alignment') ? 'web/wysiwyg/alignment_browser.js' : scenarios.includes('zoom') ? 'web/zoom_browser.js' : scenarios.includes('tables-rendering') ? 'web/document_renderer/tables_browser.js' : scenarios.includes('lists') ? 'web/document_renderer/lists_browser.js' : scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
   loader: { '.md': 'text', '.png': 'dataurl' }, bundle: true, write: false, format: 'iife',
 });
 const wordStyleFiles = [...readFileSync(resolve(root, 'src/styling.rs'), 'utf8')
@@ -146,6 +146,69 @@ try {
       if (evaluated.result?.value) report = JSON.parse(evaluated.result.value);
     }
     if (!report) throw new Error(`No result from ${scenario}`);
+    if (scenario === 'list-editing' && report.ok) {
+      await send('Runtime.evaluate', { expression: 'window.prepareNativeListEditing()' }, sessionId);
+      for (const [key, modifiers, expected] of [
+        ['Tab', 0, '* 父\n  * 子'],
+        ['Tab', 8, '* 父\n* 子'],
+        ['Backspace', 0, '* 父\n\n  子'],
+        ['Backspace', 0, '* 父子'],
+        ['Tab', 0, '* 父子<!-- infinite-editor:list-indent=1 -->'],
+        ['Tab', 8, '* 父子'],
+      ]) {
+        const keyCode = key === 'Tab' ? 9 : 8;
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: keyCode, modifiers }, sessionId);
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: keyCode, modifiers }, sessionId);
+        const actual = await send('Runtime.evaluate', {
+          expression: `({ markdown: window.listEditingBrowserEditor.getMarkdown(), focused: window.listEditingBrowserEditor.view.hasFocus() })`, returnByValue: true,
+        }, sessionId);
+        if (actual.result.value?.markdown !== '正文\n\n' + expected || !actual.result.value?.focused) {
+          throw new Error(`Native ${modifiers ? 'Shift-' : ''}${key} failed: ${JSON.stringify(actual.result.value)}`);
+        }
+      }
+      await send('Runtime.evaluate', { expression: 'window.prepareNativeListBody()' }, sessionId);
+      for (const [key, keyCode, expected] of [['Enter', 13, '* 标题\n* &nbsp;\n* 后项'], ['Backspace', 8, '* 标题\n\n  &nbsp;\n* 后项']]) {
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: keyCode }, sessionId);
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: keyCode }, sessionId);
+        const actual = await send('Runtime.evaluate', { expression: 'window.listEditingBrowserEditor.getMarkdown()', returnByValue: true }, sessionId);
+        if (actual.result.value !== expected) throw new Error(`Native Enter failed to start list body: ${JSON.stringify(actual.result.value)}`);
+      }
+      await send('Input.insertText', { text: '正文' }, sessionId);
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, sessionId);
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, sessionId);
+      await send('Input.insertText', { text: '第二段' }, sessionId);
+      const body = await send('Runtime.evaluate', { expression: 'window.listEditingBrowserEditor.getMarkdown()', returnByValue: true }, sessionId);
+      if (body.result.value !== '* 标题\n\n  正文\n\n  第二段\n* 后项') throw new Error(`Native Enter split the list body incorrectly: ${JSON.stringify(body.result.value)}`);
+      for (const [key, keyCode] of [['Enter', 13], ['Backspace', 8]]) {
+        await send('Runtime.evaluate', { expression: 'window.prepareNativeBlankAfterSublist()' }, sessionId);
+        const initial = await send('Runtime.evaluate', { expression: 'window.nativeListEditingSnapshot()', returnByValue: true }, sessionId);
+        for (const depth of [2, 1, 0]) {
+          await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: keyCode }, sessionId);
+          await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: keyCode }, sessionId);
+          const current = await send('Runtime.evaluate', { expression: 'window.nativeListEditingSnapshot()', returnByValue: true }, sessionId);
+          const snapshot = current.result.value;
+          if (JSON.stringify(snapshot?.following) !== JSON.stringify(initial.result.value?.following)) {
+            throw new Error(`Native ${key} changed subsequent list depths, attributes, markers or horizontal positions: ${JSON.stringify(snapshot)}`);
+          }
+          if (snapshot?.depth !== depth || snapshot?.text !== '' || !snapshot?.focused || !snapshot?.roundtrip || !snapshot?.hiddenHeadings || snapshot?.content !== initial.result.value?.content
+            || (key === 'Enter' && depth > 0 && (!snapshot.marker || snapshot.listType !== (depth === 2 ? 'bullet_list' : 'ordered_list')))) {
+            throw new Error(`Native ${key} did not exit exactly one level while preserving the blank: ${JSON.stringify(snapshot)}`);
+          }
+        }
+        if (key === 'Backspace') {
+          await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: keyCode }, sessionId);
+          await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: keyCode }, sessionId);
+          const current = await send('Runtime.evaluate', { expression: 'window.nativeListEditingSnapshot()', returnByValue: true }, sessionId);
+          if (current.result.value?.text !== 'No idea in Westlaw' || current.result.value?.offset !== 18 || !current.result.value?.roundtrip) {
+            throw new Error(`Native Backspace did not delete the paragraph boundary after exiting all levels: ${JSON.stringify(current.result.value)}`);
+          }
+          if (JSON.stringify(current.result.value?.following) !== JSON.stringify(initial.result.value?.following)) {
+            throw new Error(`Native Backspace moved subsequent lists when removing the blank paragraph: ${JSON.stringify(current.result.value)}`);
+          }
+        }
+      }
+      report.nativeKeyboard = true;
+    }
     if (scenario === 'links' && report.ok) {
       const anchor = await send('Runtime.evaluate', { expression: 'window.linkBrowserAnchor', returnByValue: true }, sessionId);
       let { x, y } = anchor.result.value;

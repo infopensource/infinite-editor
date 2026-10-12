@@ -1,3 +1,5 @@
+import { BLOCK_METADATA, blockMetadata } from "./block_metadata.js";
+
 const AST_LEAF_KINDS = new Set([
   "text", "code_inline", "math_inline", "hard_break", "image", "image_reference",
   "code_block", "math_block", "thematic_break", "page_break", "definition",
@@ -18,8 +20,12 @@ function astLeaves(documentNode) {
   const output = [];
   const visit = (nodes, parentPath = []) => nodes.forEach((node, index) => {
     const path = [...parentPath, index];
-    if (index === nodes.length - 1 && node.kind === "opaque_inline"
-      && /^<!-- infinite-editor:align=(left|center|right|justify) -->$/.test(node.source)) return;
+    if (node.kind === "opaque_inline" && BLOCK_METADATA.test(node.source)
+      && nodes.slice(index + 1).every(next => next.kind === "opaque_inline" && BLOCK_METADATA.test(next.source))) return;
+    if (node.kind === "paragraph") {
+      const content = blockMetadata(node.children).children;
+      if (content.length === 1 && content[0].kind === "text" && content[0].value === "\u00a0") return;
+    }
     if (AST_LEAF_KINDS.has(node.kind)) {
       const range = ranges.get(path.join("."));
       if (range) output.push({ node, range });

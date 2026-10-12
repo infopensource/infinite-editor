@@ -9,6 +9,7 @@
     "build": "npm run build:editor && npm run build:wysiwyg && npm run build:document-renderer && npm run build:math",
     "test:editor": "node --test web/*.test.js",
     "test:links-browser": "node scripts/test-pagination-browser.mjs links",
+    "test:lists-browser": "node scripts/test-pagination-browser.mjs list-editing",
     "test": "npm run test:editor && cargo test",
     "test:zoom-browser": "node scripts/test-pagination-browser.mjs zoom",
     "test:pagination-browser": "npm run build:page-furniture-harness && node scripts/test-pagination-browser.mjs",

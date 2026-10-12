@@ -1,7 +1,16 @@
 import { Schema } from "prosemirror-model";
 import { bulletList, listItem, orderedList } from "prosemirror-schema-list";
 
-const alignmentAttrs = (node) => node.attrs.textAlign ? { style: `text-align:${node.attrs.textAlign};text-align-last:auto` } : {};
+const alignmentAttrs = (node) => {
+  const style = [];
+  if (node.attrs.textAlign) style.push(`text-align:${node.attrs.textAlign};text-align-last:auto`);
+  if (node.attrs.indent) style.push(`margin-inline-start:${node.attrs.indent * 2}em`);
+  return {
+    ...(style.length ? { style: style.join(";") } : {}),
+    ...(node.attrs.indent ? { "data-indent": node.attrs.indent } : {}),
+  };
+};
+const readIndent = (element) => Math.max(0, Number.parseInt(element.dataset.indent, 10) || 0);
 const readAlignment = (element) => ["left", "center", "right", "justify"].includes(element.style.textAlign) ? element.style.textAlign : null;
 
 const blockDom = (tag) => [tag, 0];
@@ -10,10 +19,10 @@ const baseSchema = new Schema({
   nodes: {
     doc: { content: "block+" },
     paragraph: {
-      attrs: { textAlign: { default: null } },
+      attrs: { textAlign: { default: null }, indent: { default: 0 } },
       content: "inline*",
       group: "block",
-      parseDOM: [{ tag: "p", getAttrs: (element) => ({ textAlign: readAlignment(element) }) }],
+      parseDOM: [{ tag: "p", getAttrs: (element) => ({ textAlign: readAlignment(element), indent: readIndent(element) }) }],
       toDOM: (node) => ["p", alignmentAttrs(node), 0],
     },
     blockquote: {
@@ -24,13 +33,13 @@ const baseSchema = new Schema({
       toDOM: () => blockDom("blockquote"),
     },
     heading: {
-      attrs: { level: { default: 1 }, textAlign: { default: null } },
+      attrs: { level: { default: 1 }, textAlign: { default: null }, indent: { default: 0 } },
       content: "inline*",
       group: "block",
       defining: true,
       parseDOM: Array.from({ length: 6 }, (_, index) => ({
         tag: `h${index + 1}`,
-        getAttrs: (element) => ({ level: index + 1, textAlign: readAlignment(element) }),
+        getAttrs: (element) => ({ level: index + 1, textAlign: readAlignment(element), indent: readIndent(element) }),
       })),
       toDOM: (node) => [`h${node.attrs.level}`, alignmentAttrs(node), 0],
     },
@@ -248,11 +257,18 @@ const baseSchema = new Schema({
     bullet_list: { ...bulletList, content: "list_item+", group: "block" },
     list_item: {
       ...listItem,
-      attrs: { checked: { default: null } },
+      attrs: { checked: { default: null }, indent: { default: 0 }, continuation: { default: false } },
       content: "paragraph block*",
-      toDOM: (node) => node.attrs.checked === null
-        ? ["li", 0]
-        : ["li", { "data-task-checked": String(node.attrs.checked) }, 0],
+      parseDOM: [{ tag: "li", getAttrs: (element) => ({
+        indent: readIndent(element),
+        continuation: element.hasAttribute("data-list-continuation"),
+        checked: element.hasAttribute("data-task-checked") ? element.dataset.taskChecked === "true" : null,
+      }) }],
+      toDOM: (node) => ["li", {
+        ...alignmentAttrs(node),
+        ...(node.attrs.continuation ? { "data-list-continuation": "true" } : {}),
+        ...(node.attrs.checked === null ? {} : { "data-task-checked": String(node.attrs.checked) }),
+      }, 0],
     },
     text: { group: "inline" },
   },

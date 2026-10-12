@@ -3,6 +3,17 @@ import { PAGE_BREAK_SOURCE } from "./dialect.js";
 
 const EMPTY_PARAGRAPH_SOURCE = "&nbsp;";
 
+function writeBlockMetadata(state, node, parent, index) {
+  if (node.attrs.textAlign) state.write(`<!-- infinite-editor:align=${node.attrs.textAlign} -->`);
+  if (node.attrs.indent) state.write(`<!-- infinite-editor:indent=${node.attrs.indent} -->`);
+  if (index === 0 && parent?.type.name === "list_item" && parent.attrs.indent) {
+    state.write(`<!-- infinite-editor:list-indent=${parent.attrs.indent} -->`);
+  }
+  if (index === 0 && parent?.type.name === "list_item" && parent.attrs.continuation) {
+    state.write("<!-- infinite-editor:continuation=1 -->");
+  }
+}
+
 function escapeTablePipes(value) {
   return value.replace(/(^|[^\\])\|/gu, "$1\\|").replaceAll("\n", "<br>");
 }
@@ -16,6 +27,12 @@ function alignmentMarker(value) {
 
 const nodes = {
   ...defaultMarkdownSerializer.nodes,
+  ordered_list(state, node) {
+    // CommonMark only lets a list starting at 1 interrupt a paragraph.
+    // Split continuations may resume any number, so retain a block boundary.
+    if (node.attrs.order !== 1 && state.closed?.isTextblock) state.flushClose(2);
+    defaultMarkdownSerializer.nodes.ordered_list(state, node);
+  },
   hard_break(state) {
     state.write(" ".repeat(2));
     state.write("\n");
@@ -23,14 +40,14 @@ const nodes = {
   heading(state, node) {
     state.write("#".repeat(node.attrs.level) + " ");
     state.renderInline(node);
-    if (node.attrs.textAlign) state.write(`<!-- infinite-editor:align=${node.attrs.textAlign} -->`);
+    writeBlockMetadata(state, node);
     state.closeBlock(node);
   },
   paragraph(state, node, parent, index) {
-    if (node.attrs.textAlign) {
+    if (node.attrs.textAlign || node.attrs.indent || (index === 0 && parent.type.name === "list_item" && (parent.attrs.indent || parent.attrs.continuation))) {
       if (node.childCount) state.renderInline(node);
       else state.write(EMPTY_PARAGRAPH_SOURCE);
-      state.write(`<!-- infinite-editor:align=${node.attrs.textAlign} -->`);
+      writeBlockMetadata(state, node, parent, index);
       state.closeBlock(node);
       return;
     }

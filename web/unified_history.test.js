@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 import { TextSelection } from "prosemirror-state";
+import { listCommands } from "./wysiwyg/commands/lists.js";
 
 const dom = new JSDOM(
   '<!doctype html><main class="editor-surface"><div id="wysiwyg"></div></main><textarea id="bridge"></textarea>',
@@ -157,6 +158,91 @@ test("grouped edits restore matching rich selections through rapid history and r
   assert.equal(session.setDocument({ ...old, ast: remarkReferenceBackend.parse(old.markdown) }).stale, true);
   assert.equal(session.editor.getMarkdown(), finalText);
   session.destroy();
+});
+
+test("rapid list indentation and pending typing create separate shared undo entries", () => {
+  document.body.innerHTML = '<div id="wysiwyg"></div><textarea id="bridge"></textarea>';
+  const session = new WysiwygBridgeSession({
+    host: document.getElementById("wysiwyg"), bridge: document.getElementById("bridge"),
+    ast: remarkReferenceBackend.parse("- A\n- B"), markdown: "- A\n- B",
+    documentRevision: 4, documentSession, changeDebounceMs: 1000,
+  });
+  const editor = session.editor;
+  let pos;
+  editor.state.doc.descendants((node, position) => { if (node.isText && node.text === "B") pos = position; });
+  editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, pos + 1)));
+  editor.view.dispatch(editor.state.tr.insertText(" typed"));
+  const typed = editor.getMarkdown();
+  const commands = listCommands(editor.state.schema);
+  commands.indent(editor.state, tr => editor.view.dispatch(tr));
+  const nested = editor.getMarkdown();
+  commands.indent(editor.state, tr => editor.view.dispatch(tr));
+  const visuallyIndented = editor.getMarkdown();
+  assert.equal(documentSession.getValue(), visuallyIndented);
+  assert.equal(session.command("undo").changed, true);
+  assert.equal(editor.getMarkdown(), nested);
+  assert.equal(session.command("undo").changed, true);
+  assert.equal(editor.getMarkdown(), typed);
+  assert.equal(session.command("undo").changed, true);
+  assert.equal(editor.getMarkdown(), "* A\n* B");
+  for (const expected of [typed, nested, visuallyIndented]) {
+    assert.equal(session.command("redo").changed, true);
+    assert.equal(editor.getMarkdown(), expected);
+    assert.equal(editor.state.selection.$from.parent.textContent, "B typed");
+  }
+  session.destroy();
+});
+
+test("each empty-body level exit is one shared undo step and restores the blank caret", () => {
+  for (const [method, revision] of [["enter", 5], ["backspace", 6]]) {
+    document.body.innerHTML = '<div id="wysiwyg"></div><textarea id="bridge"></textarea>';
+    const source = "1. Parent\n   - A\n     - Leaf\n\n       &nbsp;\n   - B\n     - Child\n       - Grandchild";
+    const session = new WysiwygBridgeSession({
+      host: document.getElementById("wysiwyg"), bridge: document.getElementById("bridge"),
+      ast: remarkReferenceBackend.parse(source), markdown: source,
+      documentRevision: revision, documentSession, changeDebounceMs: 1000,
+    });
+    const editor = session.editor;
+    const following = () => {
+      const result = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name !== "list_item" || !["B", "Child", "Grandchild"].includes(node.firstChild.textContent)) return;
+        const $pos = editor.state.doc.resolve(pos + 1);
+        let depth = 0;
+        for (let d = $pos.depth; d > 0; d--) if ($pos.node(d).type.name.endsWith("_list")) depth++;
+        result.push({ text: node.firstChild.textContent, depth, attrs: node.attrs, type: $pos.node(-1).type.name });
+      });
+      return result;
+    };
+    const originalFollowing = following();
+    let blank;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "paragraph" && node.content.size === 0) blank = pos + 1;
+    });
+    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, blank)));
+    const snapshots = [{ doc: editor.state.doc, selection: editor.state.selection.toJSON() }];
+    for (let index = 0; index < 3; index++) {
+      assert.equal(listCommands(editor.state.schema)[method](editor.state, tr => editor.view.dispatch(tr)), true);
+      assert.equal(editor.state.selection.$from.parent.content.size, 0);
+      assert.equal(documentSession.getValue(), editor.getMarkdown());
+      assert.deepEqual(following(), originalFollowing);
+      snapshots.push({ doc: editor.state.doc, selection: editor.state.selection.toJSON() });
+    }
+    for (let index = 2; index >= 0; index--) {
+      assert.equal(session.command("undo").changed, true);
+      applyRustProjection(session);
+      assert.deepEqual(following(), originalFollowing);
+      assert.ok(editor.state.doc.eq(snapshots[index].doc));
+      assert.deepEqual(editor.state.selection.toJSON(), snapshots[index].selection);
+    }
+    for (let index = 1; index <= 3; index++) {
+      assert.equal(session.command("redo").changed, true);
+      assert.deepEqual(following(), originalFollowing);
+      assert.ok(editor.state.doc.eq(snapshots[index].doc));
+      assert.deepEqual(editor.state.selection.toJSON(), snapshots[index].selection);
+    }
+    session.destroy();
+  }
 });
 
 test("header and footer styles undo independently between body edits and survive remount", () => {

@@ -38,10 +38,12 @@ function editorPlugins(options = {}) {
     keymap(blockKeyBindings(wysiwygSchema)),
     keymap({ Enter: (state, dispatch, view) => {
       const align = state.selection.$from.parent.attrs.textAlign;
+      const indent = state.selection.$from.parent.attrs.indent;
       return chainCommands(listKeyBindings(wysiwygSchema).Enter, baseKeymap.Enter)(state, dispatch && (tr => {
         const { $from } = tr.selection;
-        if (align && ["paragraph", "heading"].includes($from.parent.type.name)) {
-          tr.setNodeMarkup($from.before(), undefined, { ...$from.parent.attrs, textAlign: align });
+        if (!tr.getMeta("infinite-level-exit") && (align || indent)
+          && ["paragraph", "heading"].includes($from.parent.type.name)) {
+          tr.setNodeMarkup($from.before(), undefined, { ...$from.parent.attrs, textAlign: align, indent: indent ?? 0 });
         }
         dispatch(tr);
       }), view);
@@ -102,6 +104,7 @@ export class MinimalWysiwygEditor {
         slice.content.textBetween(0, slice.content.size, "\n"),
       ),
       dispatchTransaction: (transaction) => {
+        this.options.onBeforeTransaction?.(transaction);
         const previousState = this.view.state;
         const nextState = previousState.apply(transaction);
         this.view.updateState(nextState);

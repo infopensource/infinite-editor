@@ -70,6 +70,27 @@ strikethrough, code blocks, lists, quotes, and rules to the current selection.
 The Insert ribbon can add a persistent page break. `Ctrl/Cmd+B` and
 `Ctrl/Cmd+I` work directly inside the page.
 
+`Tab` and `Shift+Tab` indent and outdent the current paragraph or all blocks
+touched by a selection, including selections spanning body text and lists.
+List siblings move together; selected parent items carry their sublists once.
+The first item, which has no preceding parent item, uses a visual indent.
+In text, `Backspace` deletes characters or the selection. At paragraph start,
+it removes visual indentation, the list marker, and enclosing list levels in
+separate presses; an empty body paragraph stays empty until all its list levels
+are removed. A further press deletes its boundary to the preceding paragraph.
+`Enter` splits a populated list heading or body paragraph. An empty marker
+returns to its parent list; an empty body paragraph becomes an item of the
+parent list. Repeated presses exit one level at a time, eventually reaching
+ordinary body text. After a sublist, the next item resumes its parent's list.
+Remove an empty marker with `Backspace` to start body text inside a list item.
+Exiting a blank paragraph preserves the depth, marker and numbering of later
+items and their sublists. Split list continuations retain their original
+ancestry without displaying a duplicate heading; they persist through the
+`infinite-editor:continuation` metadata comment.
+Each indentation operation is a separate undo step and retains the selection.
+Body and first-item visual indents persist as trailing `infinite-editor:indent`
+and `infinite-editor:list-indent` comments, alongside paragraph alignment.
+
 Select text and choose **超链接** in the Home or Insert ribbon, or press
 `Ctrl/Cmd+K`, to edit its display text and destination.
 Place the caret inside a link to edit the whole link; double-clicking a link

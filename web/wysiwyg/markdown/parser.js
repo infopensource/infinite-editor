@@ -1,5 +1,6 @@
 import { Fragment } from "prosemirror-model";
 import { assertInfiniteAst } from "./infinite_ast.js";
+import { blockMetadata } from "./block_metadata.js";
 
 function withMark(nodes, mark) {
   return nodes.map((node) => node.mark(mark.addToSet(node.marks)));
@@ -72,12 +73,9 @@ export function documentFromInfiniteAst(input, schema) {
   });
 
   const alignedBlock = (node, type, attrs = {}) => {
-    const children = [...node.children];
-    const marker = children.at(-1);
-    const match = marker?.kind === "opaque_inline" && /^<!-- infinite-editor:align=(left|center|right|justify) -->$/.exec(marker.source);
-    if (match) children.pop();
+    const { children, attrs: metadata } = blockMetadata(node.children);
     const content = children.length === 1 && children[0].kind === "text" && children[0].value === "\u00a0" ? [] : children;
-    return type.create({ ...attrs, textAlign: match ? match[1] : null }, inline(content));
+    return type.create({ ...attrs, textAlign: metadata.textAlign, indent: metadata.indent }, inline(content));
   };
 
   const blocks = (nodes) => nodes.flatMap((node) => {
@@ -105,7 +103,8 @@ export function documentFromInfiniteAst(input, schema) {
           if (content.length === 0 || content[0].type !== schema.nodes.paragraph) {
             content.unshift(schema.nodes.paragraph.create());
           }
-          return schema.nodes.list_item.create({ checked: item.checked ?? null }, content);
+          const metadata = blockMetadata(item.children[0]?.children ?? []).attrs;
+          return schema.nodes.list_item.create({ checked: item.checked ?? null, indent: metadata.listIndent, continuation: metadata.continuation && content[0].content.size === 0 }, content);
         }))];
       }
       case "table":

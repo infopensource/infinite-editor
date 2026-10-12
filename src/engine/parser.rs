@@ -32,7 +32,7 @@ impl ParserGateway {
 
     pub fn render_html(&self, source: &str) -> Result<String, ParseError> {
         markdown::to_html_with_options(source, &math_options())
-            .map(|html| render_paragraph_alignment(&render_explicit_line_breaks(&html)))
+            .map(|html| render_paragraph_metadata(&render_explicit_line_breaks(&html)))
             .map_err(|error| ParseError {
                 message: error.to_string(),
             })
@@ -56,29 +56,98 @@ impl ParserGateway {
 }
 
 // Only recognize our exact trailing paragraph metadata. Arbitrary HTML remains escaped.
-fn render_paragraph_alignment(html: &str) -> String {
+fn render_paragraph_metadata(html: &str) -> String {
     let mut output = html.to_string();
-    for align in ["left", "center", "right", "justify"] {
-        let marker = format!("&lt;!-- infinite-editor:align={align} --&gt;");
-        let mut search_from = 0;
-        while let Some(relative) = output[search_from..].find(&marker) {
-            let start = search_from + relative;
-            let end = start + marker.len();
-            let tag = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"]
-                .into_iter()
-                .find(|tag| output[end..].starts_with(&format!("</{tag}>")));
+    let prefix = "&lt;!-- infinite-editor:";
+    let suffix = " --&gt;";
+    let mut search_from = 0;
+    while let Some(relative) = output[search_from..].find(prefix) {
+        let start = search_from + relative;
+        let mut end = start;
+        let mut style = String::new();
+        let mut item_style = String::new();
+        let mut continuation = false;
+        while output[end..].starts_with(prefix) {
+            let value_start = end + prefix.len();
+            let Some(length) = output[value_start..].find(suffix) else {
+                break;
+            };
+            let marker = &output[value_start..value_start + length];
+            if let Some(align) = marker
+                .strip_prefix("align=")
+                .filter(|align| ["left", "center", "right", "justify"].contains(align))
+            {
+                style.push_str(&format!("text-align:{align};text-align-last:auto;"));
+            } else if marker == "continuation=1" {
+                continuation = true;
+            } else if let Some((key, level)) = marker.split_once('=') {
+                let level = level
+                    .chars()
+                    .next()
+                    .filter(|digit| matches!(digit, '1'..='9'))
+                    .filter(|_| level.bytes().all(|digit| digit.is_ascii_digit()))
+                    .and_then(|_| level.parse::<usize>().ok())
+                    .and_then(|level| level.checked_mul(2));
+                match (key, level) {
+                    ("indent", Some(level)) => {
+                        style.push_str(&format!("margin-inline-start:{level}em;"))
+                    }
+                    ("list-indent", Some(level)) => {
+                        item_style.push_str(&format!("margin-inline-start:{level}em;"))
+                    }
+                    _ => break,
+                }
+            } else {
+                break;
+            }
+            end = value_start + length + suffix.len();
+        }
+        let tag = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"]
+            .into_iter()
+            .find(|tag| output[end..].starts_with(&format!("</{tag}>")))
+            .or_else(|| {
+                // Tight lists omit <p>. Their first paragraph can be followed
+                // by a sublist rather than the list item's closing tag.
+                ["\n<ul>", "\n<ol>", "\n<ol start="]
+                    .into_iter()
+                    .any(|prefix| output[end..].starts_with(prefix))
+                    .then_some("li")
+            });
+        if end > start {
             if let Some(tag) = tag {
                 if let Some(open) = output[..start].rfind(&format!("<{tag}>")) {
+                    // Continuations preserve the ancestry and numbering of a
+                    // split list without displaying a second empty heading.
+                    let heading_start = open + tag.len() + 2;
+                    continuation &= matches!(tag, "p" | "li")
+                        && ["\u{a0}", "&nbsp;"].contains(&&output[heading_start..start]);
+                    if continuation {
+                        item_style.push_str("list-style:none;");
+                        if tag == "p" {
+                            style.push_str("display:none;");
+                        }
+                    }
                     output.replace_range(start..end, "");
-                    let style =
-                        format!("<{tag} style=\"text-align:{align};text-align-last:auto\">");
-                    output.replace_range(open..open + tag.len() + 2, &style);
-                    search_from = open + style.len();
+                    if continuation && tag == "li" {
+                        output.replace_range(heading_start..start, "");
+                    }
+                    if tag == "li" {
+                        style.push_str(&item_style);
+                    }
+                    let styled_tag = format!("<{tag} style=\"{style}\">");
+                    output.replace_range(open..open + tag.len() + 2, &styled_tag);
+                    if tag != "li" && !item_style.is_empty() {
+                        if let Some(li) = output[..open].rfind("<li>") {
+                            output
+                                .replace_range(li..li + 4, &format!("<li style=\"{item_style}\">"));
+                        }
+                    }
+                    search_from = open;
                     continue;
                 }
             }
-            search_from = end;
         }
+        search_from = start + prefix.len();
     }
     output
 }
@@ -164,6 +233,83 @@ mod tests {
             let html = ParserGateway::markdown_rs().render_html(&source).unwrap();
             assert!(html.contains(&format!("text-align:{align}")), "{html}");
             assert!(!html.contains("infinite-editor:align"));
+        }
+    }
+
+    #[test]
+    fn renders_body_and_list_indentation_with_alignment() {
+        let parser = ParserGateway::markdown_rs();
+        for (source, tag, level) in [
+            ("正文<!-- infinite-editor:indent=2 -->", "p", 4),
+            ("## 标题<!-- infinite-editor:indent=1 -->", "h2", 2),
+            ("- 项<!-- infinite-editor:list-indent=1 -->\n- 后", "li", 2),
+            (
+                "- 项<!-- infinite-editor:list-indent=1 -->\n  - 子\n- 后",
+                "li",
+                2,
+            ),
+            (
+                "- 项<!-- infinite-editor:list-indent=1 -->\n\n- 后",
+                "li",
+                2,
+            ),
+        ] {
+            let html = parser.render_html(source).unwrap();
+            assert!(
+                html.contains(&format!("<{tag} style=\"margin-inline-start:{level}em;\">")),
+                "{html}"
+            );
+            assert!(!html.contains("infinite-editor:"), "{html}");
+        }
+        let html = parser
+            .render_html(
+                "正文<!-- infinite-editor:align=center --><!-- infinite-editor:indent=2 -->",
+            )
+            .unwrap();
+        assert!(
+            html.contains("text-align:center;text-align-last:auto;margin-inline-start:4em;"),
+            "{html}"
+        );
+        assert!(!html.contains("infinite-editor:"), "{html}");
+        assert_eq!(
+            parser.character_count("正文<!-- infinite-editor:indent=2 -->"),
+            2
+        );
+    }
+
+    #[test]
+    fn renders_list_continuations_without_a_second_heading() {
+        let parser = ParserGateway::markdown_rs();
+        for source in [
+            "7. &nbsp;<!-- infinite-editor:continuation=1 -->\n   - 后续子项\n8. 后续编号",
+            "7. &nbsp;<!-- infinite-editor:continuation=1 -->\n\n   - 后续子项\n\n8. 后续编号",
+        ] {
+            let html = parser.render_html(source).unwrap();
+            assert!(!html.contains("infinite-editor:"), "{html}");
+            assert!(html.contains("list-style:none;"), "{html}");
+            assert!(html.contains("<ol start=\"7\">"), "{html}");
+            assert!(html.contains("后续子项"), "{html}");
+            assert!(html.contains("后续编号"), "{html}");
+            assert!(
+                html.contains("display:none;") || !html.contains('\u{a0}'),
+                "{html}"
+            );
+        }
+    }
+
+    #[test]
+    fn indentation_metadata_only_formats_block_suffixes() {
+        let parser = ParserGateway::markdown_rs();
+        for source in [
+            "`<!-- infinite-editor:indent=2 -->`",
+            "```\n正文<!-- infinite-editor:indent=2 -->\n```",
+            "前<!-- infinite-editor:indent=2 -->后",
+            "正文<!-- infinite-editor:indent=-1 -->",
+            "正文<!-- infinite-editor:indent=red -->",
+            "正文<!-- infinite-editor:indent=00 -->",
+        ] {
+            let html = parser.render_html(source).unwrap();
+            assert!(!html.contains("margin-inline-start:"), "{html}");
         }
     }
 

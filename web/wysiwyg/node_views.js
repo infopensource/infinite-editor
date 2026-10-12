@@ -116,7 +116,12 @@ class TaskListItemNodeView {
     // Keep the editable subtree attached across list-item transactions.
     // Removing it on every keystroke invalidates nested layout and selection.
     if (this.contentDOM.parentNode !== this.dom) this.dom.append(this.contentDOM);
-    if (node.attrs.checked !== null) {
+    this.dom.style.marginInlineStart = node.attrs.indent ? `${node.attrs.indent * 2}em` : "";
+    if (node.attrs.indent) this.dom.dataset.indent = String(node.attrs.indent);
+    else delete this.dom.dataset.indent;
+    if (node.attrs.continuation) this.dom.dataset.listContinuation = "true";
+    else delete this.dom.dataset.listContinuation;
+    if (node.attrs.checked !== null && !node.attrs.continuation) {
       this.checkbox.checked = node.attrs.checked;
       this.dom.dataset.taskChecked = String(node.attrs.checked);
       if (this.checkbox.parentNode !== this.dom) this.dom.prepend(this.checkbox);
