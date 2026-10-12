@@ -4,6 +4,8 @@ import { openPageFurnitureDialog } from "./page_furniture_dialog.js";
 import { minimalTextChange } from "./text_change.js";
 import { tableDimensions, tableMarkdown } from "./table_insert.js";
 import { handleLocalFileDrop } from "./local_file_drop.js";
+import { openLinkDialog } from "./link_dialog.js";
+import { markdownLink, sourceLinkContext } from "./markdown_links.js";
 import { Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import {
   EditorView,
@@ -38,6 +40,7 @@ const views = new Map();
 const scrollSyncs = new Map();
 const pendingScrollSyncs = new Map();
 let controller = null;
+let sourceLinkDialog = null;
 const sourceLanguage = new Compartment();
 // One history owns both surfaces. Rich snapshots are inverted with the same
 // CodeMirror event as its text, so grouping can never diverge between engines.
@@ -349,7 +352,11 @@ function extensions() {
         return true;
       }
     }),
-    keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
+    keymap.of([
+      { key: "Mod-k", run: () => sourceCommand("link").opened === true },
+      { key: "Mod-Shift-k", run: () => sourceCommand("unlink").changed === true },
+      indentWithTab, ...defaultKeymap, ...historyKeymap,
+    ]),
     EditorView.lineWrapping,
     EditorView.theme({
       "&": { height: "100%", backgroundColor: "#f8fafc", color: "#0f172a" },
@@ -401,6 +408,10 @@ function applyTransactions(transactions, origin = "transaction", sourceView = nu
 
   const furnitureChanged = transactions.some(transaction => transaction.effects.some(effect => effect.is(pageFurnitureEffect)));
   const changed = furnitureChanged || transactions.some((transaction) => transaction.docChanged);
+  if (transactions.some(transaction => transaction.docChanged)) {
+    sourceLinkDialog?.close(false);
+    sourceLinkDialog = null;
+  }
   controller.state = expected;
   if (changed) {
     controller.editRevision += 1;
@@ -421,6 +432,8 @@ function initialize(value, documentRevision, bridgeId, editRevision = 0) {
   }
 
   if (!controller || controller.documentRevision < documentRevision) {
+    sourceLinkDialog?.close(false);
+    sourceLinkDialog = null;
     for (const hostId of scrollSyncs.keys()) disconnectScrollSync(hostId);
     for (const entry of views.values()) entry.view.destroy();
     views.clear();
@@ -673,15 +686,50 @@ function insertMarkdownTable(rows, columns) {
   });
 }
 
-function insertMarkdownLink(image = false) {
+function insertMarkdownImage() {
   if (!controller) return { ok: false, changed: false, error: "Markdown 文档控制器尚未初始化" };
-  const href = window.prompt(image ? "图片地址" : "链接地址")?.trim();
+  const href = window.prompt("图片地址")?.trim();
   if (!href) return { ok: true, changed: false, revision: controller.editRevision };
   const { from, to } = controller.state.selection.main;
-  const text = controller.state.doc.sliceString(from, to) || (image ? "图片" : "链接文本");
+  const text = controller.state.doc.sliceString(from, to) || "图片";
   return applySourceTransaction({ changes: {
-    from, to, insert: `${image ? "!" : ""}[${text}](${href})`,
+    from, to, insert: `![${text}](${href})`,
   } });
+}
+
+function editMarkdownLink(remove = false) {
+  if (!controller) return { ok: false, changed: false, error: "Markdown 文档控制器尚未初始化" };
+  if ([...views.values()].some(entry => entry.view.composing)) return { ok: true, changed: false, opened: false };
+  const session = controller;
+  const originalDoc = controller.state.doc;
+  const target = sourceLinkContext(originalDoc.toString(), controller.state.selection.main);
+  const sourceView = [...views.values()].find(entry => entry.view.hasFocus)?.view ?? views.values().next().value?.view;
+  const focus = () => { if (controller === session && sourceView?.dom.isConnected) sourceView.focus(); };
+  const unlink = () => {
+    if (controller !== session || controller.state.doc !== originalDoc) return false;
+    const changes = target.links.flatMap(link => [
+      { from: link.from, to: link.textFrom, insert: "" },
+      { from: link.textTo, to: link.to, insert: "" },
+    ]);
+    if (!changes.length) return { ok: true, changed: false, revision: controller.editRevision };
+    sourceLinkDialog = null;
+    return applySourceTransaction({ changes });
+  };
+  if (remove) return unlink();
+  sourceLinkDialog = openLinkDialog({
+    text: target.text, href: target.href, hasLink: target.links.length > 0, sourceMode: true,
+    onSave: value => {
+      if (controller !== session || controller.state.doc !== originalDoc) return false;
+      const insert = markdownLink(value.text, value.href, target.rawTitle);
+      sourceLinkDialog = null;
+      applySourceTransaction({ changes: { from: target.from, to: target.to, insert },
+        selection: { anchor: target.from + insert.length } });
+      return true;
+    },
+    onRemove: unlink,
+    onClose: () => { sourceLinkDialog = null; focus(); },
+  });
+  return { ok: true, changed: false, opened: true, revision: controller.editRevision };
 }
 
 function sourceCommand(name) {
@@ -708,8 +756,9 @@ function sourceCommand(name) {
   }
   if (name === "page_break") return insertMarkdownBlock("<!-- infinite-editor:page-break -->");
   if (name === "hard_break") return applySourceTransaction({ changes: { from: controller.state.selection.main.from, insert: "  " + controller.state.lineBreak } });
-  if (name === "link") return insertMarkdownLink();
-  if (name === "image") return insertMarkdownLink(true);
+  if (name === "link") return editMarkdownLink();
+  if (name === "unlink") return editMarkdownLink(true);
+  if (name === "image") return insertMarkdownImage();
   return { ok: false, changed: false, error: `源码模式暂不支持命令：${name}` };
 }
 
@@ -997,6 +1046,8 @@ window.InfiniteMarkdownEditor = {
   },
 
   detach(hostId) {
+    sourceLinkDialog?.close(false);
+    sourceLinkDialog = null;
     disconnectScrollSync(hostId);
     const entry = views.get(hostId);
     if (entry) entry.view.destroy();

@@ -25,17 +25,18 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const output = mkdtempSync(join(tmpdir(), 'infinite-pagination-'));
 const scenarios = process.argv.length > 2 ? process.argv.slice(2) : ['nested', 'table', 'table-long-cell', 'table-long-header', 'mixed', 'math-input', 'page-furniture'];
 const bundle = await build({
-  entryPoints: [resolve(root, scenarios.includes('alignment') ? 'web/wysiwyg/alignment_browser.js' : scenarios.includes('zoom') ? 'web/zoom_browser.js' : scenarios.includes('tables-rendering') ? 'web/document_renderer/tables_browser.js' : scenarios.includes('lists') ? 'web/document_renderer/lists_browser.js' : scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
+  entryPoints: [resolve(root, scenarios.includes('links') ? 'web/wysiwyg/links_browser.js' : scenarios.includes('alignment') ? 'web/wysiwyg/alignment_browser.js' : scenarios.includes('zoom') ? 'web/zoom_browser.js' : scenarios.includes('tables-rendering') ? 'web/document_renderer/tables_browser.js' : scenarios.includes('lists') ? 'web/document_renderer/lists_browser.js' : scenarios.includes('selection') ? 'web/wysiwyg/selection_browser.js' : scenarios.includes('performance') ? 'web/wysiwyg/performance_browser.js' : 'web/wysiwyg/pagination_browser.js')],
   loader: { '.md': 'text', '.png': 'dataurl' }, bundle: true, write: false, format: 'iife',
 });
 const wordStyleFiles = [...readFileSync(resolve(root, 'src/styling.rs'), 'utf8')
   .matchAll(/include_str!\("\.\.\/assets\/styling\/word\/([^"/]+\.css)"\)/g)]
   .map(([, file]) => file);
 if (wordStyleFiles.length === 0) throw new Error('No word styles found in src/styling.rs');
-const zoomCss = scenarios.includes('zoom') || scenarios.includes('tables-rendering') || scenarios.includes('lists') || scenarios.includes('selection') || scenarios.includes('page-furniture')
+const zoomCss = scenarios.includes('links') || scenarios.includes('zoom') || scenarios.includes('tables-rendering') || scenarios.includes('lists') || scenarios.includes('selection') || scenarios.includes('page-furniture')
   ? wordStyleFiles.map(file => readFileSync(resolve(root, 'assets/styling/word', file), 'utf8')).join('')
   : '';
 const css = readFileSync(resolve(root, 'assets/styling/wysiwyg_core.css'), 'utf8')
+  + (scenarios.includes('links') ? readFileSync(resolve(root, 'assets/styling/theme.css'), 'utf8') : '')
   + readFileSync(resolve(root, 'assets/math.bundle.css'), 'utf8');
 const math = readFileSync(resolve(root, 'assets/math.bundle.js'), 'utf8');
 const html = `<!doctype html><meta charset="utf-8"><style>
@@ -145,6 +146,79 @@ try {
       if (evaluated.result?.value) report = JSON.parse(evaluated.result.value);
     }
     if (!report) throw new Error(`No result from ${scenario}`);
+    if (scenario === 'links' && report.ok) {
+      const anchor = await send('Runtime.evaluate', { expression: 'window.linkBrowserAnchor', returnByValue: true }, sessionId);
+      let { x, y } = anchor.result.value;
+      await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false }, sessionId);
+      const settled = await send('Runtime.evaluate', { expression: `(async () => {
+        await new Promise(resolve => setTimeout(resolve, 150));
+        const box = window.linkBrowserSession.editor.view.dom.querySelector('a').getBoundingClientRect();
+        return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+      })()`, awaitPromise: true, returnByValue: true }, sessionId);
+      ({ x, y } = settled.result.value);
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, sessionId);
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, sessionId);
+      const ordinary = await send('Runtime.evaluate', { expression: `(() => {
+        return window.linkBrowserOpened.length === 0 && !document.querySelector('.infinite-link-dialog');
+      })()`, returnByValue: true }, sessionId);
+      if (!ordinary.result.value) throw new Error('An ordinary link click navigated or opened the editor');
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1, button: 'none' }, sessionId);
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' }, sessionId);
+      const tooltip = await send('Runtime.evaluate', { expression: `(async () => {
+        await new Promise(resolve => setTimeout(resolve, 350));
+        const tip = document.querySelector('.infinite-link-tooltip');
+        if (!tip) return false;
+        const bounds = tip.getBoundingClientRect();
+        const ok = tip.textContent.includes('https://example.com/guide') && tip.textContent.includes('Ctrl')
+          && bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight;
+        return { ok, text: tip.textContent, bounds: bounds.toJSON() };
+      })()`, awaitPromise: true, returnByValue: true }, sessionId);
+      if (!tooltip.result.value?.ok) throw new Error('Link hover did not show its address and Ctrl-click hint within the viewport: ' + JSON.stringify(tooltip.result.value));
+      const hoverShot = await send('Page.captureScreenshot', { format: 'png' }, sessionId);
+      writeFileSync(join(output, 'links-hover.png'), Buffer.from(hoverShot.data, 'base64'));
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17, modifiers: 2 }, sessionId);
+      const pointer = await send('Runtime.evaluate', { expression: 'getComputedStyle(window.linkBrowserSession.editor.view.dom.querySelector("a")).cursor === "pointer"', returnByValue: true }, sessionId);
+      if (!pointer.result.value) throw new Error('Holding Ctrl did not change the link cursor');
+      await send('Runtime.evaluate', { expression: `window.linkNavigationBaseline = { markdown: window.linkBrowserSession.editor.getMarkdown(), selection: JSON.stringify(window.linkBrowserSession.editor.state.selection.toJSON()) }`, returnByValue: true }, sessionId);
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1, modifiers: 2 }, sessionId);
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1, modifiers: 2 }, sessionId);
+      const followed = await send('Runtime.evaluate', { expression: `(() => {
+        const opened = window.linkBrowserOpened;
+        const editor = window.linkBrowserSession.editor;
+        const selection = JSON.stringify(editor.state.selection.toJSON());
+        const markdown = editor.getMarkdown();
+        const ok = opened.length === 1 && opened[0][0] === 'https://example.com/guide'
+          && opened[0][1] === '_blank' && opened[0][2] === 'noopener,noreferrer'
+          && markdown === window.linkNavigationBaseline.markdown
+          && selection === window.linkNavigationBaseline.selection;
+        return { ok, opened, selection, markdown, baseline: window.linkNavigationBaseline };
+      })()`, returnByValue: true }, sessionId);
+      if (!followed.result.value?.ok) throw new Error('Ctrl-click did not open exactly once while preserving the document and selection: ' + JSON.stringify(followed.result.value));
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Control', code: 'ControlLeft', windowsVirtualKeyCode: 17 }, sessionId);
+      report.ctrlClick = true;
+      report.addressTooltip = true;
+      // Separate the next normal double click from the earlier mouse sequence.
+      await send('Runtime.evaluate', { expression: 'new Promise(resolve => setTimeout(resolve, 550))', awaitPromise: true }, sessionId);
+      for (const clickCount of [1, 2]) {
+        await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount }, sessionId);
+        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount }, sessionId);
+      }
+      const opened = await send('Runtime.evaluate', {
+        expression: 'document.getElementById("infinite-link-href")?.value === "https://example.com/guide" && document.activeElement.id === "infinite-link-href"', returnByValue: true,
+      }, sessionId);
+      if (!opened.result.value) throw new Error('Double click did not open a focused editor for the existing link');
+      for (const [width, height, theme] of [[1000, 700, 'light'], [375, 600, 'light'], [680, 480, 'dark']]) {
+        await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }, sessionId);
+        const visible = await send('Runtime.evaluate', { expression: `(() => {
+          document.querySelector('.word-shell').className = 'word-shell theme-${theme} theme-office';
+          const buttons = [...document.querySelectorAll('.infinite-link-footer button')];
+          return buttons.every(button => { const box = button.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth; });
+        })()`, returnByValue: true }, sessionId);
+        if (!visible.result.value) throw new Error(`Link actions clipped at ${width}x${height}`);
+        const shot = await send('Page.captureScreenshot', { format: 'png' }, sessionId);
+        writeFileSync(join(output, `links-${theme}-${width}x${height}.png`), Buffer.from(shot.data, 'base64'));
+      }
+    }
     const screenshot = await send('Page.captureScreenshot', { format: 'png' }, sessionId);
     const imagePath = join(output, scenario + '.png');
     writeFileSync(imagePath, Buffer.from(screenshot.data, 'base64'));

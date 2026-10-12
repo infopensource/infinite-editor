@@ -76,6 +76,7 @@ export class WysiwygBridgeSession {
         if (!active) this.schedulePendingDocument();
       },
       onBlur: () => this.flushChange("wysiwyg-blur"),
+      onLinkEdit: phase => this.flushChange(`wysiwyg-link-${phase}`, "input", true),
       onPageChange,
     });
     const snapshot = this.documentSession?.getSnapshot?.();
@@ -326,6 +327,10 @@ export class WysiwygBridgeSession {
       : null);
     if (!command) return { ok: false, changed: false, error: `未知 WYSIWYG 命令：${name}` };
     this.flushChange("wysiwyg-before-command");
+    if (name === "link") {
+      const opened = command(this.editor.state, tr => this.editor.view.dispatch(tr), this.editor.view);
+      return { ok: true, changed: false, opened, revision: this.editRevision };
+    }
     const changed = command(
       this.editor.state,
       (transaction) => this.editor.view.dispatch(transaction),

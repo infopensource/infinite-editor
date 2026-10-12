@@ -770,7 +770,11 @@ test("rich-text ribbon inserts a link and image using supplied URLs", () => {
     session.editor.view.dispatch(session.editor.state.tr.setSelection(
       TextSelection.create(session.editor.state.doc, position, position + 2),
     ));
-    assert.equal(session.command("link").changed, true);
+    assert.equal(session.command("link").opened, true);
+    const address = document.getElementById("infinite-link-href");
+    address.value = "https://example.com/image.png";
+    address.dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector(".infinite-link-dialog").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     assert.match(session.editor.getMarkdown(), /\[段落\]\(https:\/\/example\.com\/image\.png\)/u);
     assert.equal(session.command("image").changed, true);
     assert.match(session.editor.getMarkdown(), /!\[图片\]\(https:\/\/example\.com\/image\.png\)/u);

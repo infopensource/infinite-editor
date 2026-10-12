@@ -22,12 +22,14 @@ import { paginationPlugin } from "./plugins/pagination.js";
 import { endOfDocumentPlugin } from "./plugins/end_of_document.js";
 import { selectionPlugin } from "./plugins/selection.js";
 import { handleLocalFileDrop } from "../local_file_drop.js";
+import { linkEditorPlugin } from "./commands/links.js";
 
 function editorPlugins(options = {}) {
   const sharedHistory = options.sharedHistory;
   return [
     ...(sharedHistory ? [] : [history()]),
     alignmentToolbarPlugin(),
+    linkEditorPlugin({ onEdit: options.onLinkEdit }),
     markdownInputRules(wysiwygSchema),
     paginationPlugin({ onPageChange: options.onPageChange }),
     selectionPlugin(),

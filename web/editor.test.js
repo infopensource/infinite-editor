@@ -282,7 +282,11 @@ test("source ribbon inserts links, images, and a screen-independent code fence",
   window.prompt = () => "https://example.com/a.png";
   try {
     api.setSelection("host", 0, 2);
-    assert.equal(api.command("link").changed, true);
+    assert.equal(api.command("link").opened, true);
+    const address = document.getElementById("infinite-link-href");
+    address.value = "https://example.com/a.png";
+    address.dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector(".infinite-link-dialog").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     assert.equal(api.getValue(), "[示例](https://example.com/a.png)");
     api.setSelection("host", api.getValue().length);
     assert.equal(api.command("image").changed, true);
@@ -292,6 +296,50 @@ test("source ribbon inserts links, images, and a screen-independent code fence",
   } finally {
     window.prompt = originalPrompt;
   }
+});
+
+test("source links edit destinations and unlink without losing Markdown formatting or titles", () => {
+  const initial = '前 [**示例**](https://example.com/a(b) "标题") 后';
+  api.mount("host", "bridge", initial, 33);
+  api.setSelection("host", initial.indexOf("示例") + 1);
+  assert.equal(api.command("link").opened, true);
+  assert.equal(document.getElementById("infinite-link-text").value, "**示例**");
+  const address = document.getElementById("infinite-link-href");
+  assert.equal(address.value, "https://example.com/a(b)");
+  address.value = "https://new.example.com";
+  address.dispatchEvent(new Event("input", { bubbles: true }));
+  document.querySelector(".infinite-link-dialog").dispatchEvent(new Event("submit", { cancelable: true }));
+  assert.equal(api.getValue(), '前 [**示例**](https://new.example.com "标题") 后');
+  api.setSelection("host", 7);
+  assert.equal(api.command("unlink").changed, true);
+  assert.equal(api.getValue(), "前 **示例** 后");
+  assert.equal(api.undo(), true);
+  assert.equal(api.getValue(), '前 [**示例**](https://new.example.com "标题") 后');
+  assert.equal(api.undo(), true);
+  assert.equal(api.getValue(), initial);
+});
+
+test("source link cancellation and document switches never apply the captured selection", () => {
+  api.mount("host", "bridge", "示例", 34);
+  api.setSelection("host", 0, 2);
+  api.command("link");
+  document.querySelector(".infinite-link-button:not(.primary):not(.remove)").click();
+  assert.equal(api.getValue(), "示例");
+  assert.deepEqual(api.historyStatus(), { undo: false, redo: false });
+  api.command("link");
+  api.initialize("新文档", 35, "bridge");
+  assert.equal(document.querySelector(".infinite-link-overlay"), null);
+  assert.equal(api.getValue(), "新文档");
+});
+
+test("source unlink handles multiple reference links and leaves code and images intact", () => {
+  const initial = '[**一**][ref] 和 [二](https://b.example)\n\n`[代码](https://c.example)` ![图片](a.png)\n\n[ref]: https://a.example';
+  api.mount("host", "bridge", initial, 36);
+  api.setSelection("host", 0, initial.indexOf("\n"));
+  assert.equal(api.command("unlink").changed, true);
+  assert.equal(api.getValue(), '**一** 和 二\n\n`[代码](https://c.example)` ![图片](a.png)\n\n[ref]: https://a.example');
+  assert.equal(api.undo(), true);
+  assert.equal(api.getValue(), initial);
 });
 
 test("closes bold markers independently inside each selected list item", () => {

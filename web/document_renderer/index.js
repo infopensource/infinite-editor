@@ -1,6 +1,7 @@
 import { normalizeBlockWhitespace } from "./whitespace.js";
 import { paginate } from "./pagination.js";
 import { normalizeResourcePath } from "../resource_path.js";
+import { installDocumentLinkNavigation } from "../link_navigation.js";
 
 function hydrateResourceImages(root, resources = {}) {
   for (const image of root?.querySelectorAll("img[src]") ?? []) {
@@ -22,6 +23,7 @@ function sameResources(left = {}, right = {}) {
 }
 
 (function installDocumentRenderer() {
+  const linkNavigation = installDocumentLinkNavigation(window);
   const instances = new Map();
   const previewStates = new WeakMap();
 
@@ -53,6 +55,7 @@ function sameResources(left = {}, right = {}) {
 
     // Build the complete preview away from the live tree, then swap it in one
     // DOM operation so raw math placeholders are never painted to the screen.
+    linkNavigation.hide();
     root.replaceChildren(...staging.childNodes);
     if (scroller) {
       scroller.scrollTop = scrollTop;
@@ -115,6 +118,7 @@ function sameResources(left = {}, right = {}) {
   }
 
   function destroy(rootId) {
+    linkNavigation.hide();
     const instance = instances.get(rootId);
     instance?.observer.disconnect();
     if (instance) instance.generation += 1;

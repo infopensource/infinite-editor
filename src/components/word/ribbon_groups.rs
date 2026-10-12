@@ -39,6 +39,11 @@ pub fn RibbonPanel(
                         on_action: on_editor_command,
                     }
                     CommandGroup {
+                        title: "链接",
+                        actions: vec![("超链接", "link"), ("移除链接", "unlink")],
+                        on_action: on_editor_command,
+                    }
+                    CommandGroup {
                         title: "段落",
                         actions: vec![
                             ("左对齐", "align_left"),
@@ -69,7 +74,7 @@ pub fn RibbonPanel(
                 RibbonTab::Insert => rsx! {
                     CommandGroup {
                         title: "链接与媒体",
-                        actions: vec![("链接", "link"), ("图片", "image")],
+                        actions: vec![("超链接", "link"), ("移除链接", "unlink"), ("图片", "image")],
                         on_action: on_editor_command,
                     }
                     TableInsertGroup { on_action: on_editor_command }
@@ -271,11 +276,17 @@ fn CommandGroup(
     rsx! {
         div { class: "ribbon-group",
             div { class: "group-main",
-                div { class: if title == "段落" || title == "样式" { "group-actions command-actions paragraph-actions" } else { "group-actions command-actions" },
+                div { class: if title == "段落" || title == "样式" { "group-actions command-actions paragraph-actions" } else if title == "链接" { "group-actions command-actions link-actions" } else { "group-actions command-actions" },
                     for (label, command) in actions {
                         button {
                             class: "ribbon-small",
                             "data-paragraph-alignment": command.strip_prefix("align_"),
+                            "data-link-command": if command == "link" || command == "unlink" { Some(command) } else { None },
+                            title: match command {
+                                "link" => "添加或编辑超链接 (Ctrl/⌘ + K)",
+                                "unlink" => "移除超链接，保留文字 (Ctrl/⌘ + Shift + K)",
+                                _ => label,
+                            },
                             r#type: "button",
                             onmousedown: move |event| {
                                 // Keep the document selection without executing a command
@@ -329,6 +340,9 @@ fn command_icon(command: &str) -> Element {
         } },
         "link" => rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", stroke_linecap: "round",
             path { d: "M10 13a5 5 0 0 0 7 .4l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7-.4l-3 3a5 5 0 0 0 7 7l1.7-1.7" }
+        } },
+        "unlink" => rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", stroke_linecap: "round",
+            path { d: "m3 3 18 18M8 8l-4 4a5 5 0 0 0 7 7l2-2M16 16l4-4a5 5 0 0 0-7-7l-2 2M9 15l6-6" }
         } },
         "image" => rsx! { svg { view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "1.8", stroke_linecap: "round",
             rect { x: "3", y: "4", width: "18", height: "16", rx: "2" }

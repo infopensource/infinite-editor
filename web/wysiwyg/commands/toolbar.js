@@ -3,6 +3,7 @@ import { lift, setBlockType, toggleMark, wrapIn } from "prosemirror-commands";
 import { redo, undo } from "prosemirror-history";
 import { liftListItem, wrapInList } from "prosemirror-schema-list";
 import { blockCommands } from "./blocks.js";
+import { editLink, removeLink } from "./links.js";
 
 function toggleBlock(type, fallback) {
   return (state, dispatch) => {
@@ -76,19 +77,6 @@ function promptFor(label) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function insertLink(schema) {
-  return (state, dispatch) => {
-    const href = promptFor("链接地址");
-    if (!href) return false;
-    if (state.selection.empty) {
-      const text = schema.text("链接文本", [schema.marks.link.create({ href, title: null })]);
-      if (dispatch) dispatch(state.tr.replaceSelectionWith(text, false).scrollIntoView());
-      return true;
-    }
-    return toggleMark(schema.marks.link, { href, title: null })(state, dispatch);
-  };
-}
-
 export function setParagraphAlignment(textAlign) {
   return (state, dispatch) => {
     if (!["left", "center", "right", "justify"].includes(textAlign)) return false;
@@ -125,7 +113,8 @@ export function toolbarCommands(schema) {
     unordered_list: toggleList(schema, schema.nodes.bullet_list),
     ordered_list: toggleList(schema, schema.nodes.ordered_list),
     task_list: toggleTaskList(schema),
-    link: insertLink(schema),
+    link: editLink,
+    unlink: removeLink,
     image: (state, dispatch) => {
       const src = promptFor("图片地址");
       return src ? blocks.image({ src, alt: "图片", title: null })(state, dispatch) : false;

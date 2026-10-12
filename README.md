@@ -70,6 +70,18 @@ strikethrough, code blocks, lists, quotes, and rules to the current selection.
 The Insert ribbon can add a persistent page break. `Ctrl/Cmd+B` and
 `Ctrl/Cmd+I` work directly inside the page.
 
+Select text and choose **超链接** in the Home or Insert ribbon, or press
+`Ctrl/Cmd+K`, to edit its display text and destination.
+Place the caret inside a link to edit the whole link; double-clicking a link
+also opens its editor in WYSIWYG mode. **移除链接** (or `Ctrl/Cmd+Shift+K`)
+removes the link from the selection, preserving the text and formatting.
+The dialog also offers **移除链接**, Enter in the address field applies the
+change, and Escape cancels. Link changes support undo/redo in both modes.
+Hover over a link to see its destination and **Ctrl + 单击打开链接**.
+Ordinary clicks keep editing; `Ctrl+click` opens the link in a new browser tab
+or the desktop system browser. macOS also supports `Cmd+click`. The Markdown
+preview follows the same rule, and document bookmarks scroll to their target.
+
 Source and WYSIWYG modes share one CodeMirror `EditorState` transaction history.
 WYSIWYG blocks carry their UTF-16 Markdown source ranges, so an edit replaces
 only the affected source block while leaving unrelated Markdown spelling and
@@ -223,6 +235,7 @@ cache for its `wasm-opt` executable.
 ```sh
 npm ci
 npm test
+npm run test:links-browser
 cargo clippy --all-targets --features desktop -- -D warnings
 cargo check --target x86_64-pc-windows-gnu --features desktop
 cargo check --target wasm32-unknown-unknown --no-default-features --features web
