@@ -5,6 +5,7 @@
     --ie-shell-border: #c9d3dd;
     --ie-title-background: #f2f4f7;
     --ie-title-text: #263442;
+    --ie-title-hover: color-mix(in srgb, var(--ie-title-text) 10%, transparent);
     --ie-tabs-background: #f8fafc;
     --ie-panel-background: #fff;
     --ie-panel-border: #d5dde5;
