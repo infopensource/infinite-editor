@@ -370,6 +370,50 @@ pub fn WordWorkspace() -> Element {
         }
     });
 
+    #[cfg(feature = "desktop")]
+    let mut open_dropped_paths = move |paths: Vec<std::path::PathBuf>| {
+        if paths.len() != 1 {
+            status_hint.set("请一次只拖入一个文件".into());
+            return;
+        }
+        if drop_pending() || open_pending() || import_pending() || new_request_pending()
+            || new_saving() || new_dialog_visible() {
+            status_hint.set("请先完成当前文件操作".into());
+            return;
+        }
+        let request = match crate::import::classify_startup_path(paths.into_iter().next().unwrap()) {
+            Ok(request) => request,
+            Err(error) => { status_hint.set(error); return; }
+        };
+        drop_pending.set(true);
+        let revision = document_revision();
+        spawn(async move {
+            let script = format!("const snapshot = window.InfiniteMarkdownEditor?.getSnapshot(); return snapshot?.documentRevision === {revision} ? snapshot.markdown : null;");
+            let snapshot = super::javascript::eval_reply::<Option<String>>(&script).await;
+            drop_pending.set(false);
+            if document_revision() != revision { return; }
+            match snapshot {
+                Ok(Some(markdown)) => document.write().markdown = markdown,
+                Ok(None) if active_tab() != RibbonTab::File => {
+                    status_hint.set("编辑器尚未准备好，请稍后重新拖入文件".into());
+                    return;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    status_hint.set(format!("同步文档失败：{error}"));
+                    return;
+                }
+            }
+            if *document.peek() != *saved_document.peek() {
+                pending_drop.set(Some(request));
+                new_save_feedback.set(String::new());
+                new_dialog_visible.set(true);
+            } else {
+                open_external(request);
+            }
+        });
+    };
+
     let theme_settings = theme();
     let mut shell_class = format!("word-shell {}", theme_settings.class());
     if active_tab() == RibbonTab::File { shell_class.push_str(" file-mode"); }
@@ -380,11 +424,28 @@ pub fn WordWorkspace() -> Element {
     let drop_is_open = matches!(pending_drop(), Some(crate::import::StartupDocument::Open(_)));
     #[cfg(not(feature = "desktop"))]
     let (drop_is_import, drop_is_open) = (false, false);
+    #[cfg(all(feature = "desktop", target_os = "linux"))]
+    let drop_bridge = rsx! {
+        textarea {
+            id: "desktop-file-drop-bridge",
+            class: "markdown-editor-bridge",
+            oninput: move |event| {
+                match serde_json::from_str::<Vec<String>>(&event.value())
+                    .map_err(|error| error.to_string())
+                    .and_then(|urls| crate::import::paths_from_dropped_file_urls(&urls.join("\n"))) {
+                    Ok(paths) => open_dropped_paths(paths),
+                    Err(error) => status_hint.set(error),
+                }
+            },
+        }
+    };
+    #[cfg(not(all(feature = "desktop", target_os = "linux")))]
+    let drop_bridge = rsx! {};
     rsx! {
         div { class: shell_class, style: theme_settings.style(),
             ondragover: move |event| {
                 #[cfg(feature = "desktop")]
-                if !event.data().data_transfer().files().is_empty() {
+                if !event.data().files().is_empty() {
                     event.prevent_default();
                 }
                 #[cfg(not(feature = "desktop"))]
@@ -393,60 +454,31 @@ pub fn WordWorkspace() -> Element {
             ondrop: move |event| {
                 #[cfg(feature = "desktop")]
                 {
-                    // Dioxus retains the last native hover paths after a drag leaves.
-                    // Check the current DOM transfer before using those paths.
-                    if event.data().data_transfer().files().is_empty() { return; }
-                    let files = event.data().files();
-                    if files.is_empty() { return; }
+                    let transfer = event.data().data_transfer();
+                    let uri_list = transfer.get_data("text/uri-list").filter(|value| !value.is_empty());
+                    let plain = transfer.get_data("text/plain").filter(|value| !value.is_empty());
+                    let paths = if let Some(uris) = uri_list.or_else(|| plain.clone().filter(|value| value.trim().starts_with("file:"))) {
+                        match crate::import::paths_from_dropped_file_urls(&uris) {
+                            Ok(paths) => paths,
+                            Err(error) => { status_hint.set(error); return; }
+                        }
+                    } else {
+                        // Dioxus retains native hover paths after a drag leaves. A later
+                        // ordinary text drop must not reopen the previous file.
+                        if plain.is_some() && transfer.files().is_empty() { return; }
+                        event.data().files().iter().map(|file| file.path()).collect()
+                    };
+                    if paths.is_empty() { return; }
                     event.prevent_default();
                     event.stop_propagation();
-                    if files.len() != 1 {
-                        status_hint.set("请一次只拖入一个文件".into());
-                        return;
-                    }
-                    if drop_pending() || open_pending() || import_pending() || new_request_pending()
-                        || new_saving() || new_dialog_visible() {
-                        status_hint.set("请先完成当前文件操作".into());
-                        return;
-                    }
-                    let path = files[0].path();
-                    let request = match crate::import::classify_startup_path(path) {
-                        Ok(request) => request,
-                        Err(error) => { status_hint.set(error); return; }
-                    };
-                    drop_pending.set(true);
-                    let revision = document_revision();
-                    spawn(async move {
-                        let script = format!("const snapshot = window.InfiniteMarkdownEditor?.getSnapshot(); return snapshot?.documentRevision === {revision} ? snapshot.markdown : null;");
-                        let snapshot = super::javascript::eval_reply::<Option<String>>(&script).await;
-                        drop_pending.set(false);
-                        if document_revision() != revision { return; }
-                        match snapshot {
-                            Ok(Some(markdown)) => document.write().markdown = markdown,
-                            Ok(None) if active_tab() != RibbonTab::File => {
-                                status_hint.set("编辑器尚未准备好，请稍后重新拖入文件".into());
-                                return;
-                            }
-                            Ok(None) => {}
-                            Err(error) => {
-                                status_hint.set(format!("同步文档失败：{error}"));
-                                return;
-                            }
-                        }
-                        if *document.peek() != *saved_document.peek() {
-                            pending_drop.set(Some(request));
-                            new_save_feedback.set(String::new());
-                            new_dialog_visible.set(true);
-                        } else {
-                            open_external(request);
-                        }
-                    });
+                    open_dropped_paths(paths);
                 }
                 #[cfg(not(feature = "desktop"))]
                 let _ = event;
             },
             "data-page-furniture": serde_json::to_string(&current_document.layout.page_furniture).unwrap_or_default(),
             "data-page-layout": serde_json::to_string(&current_document.layout).unwrap_or_default(),
+            {drop_bridge}
             ResizeHandles {}
             super::page_furniture_dialog::PageFurnitureDialogTemplate {}
             TitleBar {

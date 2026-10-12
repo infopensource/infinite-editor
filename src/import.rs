@@ -33,6 +33,21 @@ pub fn classify_startup_path(path: PathBuf) -> Result<StartupDocument, String> {
     }
 }
 
+#[cfg(feature = "desktop")]
+pub fn paths_from_dropped_file_urls(text: &str) -> Result<Vec<PathBuf>, String> {
+    let urls = text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'));
+    urls
+        .map(|value| {
+            url::Url::parse(value)
+                .ok()
+                .and_then(|url| url.to_file_path().ok())
+                .ok_or_else(|| format!("无效的本地文件地址：{value}"))
+        })
+        .collect()
+}
+
 pub fn import_document(path: &Path) -> Result<ProjectDocument, String> {
     let markdown = anydoc::to_markdown(path).map_err(|error| match error {
         anydoc::ConvertError::NeedsOcr { .. } => {
@@ -88,5 +103,15 @@ mod tests {
             path.file_stem().unwrap().to_str().unwrap()
         );
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(feature = "desktop")]
+    #[test]
+    fn decodes_dropped_file_urls() {
+        assert_eq!(
+            paths_from_dropped_file_urls("# copied file\nfile:///home/user/My%20Document.docx\n").unwrap(),
+            vec![PathBuf::from("/home/user/My Document.docx")]
+        );
+        assert!(paths_from_dropped_file_urls("https://example.com/file.docx").is_err());
     }
 }

@@ -3,6 +3,7 @@ import { readPageFurniture, publishPageFurniture } from "./page_furniture.js";
 import { openPageFurnitureDialog } from "./page_furniture_dialog.js";
 import { minimalTextChange } from "./text_change.js";
 import { tableDimensions, tableMarkdown } from "./table_insert.js";
+import { handleLocalFileDrop } from "./local_file_drop.js";
 import { Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import {
   EditorView,
@@ -319,6 +320,11 @@ function extensions() {
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     sourceLanguage.of([]),
     EditorView.domEventHandlers({
+      drop(event) {
+        if (!handleLocalFileDrop(event)) return false;
+        event.preventDefault();
+        return true;
+      },
       mousedown(event) {
         if (event.button !== 0 || !event.ctrlKey || event.metaKey) return false;
         event.preventDefault();

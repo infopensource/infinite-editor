@@ -37,7 +37,8 @@ On desktop, dropping one supported file onto the editor opens it through the
 same path as **Open With**. Markdown and `.infdoc` retain their file location;
 PDF and Office documents are imported as unsaved documents. If the current
 document has unsaved changes, the editor asks whether to save, discard, or
-cancel before replacing it.
+cancel before replacing it. Linux file managers that provide a `file://` URL
+instead of a file object are handled the same way.
 
 Portable `.infdoc` files are ZIP containers with a fixed manifest:
 

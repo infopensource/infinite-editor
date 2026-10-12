@@ -21,6 +21,7 @@ import { markdownInputRules } from "./plugins/input_rules.js";
 import { paginationPlugin } from "./plugins/pagination.js";
 import { endOfDocumentPlugin } from "./plugins/end_of_document.js";
 import { selectionPlugin } from "./plugins/selection.js";
+import { handleLocalFileDrop } from "../local_file_drop.js";
 
 function editorPlugins(options = {}) {
   const sharedHistory = options.sharedHistory;
@@ -93,6 +94,10 @@ export class MinimalWysiwygEditor {
       nodeViews: createNodeViews(() => this.options.resources?.() ?? {}),
       handlePaste: (view, event, slice) => (
         this.options.handlePaste?.(view, event, slice) ?? false
+      ),
+      handleDrop: (_view, event, slice) => handleLocalFileDrop(
+        event,
+        slice.content.textBetween(0, slice.content.size, "\n"),
       ),
       dispatchTransaction: (transaction) => {
         const previousState = this.view.state;
