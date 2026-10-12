@@ -46,6 +46,8 @@ export function documentFromInfiniteAst(input, schema) {
           title: definition.title ?? null,
         }));
       }
+      case "footnote_reference":
+        return [schema.nodes.footnote_reference.create({ identifier: node.identifier })];
       case "image":
         return [schema.nodes.image.create({
           src: node.src,
@@ -125,6 +127,13 @@ export function documentFromInfiniteAst(input, schema) {
           title: node.title ?? null,
           source: node.source ?? "",
         })];
+      case "footnote_definition": {
+        const content = blocks(node.children);
+        return [schema.nodes.footnote_definition.create(
+          { identifier: node.identifier },
+          content.length ? content : [schema.nodes.paragraph.create()],
+        )];
+      }
       case "opaque_block":
       default:
         return [opaque("opaque_block", node)];

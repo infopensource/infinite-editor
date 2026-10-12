@@ -75,6 +75,12 @@ const nodes = {
     );
     state.closeBlock(node);
   },
+  footnote_definition(state, node) {
+    state.wrapBlock("    ", `[^${node.attrs.identifier}]: `, node, () => state.renderContent(node));
+  },
+  footnote_reference(state, node) {
+    state.write(`[^${node.attrs.identifier}]`);
+  },
   opaque_block(state, node) {
     state.write(node.attrs.source);
     state.closeBlock(node);

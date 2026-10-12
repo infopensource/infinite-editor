@@ -51,6 +51,10 @@ export function infiniteAstFromRemark(root, source) {
         identifier: node.identifier,
         children: inline(node.children),
       };
+      case "footnoteReference": return {
+        kind: "footnote_reference",
+        identifier: node.identifier,
+      };
       case "image": return {
         kind: "image",
         src: node.url,
@@ -131,6 +135,11 @@ export function infiniteAstFromRemark(root, source) {
         href: node.url,
         title: node.title ?? null,
         source: rawSource(node, source),
+      };
+      case "footnoteDefinition": return {
+        kind: "footnote_definition",
+        identifier: node.identifier,
+        children: blocks(node.children),
       };
       case "html": {
         const raw = rawSource(node, source);

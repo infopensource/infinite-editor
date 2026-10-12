@@ -67,6 +67,10 @@ pub enum InfiniteAstNode {
         title: Option<String>,
         source: String,
     },
+    FootnoteDefinition {
+        identifier: String,
+        children: Vec<Self>,
+    },
     PageBreak {
         source: String,
     },
@@ -101,6 +105,9 @@ pub enum InfiniteAstNode {
     LinkReference {
         identifier: String,
         children: Vec<Self>,
+    },
+    FootnoteReference {
+        identifier: String,
     },
     Image {
         src: String,
@@ -356,6 +363,10 @@ fn block_node(node: Node, source: &str) -> InfiniteAstNode {
                 source: raw,
             }
         }
+        Node::FootnoteDefinition(footnote) => InfiniteAstNode::FootnoteDefinition {
+            identifier: footnote.identifier,
+            children: block_nodes(footnote.children, source),
+        },
         Node::Html(html) => {
             let raw = source_slice(&Node::Html(html), source);
             if is_page_break(&raw) {
@@ -414,6 +425,9 @@ fn inline_nodes(nodes: Vec<Node>, source: &str) -> Vec<InfiniteAstNode> {
                 identifier: link.identifier,
                 children: inline_nodes(link.children, source),
             },
+            Node::FootnoteReference(footnote) => InfiniteAstNode::FootnoteReference {
+                identifier: footnote.identifier,
+            },
             Node::Image(image) => InfiniteAstNode::Image {
                 src: image.url,
                 alt: image.alt,
@@ -447,6 +461,24 @@ fn inline_nodes(nodes: Vec<Node>, source: &str) -> Vec<InfiniteAstNode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn footnotes_are_structured_instead_of_opaque_source() {
+        let source = "正文[^2]。\n\n[^2]: Regulation (EU) 2016/679, art 25;\n    European Data Protection Board guidelines.";
+        let document = InfiniteAstDocument::from_markdown_rs(source).unwrap();
+        let InfiniteAstNode::Paragraph { children } = &document.children[0] else {
+            panic!("expected paragraph");
+        };
+        assert!(children.iter().any(|node| matches!(
+            node,
+            InfiniteAstNode::FootnoteReference { identifier } if identifier == "2"
+        )));
+        let InfiniteAstNode::FootnoteDefinition { identifier, children } = &document.children[1] else {
+            panic!("expected footnote definition");
+        };
+        assert_eq!(identifier, "2");
+        assert!(matches!(children.first(), Some(InfiniteAstNode::Paragraph { .. })));
+    }
 
     #[test]
     fn source_map_unicode_boundaries_match_reference() {

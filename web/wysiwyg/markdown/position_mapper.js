@@ -1,12 +1,14 @@
 const AST_LEAF_KINDS = new Set([
   "text", "code_inline", "math_inline", "hard_break", "image", "image_reference",
   "code_block", "math_block", "thematic_break", "page_break", "definition",
+  "footnote_reference",
   "opaque_block", "opaque_inline",
 ]);
 
 const PM_LEAF_TYPES = new Set([
   "code_block", "math_inline", "hard_break", "image", "math_block", "horizontal_rule",
   "page_break", "link_definition", "opaque_block", "opaque_inline",
+  "footnote_reference",
 ]);
 
 function astLeaves(documentNode) {
@@ -79,6 +81,7 @@ function compatible(astNode, pmNode) {
     thematic_break: "horizontal_rule",
     page_break: "page_break",
     definition: "link_definition",
+    footnote_reference: "footnote_reference",
     opaque_block: "opaque_block",
     opaque_inline: "opaque_inline",
   }[astNode.kind];

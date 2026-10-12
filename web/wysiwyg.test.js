@@ -199,7 +199,8 @@ test("schema exposes phase 1 core and phase 2 business nodes from one source", (
   for (const name of [
     "doc", "paragraph", "blockquote", "heading", "code_block", "text",
     "ordered_list", "bullet_list", "list_item", "table", "image",
-    "math_inline", "math_block", "page_break", "opaque_block", "opaque_inline",
+    "math_inline", "math_block", "page_break", "footnote_definition", "footnote_reference",
+    "opaque_block", "opaque_inline",
   ]) {
     assert.ok(wysiwygSchema.nodes[name], name);
   }
@@ -207,7 +208,7 @@ test("schema exposes phase 1 core and phase 2 business nodes from one source", (
     assert.ok(wysiwygSchema.marks[name], name);
   }
   for (const name of [
-    "horizontal_rule", "image", "math_inline", "math_block", "page_break",
+    "horizontal_rule", "image", "math_inline", "math_block", "page_break", "footnote_reference",
     "opaque_block", "opaque_inline",
   ]) {
     assert.equal(wysiwygSchema.nodes[name].isAtom, true, name);
@@ -401,6 +402,49 @@ test("reference definitions stay in Markdown but are hidden in WYSIWYG", () => {
   assert.equal(definition.getAttribute("aria-hidden"), "true");
   assert.match(editor.getMarkdown(), /^\[guide\]: https:\/\/www\.markdownguide\.org\//u);
   assert.equal(editor.view.dom.querySelector("[data-opaque-source]"), null);
+});
+
+test("footnotes render as wrapped, editable text and keep Markdown syntax", () => {
+  const initial = `See the regulation[^2].
+
+[^2]: Regulation (EU) 2016/679 (GDPR), art 25; European Data Protection Board,
+    Guidelines on Data Protection by Design and by Default.
+
+[^5]: *Ibid.*`;
+  const ast = remarkReferenceBackend.parse(initial);
+  assert.equal(ast.children[0].children[1].kind, "footnote_reference");
+  assert.equal(ast.children[1].kind, "footnote_definition");
+
+  const documentNode = parseMarkdown(initial);
+  assert.equal(documentNode.child(0).child(1).type.name, "footnote_reference");
+  assert.equal(documentNode.child(1).type.name, "footnote_definition");
+  const mapper = new MarkdownPositionMapper(ast, documentNode, initial);
+  const sourcePosition = initial.indexOf("Regulation") + 5;
+  assert.equal(mapper.proseMirrorToSource(mapper.sourceToProseMirror(sourcePosition)), sourcePosition);
+  const first = serializeMarkdown(documentNode);
+  assert.equal(serializeMarkdown(parseMarkdown(first)), first);
+  assert.match(first, /\[\^2\]: Regulation \(EU\)/u);
+  assert.match(first, /\[\^5\]: \*Ibid\.\*/u);
+
+  activeEditor = new MinimalWysiwygEditor(document.getElementById("host"), initial);
+  const definition = activeEditor.view.dom.querySelector('[data-footnote-definition="2"]');
+  assert.ok(definition);
+  assert.equal(activeEditor.view.dom.querySelector('[data-footnote-reference="2"]').textContent, "[2]");
+  assert.match(definition.textContent, /Guidelines on Data Protection/u);
+  assert.equal(activeEditor.view.dom.querySelector("[data-opaque-source]"), null);
+  assert.equal(definition.querySelector("pre"), null);
+  assert.ok(definition.querySelector("[data-footnote-content] p"));
+
+  let contentPosition = null;
+  activeEditor.state.doc.descendants((node, position) => {
+    if (contentPosition === null && node.isText && node.text.startsWith("Regulation")) {
+      contentPosition = position;
+    }
+  });
+  assert.notEqual(contentPosition, null);
+  activeEditor.view.dispatch(activeEditor.state.tr.insertText("Updated ", contentPosition));
+  assert.match(activeEditor.getMarkdown(), /\[\^2\]: Updated Regulation/u);
+  assert.equal(serializeMarkdown(parseMarkdown(activeEditor.getMarkdown())), activeEditor.getMarkdown());
 });
 
 test("the editor core depends on an injectable AST backend contract", () => {

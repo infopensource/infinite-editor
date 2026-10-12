@@ -92,6 +92,31 @@
     color: #334155;
 }
 
+.infinite-pm-host .footnote-definition {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.65em;
+    margin: 0 0 10px;
+    padding-top: 6px;
+    border-top: 1px solid #e2e8f0;
+    overflow-wrap: anywhere;
+}
+
+.infinite-pm-host .footnote-label,
+.infinite-pm-host .footnote-reference {
+    color: #5b4b76;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.infinite-pm-host .footnote-content {
+    min-width: 0;
+}
+
+.infinite-pm-host .footnote-content > :last-child {
+    margin-bottom: 0;
+}
+
 .infinite-pm-host pre {
     width: 100%;
     max-width: 100%;

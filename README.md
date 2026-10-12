@@ -77,6 +77,8 @@ spacing untouched. Undo and redo operate on Markdown transactions in either
 mode through the ribbon, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, or `Ctrl/Cmd+Y`.
 The source editor, Rust parser, WYSIWYG renderer, and serializer all use the
 same GFM dialect, including strikethrough and tables.
+Footnote references appear inline, and footnote definitions wrap as editable
+paragraphs in the WYSIWYG view.
 
 ### Explicit page breaks
 

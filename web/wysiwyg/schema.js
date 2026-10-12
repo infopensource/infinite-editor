@@ -148,6 +148,38 @@ const baseSchema = new Schema({
         node.attrs.source,
       ],
     },
+    footnote_definition: {
+      group: "block",
+      content: "block+",
+      defining: true,
+      attrs: { identifier: {} },
+      parseDOM: [{
+        tag: "section[data-footnote-definition]",
+        getAttrs: (element) => ({ identifier: element.dataset.footnoteDefinition }),
+        contentElement: "[data-footnote-content]",
+      }],
+      toDOM: (node) => [
+        "section",
+        { "data-footnote-definition": node.attrs.identifier, class: "footnote-definition" },
+        ["span", { class: "footnote-label", contenteditable: "false" }, `[${node.attrs.identifier}]`],
+        ["div", { "data-footnote-content": "true", class: "footnote-content" }, 0],
+      ],
+    },
+    footnote_reference: {
+      inline: true,
+      group: "inline",
+      atom: true,
+      attrs: { identifier: {} },
+      parseDOM: [{
+        tag: "sup[data-footnote-reference]",
+        getAttrs: (element) => ({ identifier: element.dataset.footnoteReference }),
+      }],
+      toDOM: (node) => [
+        "sup",
+        { "data-footnote-reference": node.attrs.identifier, class: "footnote-reference" },
+        `[${node.attrs.identifier}]`,
+      ],
+    },
     table: {
       group: "block",
       content: "table_row+",
