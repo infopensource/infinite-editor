@@ -1,9 +1,27 @@
 import { Fragment } from "prosemirror-model";
-import { Selection } from "prosemirror-state";
+import { Selection, TextSelection } from "prosemirror-state";
 
 function insertNode(node) {
   return (state, dispatch) => {
     if (dispatch) dispatch(state.tr.replaceSelectionWith(node, false).scrollIntoView());
+    return true;
+  };
+}
+
+function insertTable(node) {
+  return (state, dispatch) => {
+    if (!dispatch) return true;
+    const tr = state.tr.replaceSelectionWith(node, false);
+    let tablePosition = null;
+    tr.steps[0]?.getMap().forEach((_oldStart, _oldEnd, newStart, newEnd) => {
+      tr.doc.nodesBetween(newStart, newEnd, (candidate, position) => {
+        if (candidate.type !== node.type) return;
+        tablePosition = position;
+        return false;
+      });
+    });
+    if (tablePosition !== null) tr.setSelection(TextSelection.create(tr.doc, tablePosition + 3));
+    dispatch(tr.scrollIntoView());
     return true;
   };
 }
@@ -50,7 +68,7 @@ export function blockCommands(schema) {
           Array.from({ length: Math.max(1, columns) }, () => cellType.create()),
         ));
       });
-      return insertNode(schema.nodes.table.create({ align }, rowNodes));
+      return insertTable(schema.nodes.table.create({ align }, rowNodes));
     },
     setTaskChecked(checked) {
       return (state, dispatch) => {

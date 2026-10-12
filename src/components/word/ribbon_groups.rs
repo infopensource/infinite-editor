@@ -72,9 +72,10 @@ pub fn RibbonPanel(
                         actions: vec![("链接", "link"), ("图片", "image")],
                         on_action: on_editor_command,
                     }
+                    TableInsertGroup { on_action: on_editor_command }
                     CommandGroup {
                         title: "Markdown 结构",
-                        actions: vec![("表格", "table"), ("代码块", "code_block"), ("分隔线", "horizontal_rule"), ("硬换行", "hard_break")],
+                        actions: vec![("代码块", "code_block"), ("分隔线", "horizontal_rule"), ("硬换行", "hard_break")],
                         on_action: on_editor_command,
                     }
                     CommandGroup {
@@ -168,6 +169,51 @@ pub fn RibbonPanel(
                     }
                 },
             }
+        }
+    }
+}
+
+#[component]
+fn TableInsertGroup(on_action: EventHandler<String>) -> Element {
+    let mut rows = use_signal(|| "3".to_string());
+    let mut columns = use_signal(|| "3".to_string());
+
+    rsx! {
+        div { class: "ribbon-group table-insert-group", role: "group", aria_label: "插入表格",
+            div { class: "group-main table-insert-main",
+                label { class: "table-size-field",
+                    span { "行" }
+                    input {
+                        r#type: "number", min: "2", max: "20", step: "1",
+                        aria_label: "表格行数，含表头", value: rows,
+                        oninput: move |event| rows.set(event.value()),
+                    }
+                }
+                span { class: "table-size-times", aria_hidden: "true", "×" }
+                label { class: "table-size-field",
+                    span { "列" }
+                    input {
+                        r#type: "number", min: "1", max: "12", step: "1",
+                        aria_label: "表格列数", value: columns,
+                        oninput: move |event| columns.set(event.value()),
+                    }
+                }
+                button {
+                    class: "ribbon-small table-insert-button", r#type: "button",
+                    title: "插入指定行列数的表格",
+                    onmousedown: move |event| event.prevent_default(),
+                    onclick: move |_| {
+                        let row_count = rows().parse::<usize>().unwrap_or(3).clamp(2, 20);
+                        let column_count = columns().parse::<usize>().unwrap_or(3).clamp(1, 12);
+                        rows.set(row_count.to_string());
+                        columns.set(column_count.to_string());
+                        on_action.call(format!("table:{row_count}x{column_count}"));
+                    },
+                    {command_icon("table")}
+                    "插入表格"
+                }
+            }
+            div { class: "group-title", "表格（首行为表头）" }
         }
     }
 }

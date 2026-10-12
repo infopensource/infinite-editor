@@ -681,6 +681,36 @@ test("Markdown ribbon commands cover heading six, task lists, and tables", () =>
   assert.match(session.editor.getMarkdown(), /\|/u);
 });
 
+test("rich table insertion uses requested dimensions and places the caret in its first header", () => {
+  const editor = harness("段落");
+  const command = blockCommands(wysiwygSchema).table(4, 3);
+  assert.equal(editor.run(command), true);
+  const table = editor.state.doc.firstChild;
+  assert.equal(table.type.name, "table");
+  assert.equal(table.childCount, 4);
+  for (let index = 0; index < table.childCount; index += 1) {
+    assert.equal(table.child(index).childCount, 3);
+  }
+  assert.equal(editor.state.selection.$from.parent.type.name, "table_header");
+  assert.equal(editor.state.selection.from, 3);
+  const markdown = serializeMarkdown(editor.state.doc);
+  assert.equal(parseMarkdown(markdown).firstChild.childCount, 4);
+});
+
+test("rich ribbon accepts a table dimension command", () => {
+  const session = new WysiwygBridgeSession({
+    host: document.getElementById("host"),
+    ast: remarkReferenceBackend.parse("段落"),
+    markdown: "段落",
+    documentRevision: 16,
+  });
+  activeEditor = session.editor;
+  assert.equal(session.command("table:3x4").changed, true);
+  assert.equal(session.editor.state.doc.firstChild.childCount, 3);
+  assert.equal(session.editor.state.doc.firstChild.firstChild.childCount, 4);
+  assert.equal(session.command("table:0x4").ok, false);
+});
+
 test("rich-text ribbon inserts a link and image using supplied URLs", () => {
   const session = new WysiwygBridgeSession({
     host: document.getElementById("host"),

@@ -1,4 +1,6 @@
 import { toolbarCommands } from "../commands/toolbar.js";
+import { blockCommands } from "../commands/blocks.js";
+import { tableDimensions } from "../../table_insert.js";
 import { MinimalWysiwygEditor, wysiwygSchema } from "../editor.js";
 import { remarkReferenceBackend } from "../markdown/backend.js";
 import { assertInfiniteAst } from "../markdown/infinite_ast.js";
@@ -318,7 +320,10 @@ export class WysiwygBridgeSession {
     if ((name === "undo" || name === "redo") && this.usesSharedHistory) {
       return this.historyCommand(name);
     }
-    const command = this.commands[name];
+    const dimensions = tableDimensions(name);
+    const command = this.commands[name] ?? (dimensions
+      ? blockCommands(wysiwygSchema).table(dimensions.rows, dimensions.columns)
+      : null);
     if (!command) return { ok: false, changed: false, error: `未知 WYSIWYG 命令：${name}` };
     this.flushChange("wysiwyg-before-command");
     const changed = command(

@@ -97,6 +97,41 @@
 }
 .ribbon-command-icon svg { width: 18px; height: 18px; display: block; }
 
+.table-insert-main {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.table-size-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.table-size-field input {
+    width: 48px;
+    height: 30px;
+    box-sizing: border-box;
+    border: 1px solid var(--ie-panel-border, #d1d5db);
+    border-radius: 4px;
+    background: var(--ie-panel-background, #fff);
+    color: var(--ie-chrome-text, #334155);
+    text-align: center;
+    font: inherit;
+}
+
+.table-size-times { color: var(--ie-muted-text, #6b7280); }
+.table-insert-button { border-color: var(--ie-panel-border, #d1d5db); cursor: pointer; }
+.table-insert-button svg { width: 18px; height: 18px; color: var(--ie-accent, #3978ad); }
+.table-insert-button:hover { background: var(--ie-chrome-hover, #e9f0f6); }
+.table-insert-button:focus-visible, .table-size-field input:focus-visible {
+    outline: 2px solid var(--ie-accent, #3978ad);
+    outline-offset: 1px;
+}
+
 .ribbon-small.active {
     border-color: var(--ie-accent, #2563eb);
     background: var(--ie-accent-background, #dbeafe);

@@ -258,6 +258,24 @@ test("source ribbon applies headings, tasks, code, and tables", () => {
   assert.match(api.getValue(), /\| 列 1 \| 列 2 \|/u);
 });
 
+test("source table insertion uses the requested dimensions and selects its first heading", () => {
+  api.mount("host", "bridge", "段落", 32);
+  assert.equal(api.command("table:4x3").changed, true);
+  const lines = api.getValue().split("\n");
+  assert.deepEqual(lines.slice(0, 5), [
+    "| 列 1 | 列 2 | 列 3 |",
+    "| --- | --- | --- |",
+    "|  |  |  |",
+    "|  |  |  |",
+    "|  |  |  |",
+  ]);
+  assert.deepEqual(api.getSnapshot().selection, { anchor: 2, head: 5 });
+  assert.equal(api.command("table:21x3").ok, false);
+  assert.equal(api.getValue().split("\n").length, lines.length);
+  assert.equal(api.undo(), true);
+  assert.equal(api.getValue(), "段落");
+});
+
 test("source ribbon inserts links, images, and a screen-independent code fence", () => {
   api.mount("host", "bridge", "示例", 31);
   const originalPrompt = window.prompt;

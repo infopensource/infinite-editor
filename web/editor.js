@@ -2,6 +2,7 @@ import { findTextMatches, searchIndex } from "./text_search.js";
 import { readPageFurniture, publishPageFurniture } from "./page_furniture.js";
 import { openPageFurnitureDialog } from "./page_furniture_dialog.js";
 import { minimalTextChange } from "./text_change.js";
+import { tableDimensions, tableMarkdown } from "./table_insert.js";
 import { Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import {
   EditorView,
@@ -653,6 +654,19 @@ function insertMarkdownBlock(content) {
   } });
 }
 
+function insertMarkdownTable(rows, columns) {
+  if (!controller) return { ok: false, changed: false, error: "Markdown 文档控制器尚未初始化" };
+  const line = controller.state.doc.lineAt(controller.state.selection.main.from);
+  const before = line.from === 0 ? "" : "\n";
+  return applySourceTransaction({
+    changes: { from: line.from, insert: `${before}${tableMarkdown(rows, columns)}\n\n` },
+    selection: {
+      anchor: line.from + before.length + 2,
+      head: line.from + before.length + 5,
+    },
+  });
+}
+
 function insertMarkdownLink(image = false) {
   if (!controller) return { ok: false, changed: false, error: "Markdown 文档控制器尚未初始化" };
   const href = window.prompt(image ? "图片地址" : "链接地址")?.trim();
@@ -680,7 +694,12 @@ function sourceCommand(name) {
   if (name === "paragraph") return setHeading(0);
   if (name === "code_block") return toggleCodeBlock();
   if (name === "horizontal_rule") return insertMarkdownBlock("---");
-  if (name === "table") return insertMarkdownBlock("| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |");
+  if (name === "table" || name.startsWith("table:")) {
+    const dimensions = tableDimensions(name);
+    return dimensions
+      ? insertMarkdownTable(dimensions.rows, dimensions.columns)
+      : { ok: false, changed: false, error: "表格尺寸无效" };
+  }
   if (name === "page_break") return insertMarkdownBlock("<!-- infinite-editor:page-break -->");
   if (name === "hard_break") return applySourceTransaction({ changes: { from: controller.state.selection.main.from, insert: "  " + controller.state.lineBreak } });
   if (name === "link") return insertMarkdownLink();
